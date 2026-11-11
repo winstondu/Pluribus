@@ -1,6 +1,6 @@
-import { DEFAULT_SETTINGS, type DecisionBudget, type DecisionCostGuard, type ReferentStrategyName, type RoutingSettings, type TreeWalkSettings } from '@committee/protocol'
+import { DEFAULT_SETTINGS, type NodeId, type DecisionBudget, type DecisionCostGuard, type ReferentStrategyName, type RoutingSettings, type TreeWalkSettings } from '@committee/protocol'
 import { describe, expect, test } from 'vitest'
-import { NEVER_CANCELLED, type DecisionProvider, type DecisionQuestions, type DecisionRequest, type DecisionResult, type ReferentStrategy, type RoutingOutcome, type RoutingPlan } from '../../ports'
+import { NEVER_CANCELLED, type DecisionContext, type RoutingInput, type DecisionProvider, type DecisionQuestions, type DecisionRequest, type DecisionResult, type ReferentStrategy, type RoutingOutcome, type RoutingPlan } from '../../ports'
 import { corpusInput, referenceDecomposer, scene, sceneIds, type CorpusExample, type Scene } from '../corpus'
 import { createRouter } from '../pipeline'
 import { numberedAnswerSections, supply } from '../supply'
@@ -101,7 +101,7 @@ async function route(
   sc: Scene,
   text: string,
   rules: Rules,
-  routing: { readonly strategy?: ReferentStrategyName; readonly budget?: Partial<DecisionBudget>; readonly inject?: ReferentStrategy; readonly treeWalk?: Partial<TreeWalkSettings>; readonly costGuard?: Partial<DecisionCostGuard> } = {},
+  routing: { readonly strategy?: ReferentStrategyName; readonly budget?: Partial<DecisionBudget>; readonly inject?: ReferentStrategy; readonly treeWalk?: Partial<TreeWalkSettings>; readonly costGuard?: Partial<DecisionCostGuard>; readonly summaries?: (nodeId: NodeId) => DecisionContext | null } = {},
 ): Promise<Routed> {
   const example: CorpusExample = { id: 'test', covers: ['targets'], note: 'a test scene', scene: sc, text, expect: {} }
   const settings: RoutingSettings = {
@@ -109,8 +109,10 @@ async function route(
     referentBudget: { ...DEFAULT_SETTINGS.routing.referentBudget, ...routing.budget },
     treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, ...routing.treeWalk },
     costGuard: { ...DEFAULT_SETTINGS.routing.costGuard, ...routing.costGuard },
+    useSummaryIfAvailable: routing.summaries !== undefined,
+    backgroundSummaries: false,
   }
-  const input = corpusInput(example, { ...DEFAULT_SETTINGS, routing: settings })
+  const input: RoutingInput = { ...corpusInput(example, { ...DEFAULT_SETTINGS, routing: settings }), ...(routing.summaries ? { decisionContext: routing.summaries } : {}) }
   const numberOf = new Map(numberedAnswerSections(input, supply(input, [])).map((s) => [sc.handles.get(s.section.sectionId) ?? '', s.n]))
   const { provider, requests } = scripted(sc, rules, numberOf)
   const router = createRouter({ decisionProvider: provider, decomposer: referenceDecomposer(example), ...(routing.inject ? { referentStrategy: routing.inject } : {}) })
@@ -714,6 +716,74 @@ describe.each(COMBINATIONS)('long runs · %s', (_name, treeWalk) => {
         expect(furtherTokens(first)).toBeLessThanOrEqual(allowed.inputTokens)
         expect(again.outcome).toEqual(first.outcome)
       }
+    }
+  })
+})
+
+// ───────────────────────────── context summaries ─────────────────────────────
+
+/** A test-only provider: a stored summary anchored at the brief for the handles given, nothing for the rest. */
+const summarised = (handles: readonly string[]) => (nodeId: NodeId): DecisionContext | null => {
+  const handle = handles.find((h) => sceneIds.node(h) === nodeId)
+  if (handle === undefined) return null
+  return {
+    kind: 'summary',
+    nodeId,
+    summary: {
+      anchorNodeId: sceneIds.node('brief'),
+      text: 'The user plans five days in Kyoto in November on a moderate budget.',
+      tokens: 16,
+      provenance: { summaryId: 'sum_1', model: 'scripted', coveredNodeIds: [sceneIds.node('brief')], recordedSeq: 12 },
+    },
+    own:
+      handle === 'brief'
+        ? []
+        : [
+            { role: 'user', content: `Own request of ${handle}`, origin: { kind: 'preamble' } },
+            { role: 'assistant', content: `Own answer of ${handle}`, origin: { kind: 'preamble' } },
+          ],
+  }
+}
+/** What the provider the backend uses by default amounts to for a strategy: a full chain, which is not a summary. */
+const fullChain = (nodeId: NodeId): DecisionContext => ({ kind: 'full-chain', nodeId, chain: { nodeId, messages: [], nodeIds: [nodeId] } })
+
+describe.each(STRATEGIES)('context summaries, referents by %s', (strategy) => {
+  const J_TEXT = 'Use those recommendations to make a five-day itinerary.'
+  const rules: Rules = { own: { A: 0.77, B: 0.3, brief: 0.5 }, several: 0.4, together: { G: 0.86 }, under: { brief: 0.9 } }
+
+  test('summaries · with a provider that returns full chains, turning the setting on changes no request and no plan', async () => {
+    const off = await route(tripFull, J_TEXT, rules, { strategy })
+    const on = await route(tripFull, J_TEXT, rules, { strategy, summaries: fullChain })
+    expect(on.requests.map((r) => ({ state: r.state, questions: r.questions }))).toEqual(off.requests.map((r) => ({ state: r.state, questions: r.questions })))
+    expect(planOf(on).units).toEqual(planOf(off).units)
+    // A provider that has nothing for any node is the same.
+    const none = await route(tripFull, J_TEXT, rules, { strategy, summaries: () => null })
+    expect(none.requests.map((r) => r.state)).toEqual(off.requests.map((r) => r.state))
+  })
+
+  test('summaries · a section that has a summary is shown the summary and its own content; one that has none keeps its usual line; the plan is the same', async () => {
+    const off = await route(tripFull, J_TEXT, rules, { strategy })
+    const on = await route(tripFull, J_TEXT, rules, { strategy, summaries: summarised(['brief', 'A', 'J']) })
+    const shown = on.requests.map((r) => r.state).join('\n')
+    // The anchor: its summary. A child of it: the same summary, then the child's own content.
+    expect(shown).toContain('"brief": the work before it, summarised: "The user plans five days in Kyoto in November on a moderate budget."')
+    expect(shown).toContain('"neighborhoods": the work before it, summarised: "The user plans five days in Kyoto in November on a moderate budget."; after that: request "Own request of A"; answer "Own answer of A"')
+    expect(shown).not.toContain('"neighborhoods": request')
+    // B has no summary: its line is the usual one, in the same request.
+    expect(shown).toContain('"activities": request "Suggest rainy-day activities"; answer "Museums and tea houses."')
+    expect(on.requests.map((r) => Object.keys(r.questions))).toEqual(off.requests.map((r) => Object.keys(r.questions)))
+    expect(planOf(on).units).toEqual(planOf(off).units)
+    // The routing decision says which the decision model saw.
+    expect(planOf(on).decision.explanation).toContain('Decision context: a stored summary was shown for 3 of the 6 listed sections.')
+    expect(planOf(off).decision.explanation).not.toContain('Decision context')
+  })
+
+  test('summaries · the guard counts what is sent: with longer lines the budget still holds', async () => {
+    for (const budget of [{ inputTokens: 300 }, { inputTokens: 700 }, { requests: 1 }]) {
+      const routed = await route(tripFull, J_TEXT, rules, { strategy, summaries: summarised(['brief', 'A', 'B', 'J', 'B2']), budget })
+      const allowed = { ...DEFAULT_SETTINGS.routing.referentBudget, ...budget }
+      expect(routed.requests.length - 1).toBeLessThanOrEqual(allowed.requests)
+      expect(furtherTokens(routed)).toBeLessThanOrEqual(allowed.inputTokens)
     }
   })
 })

@@ -1,5 +1,5 @@
 import { IN_FLIGHT_STATES, type DirectiveId, type NodeId, type SectionId, type SiblingGroupId } from '@committee/protocol'
-import type { CandidateChain, CandidateGroup, CandidateSection, CandidateWork, ReferentSection, RoutingInput } from '../ports'
+import type { CandidateChain, CandidateGroup, CandidateSection, CandidateWork, DecisionContext, ReferentSection, RoutingInput } from '../ports'
 
 /**
  * Which candidates the decision model is asked about (12 · "Left to the
@@ -53,8 +53,35 @@ function quote(text: string, max = 400): string {
   return `"${flat.length > max ? `${flat.slice(0, max)}…` : flat}"`
 }
 
-export function sectionLine(s: CandidateSection, n: number): string {
+/** The most of a summary shown in a section's line. */
+export const SUMMARY_SHOWN = 600
+/** The most messages of a section's own content shown after a summary: the latest ones. */
+export const OWN_MESSAGES_SHOWN = 6
+
+/**
+ * What the decision model is shown for a section in place of its usual
+ * line: nothing unless the setting is on, the engine supplied a reader and
+ * a summary is available for the section's node. A full chain is not a
+ * summary: the usual line stands (docs/build/context-summaries.md).
+ */
+export function decisionContextOf(input: Pick<RoutingInput, 'settings' | 'decisionContext'>, section: CandidateSection): DecisionContext | null {
+  if (!input.settings.routing.useSummaryIfAvailable || !input.decisionContext || section.asksElicitationId) return null
+  const context = input.decisionContext(section.nodeId)
+  return context?.kind === 'summary' ? context : null
+}
+
+/**
+ * A section's line. With a summary: the summary of its context up to the
+ * anchor, then the content specific to the section (the exchanges after
+ * the anchor, the section's own last).
+ */
+export function sectionLine(s: CandidateSection, n: number, context: DecisionContext | null = null): string {
   if (s.asksElicitationId) return `S${n}. A question Committee asked the user, still unanswered: ${quote(s.excerpt || s.request)}`
+  if (context?.kind === 'summary') {
+    const own = context.own.slice(-OWN_MESSAGES_SHOWN).map((m) => `${m.role === 'assistant' ? 'answer' : 'request'} ${quote(m.content, m.role === 'assistant' ? 280 : 240)}`)
+    const after = own.length > 0 ? `; after that: ${own.join('; ')}` : ''
+    return `S${n}. "${s.title}": the work before it, summarised: ${quote(context.summary.text, SUMMARY_SHOWN)}${after}`
+  }
   const answer = s.excerpt ? `answer ${s.state === 'completed' ? '' : `so far (${s.state}) `}${quote(s.excerpt)}` : `no answer yet (${s.state})`
   return `S${n}. "${s.title}": request ${quote(s.request, 240)}; ${answer}`
 }
@@ -72,7 +99,7 @@ export function describeState(input: RoutingInput, supplied: Supplied, subject: 
   const lines: string[] = []
   if (supplied.sections.length > 0) {
     lines.push('Answer sections in this conversation, oldest first:')
-    supplied.sections.forEach((s, i) => lines.push(sectionLine(s, i + 1)))
+    supplied.sections.forEach((s, i) => lines.push(sectionLine(s, i + 1, decisionContextOf(input, s))))
   } else {
     lines.push('The conversation has no answers yet.')
   }

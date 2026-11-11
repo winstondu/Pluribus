@@ -1,4 +1,5 @@
 import type { DecisionBudget, ProviderError, ReferentStrategyName, SectionId, TreeWalkSettings } from '@committee/protocol'
+import type { DecisionContext } from './context-summary'
 import type { NoulQuestion } from './decision-provider'
 import type { CandidateSection, RoutingCandidates } from './router'
 
@@ -66,6 +67,15 @@ export interface ReferentRequest {
     /** At or above this a section is still plausible: worth descending into, and worth asking the user about. */
     readonly floor: number
   }
+  /** `settings.routing.useSummaryIfAvailable`. */
+  readonly useSummaryIfAvailable: boolean
+  /**
+   * The summary to show for a section in place of its usual line, or null:
+   * the setting is off, or no summary is available for it. The pipeline's
+   * own state text already shows it for the sections it lists; a strategy
+   * that writes state texts of its own passes it to the same line.
+   */
+  decisionContext(section: CandidateSection): DecisionContext | null
   /** `settings.routing.treeWalk`: how a walk treats runs of only children. A strategy that does not walk ignores it. */
   readonly treeWalk: TreeWalkSettings
 }

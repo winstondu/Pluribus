@@ -42,7 +42,7 @@ import { Batch, ask, type Answers } from './batch'
 import { AMBIGUITY_FLOOR, derivePlacement, neededWork, placedWithoutTarget, referentCovered, resolveUnitTargets, selected, validatePlan, type TargetMode } from './derive'
 import { askUnit, readUnit, sectionNumbers, withReferents, type UnitScope, type UnitSignals } from './questions'
 import { createReferentAsk, decisionAllowance, estimateRequestTokens, referentStrategyFor, type ReferentSpend } from './referents'
-import { describeState, numberedAnswerSections, supply, type Supplied } from './supply'
+import { decisionContextOf, describeState, numberedAnswerSections, supply, type Supplied } from './supply'
 
 /**
  * The default router: the routing pipeline of 11 · "Routing".
@@ -104,6 +104,8 @@ class Record {
   model: string | null = null
   /** What the referent strategy did beyond the pipeline's own calls, for the decision's explanation. Empty when nothing. */
   referentNote = ''
+  /** Whether the decision model was shown stored summaries, for the decision's explanation. Empty when not. */
+  contextNote = ''
   /** Estimated input tokens of the pipeline's own decision requests so far: the price guard counts them first. */
   pipelineTokens = 0
 
@@ -164,6 +166,9 @@ async function routeMessage(deps: Deps, input: RoutingInput, signal: CancelSigna
     ...(given ? [`The user replied to ${given.sectionIds.map((id) => `S${numbers.get(id) ?? '?'}`).join(' and ')}.`] : []),
   ].join('\n')
   const stateText = describeState(input, supplied, subject)
+  // Which the decision model saw, for the run inspector: a stored summary and the section's own content, or the usual line.
+  const summarised = supplied.sections.filter((s) => decisionContextOf(input, s) !== null).length
+  if (summarised > 0) record.contextNote = ` Decision context: a stored summary was shown for ${summarised} of the ${supplied.sections.length} listed sections.`
   const strategy = deps.referentStrategy ?? referentStrategyFor(input.settings.routing.referentStrategy)
   // Explicit and chosen targets are used as given: nothing is asked about the message's referents.
   const referentRequest = referentRequestFor(input, supplied, given ? [] : [{ key: 'm', name: 'the new message' }], stateText, subject)
@@ -578,6 +583,8 @@ function referentRequestFor(
     stateText,
     subject,
     relevance: { clear: input.settings.thresholds.targetChoice, floor: AMBIGUITY_FLOOR },
+    useSummaryIfAvailable: input.settings.routing.useSummaryIfAvailable,
+    decisionContext: (section) => decisionContextOf(input, section),
     treeWalk: input.settings.routing.treeWalk,
   }
 }
@@ -895,7 +902,7 @@ function decisionRecord(
     composition,
     units,
     thresholds: { ...input.settings.thresholds, ambiguityFloor: AMBIGUITY_FLOOR },
-    explanation: `${explanation}${record.referentNote}`,
+    explanation: `${explanation}${record.referentNote}${record.contextNote}`,
     questions: record.questions,
   }
 }

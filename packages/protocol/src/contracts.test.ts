@@ -136,7 +136,14 @@ describe('settings', () => {
       referentBudget: { requests: 1, questions: 10, inputTokens: 500 },
       treeWalk: DEFAULT_SETTINGS.routing.treeWalk,
       costGuard: DEFAULT_SETTINGS.routing.costGuard,
+      useSummaryIfAvailable: false,
+      backgroundSummaries: false,
     })
+    // Context summaries: two independent switches, both off until asked for.
+    const summaries = applySettingsPatch(DEFAULT_SETTINGS, { routing: { useSummaryIfAvailable: true } })
+    expect(summaries.routing.useSummaryIfAvailable).toBe(true)
+    expect(summaries.routing.backgroundSummaries).toBe(false)
+    expect(applySettingsPatch(summaries, { routing: { backgroundSummaries: true } }).routing).toMatchObject({ useSummaryIfAvailable: true, backgroundSummaries: true })
   })
 })
 

@@ -167,7 +167,7 @@ describe('shell', () => {
     expect(within(dialog).getAllByRole('slider')).toHaveLength(5)
     // The tree walk's two switches sit under the strategy, are independent, and are shown only for the tree walk.
     expect(within(dialog).getByRole('radio', { name: /Tree walk/ })).toBeChecked()
-    expect(within(dialog).getAllByRole('switch')).toHaveLength(2)
+    expect(within(dialog).getAllByRole('switch')).toHaveLength(4)
     expect(within(dialog).getByRole('switch', { name: 'Start at the trunk base' })).not.toBeChecked()
     await user.click(within(dialog).getByRole('switch', { name: 'Hop between branch points' }))
     await waitFor(() => expect(store.getState().app?.settings.routing.treeWalk).toEqual({ startAtTrunkBase: false, hopBetweenBranchPoints: true, searchRunsOverTokens: 1_500 }))
@@ -175,7 +175,14 @@ describe('shell', () => {
     await waitFor(() => expect(store.getState().app?.settings.routing.treeWalk.startAtTrunkBase).toBe(true))
     expect(store.getState().app?.settings.routing.treeWalk.hopBetweenBranchPoints).toBe(true)
     await user.click(within(dialog).getByRole('radio', { name: /One pass/ }))
-    await waitFor(() => expect(within(dialog).queryAllByRole('switch')).toHaveLength(0))
+    await waitFor(() => expect(within(dialog).queryAllByRole('switch')).toHaveLength(2))
+    // Context summaries apply to either strategy, and say that nothing generates them yet.
+    expect(within(dialog).getAllByText(/Summaries are not generated yet/)).toHaveLength(2)
+    await user.click(within(dialog).getByRole('switch', { name: 'Use context summaries when available' }))
+    await waitFor(() => expect(store.getState().app?.settings.routing.useSummaryIfAvailable).toBe(true))
+    expect(store.getState().app?.settings.routing.backgroundSummaries).toBe(false)
+    await user.click(within(dialog).getByRole('switch', { name: 'Summarise context in the background' }))
+    await waitFor(() => expect(store.getState().app?.settings.routing.backgroundSummaries).toBe(true))
     expect(store.getState().app?.settings.routing.treeWalk.startAtTrunkBase).toBe(true)
 
     await user.click(within(dialog).getByRole('tab', { name: 'Debug views' }))

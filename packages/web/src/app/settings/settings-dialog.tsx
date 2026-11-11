@@ -405,6 +405,21 @@ const TREE_WALK_SWITCHES: readonly { key: 'startAtTrunkBase' | 'hopBetweenBranch
   },
 ]
 
+/** Context summaries for routing decisions. Nothing produces a summary yet, and the wording says so. */
+const SUMMARY_SWITCHES: readonly { key: 'useSummaryIfAvailable' | 'backgroundSummaries'; label: string; description: string }[] = [
+  {
+    key: 'useSummaryIfAvailable',
+    label: 'Use context summaries when available',
+    description:
+      'Routing reads a summary of the earlier work and the answer’s own content, not the answer’s usual line. Answers are still written from the full context. Summaries are not generated yet, so this changes nothing for now.',
+  },
+  {
+    key: 'backgroundSummaries',
+    label: 'Summarise context in the background',
+    description: 'Offers finished work to the summariser after each run. Summaries are not generated yet: turning this on has no effect for now.',
+  },
+]
+
 function ReferentSettings({ settings }: { settings: Settings }) {
   const change = useChangeSettings()
   const label = useId()
@@ -430,6 +445,15 @@ function ReferentSettings({ settings }: { settings: Settings }) {
             />
           ))
         : null}
+      {SUMMARY_SWITCHES.map((entry) => (
+        <DebugRow
+          key={entry.key}
+          label={entry.label}
+          description={entry.description}
+          checked={settings.routing[entry.key]}
+          onChange={(checked) => void change({ routing: { [entry.key]: checked } })}
+        />
+      ))}
     </Panel>
   )
 }

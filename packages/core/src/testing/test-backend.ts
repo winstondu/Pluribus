@@ -12,7 +12,7 @@ import {
   type SettingsPatch,
   type StreamFrame,
 } from '@committee/protocol'
-import type { Backend, CoreOptions, ReferentStrategy } from '../ports'
+import type { Backend, ContextSummariser, ContextSummaryProvider, CoreOptions, ReferentStrategy } from '../ports'
 import { createEngine, type EngineInternals } from '../engine/backend'
 import { defaultModules } from '../engine/engine-module'
 import type { CoreModule } from '../engine/module'
@@ -39,6 +39,10 @@ export interface TestBackendOverrides {
   readonly useScriptedRouter?: boolean
   /** Injected in place of the referent strategy that settings name (routing pipeline only). */
   readonly referentStrategy?: ReferentStrategy
+  /** Injected in place of the provider that returns a node's context chain unchanged. */
+  readonly contextSummaryProvider?: ContextSummaryProvider
+  /** Injected in place of the summariser that produces nothing. */
+  readonly contextSummariser?: ContextSummariser
   // Reused across a simulated interruption:
   readonly clock?: FakeClock
   readonly model?: ScriptedModelProvider
@@ -120,6 +124,8 @@ export async function createTestBackend(overrides: TestBackendOverrides = {}): P
       ids,
       ...(overrides.useScriptedRouter === false ? {} : { router }),
       ...(overrides.referentStrategy ? { referentStrategy: overrides.referentStrategy } : {}),
+      ...(overrides.contextSummaryProvider ? { contextSummaryProvider: overrides.contextSummaryProvider } : {}),
+      ...(overrides.contextSummariser ? { contextSummariser: overrides.contextSummariser } : {}),
     },
     overrides.options,
     modules,

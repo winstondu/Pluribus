@@ -73,5 +73,18 @@ export type {
   ScoredSection,
   UnitReferents,
 } from './referent-strategy'
+export type {
+  ContextChain,
+  ContextSummariser,
+  ContextSummary,
+  ContextSummaryDraft,
+  ContextSummaryProvenance,
+  ContextSummaryProvider,
+  DecisionContext,
+  DecisionContextRequest,
+  SummariseOutcome,
+  SummariseReason,
+  SummariseRequest,
+} from './context-summary'
 export type { Backend, CoreDependencies, CoreOptions } from './backend'
 export { DEFAULT_CORE_OPTIONS } from './backend'

@@ -3,6 +3,7 @@ import type { Clock, Timers } from './clock'
 import type { DecisionProvider } from './decision-provider'
 import type { Decomposer } from './decomposer'
 import type { ModelProvider } from './model-provider'
+import type { ContextSummariser, ContextSummaryProvider } from './context-summary'
 import type { ReferentStrategy } from './referent-strategy'
 import type { Router } from './router'
 import type { EventStore, ProjectionCache, SecretsStore } from './stores'
@@ -34,6 +35,17 @@ export interface CoreDependencies {
    * `settings.routing.referentStrategy`. Left out by the application.
    */
   readonly referentStrategy?: ReferentStrategy
+  /**
+   * What the decision model is shown for a node while
+   * `settings.routing.useSummaryIfAvailable` is on. Left out, the backend
+   * uses the provider that returns the node's context chain unchanged.
+   */
+  readonly contextSummaryProvider?: ContextSummaryProvider
+  /**
+   * Offered finished work while `settings.routing.backgroundSummaries` is
+   * on. Left out, the backend uses the summariser that produces nothing.
+   */
+  readonly contextSummariser?: ContextSummariser
 }
 
 /** Tunables that are build choices, not user settings. */

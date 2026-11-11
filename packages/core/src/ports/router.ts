@@ -25,6 +25,7 @@ import type {
   WholeRequestBarrier,
 } from '@committee/protocol'
 import type { CancelSignal } from './cancel'
+import type { DecisionContext } from './context-summary'
 
 /**
  * The seam between the engine and the routing pipeline (11 · "Routing").
@@ -81,6 +82,13 @@ export interface RoutingInput {
   /** Requirements already session-wide in this conversation (Q17). */
   readonly sessionRequirements: readonly Requirement[]
   readonly settings: Pick<Settings, 'models' | 'thresholds' | 'routing'>
+  /**
+   * What the decision model may be shown for a node in place of its usual
+   * line (docs/build/context-summaries.md). Present while
+   * `settings.routing.useSummaryIfAvailable` is on; the backend answers it
+   * from the context summary provider and its own context assembly.
+   */
+  readonly decisionContext?: (nodeId: NodeId) => DecisionContext | null
   /** Mints the IDs the plan needs: directives, fragments, requirements. */
   readonly ids: IdFactory
 }

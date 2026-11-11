@@ -123,6 +123,19 @@ export interface RoutingSettings {
   readonly referentBudget: DecisionBudget
   readonly treeWalk: TreeWalkSettings
   readonly costGuard: DecisionCostGuard
+  /**
+   * Whether a referent strategy is shown a stored summary of a section's
+   * context, and the content specific to the section, in place of the
+   * section's usual line, where a summary is available
+   * (docs/build/context-summaries.md). Decisions only: a run's context is
+   * never a summary. No summaries are produced yet, so this changes nothing.
+   */
+  readonly useSummaryIfAvailable: boolean
+  /**
+   * Whether the backend offers finished work to the context summariser in
+   * the background. The only summariser so far produces nothing.
+   */
+  readonly backgroundSummaries: boolean
 }
 
 /** Views behind debug toggles (Q87, Q94). Margin rails, Focus and the split link are always on and have no toggle. */
@@ -174,6 +187,8 @@ export const DEFAULT_SETTINGS: Settings = {
     // Twice an answer priced on the cheapest answer model (0.10 in, 0.50 out per million); decisions cost 0.042 per
     // million input. 1,700 output tokens is the shortest of the answer runs measured live.
     costGuard: { maxAnswerCostRatio: 2, answerInputPrice: 0.1, answerOutputPrice: 0.5, decisionInputPrice: 0.042, expectedOutputTokens: 1_700 },
+    useSummaryIfAvailable: false,
+    backgroundSummaries: false,
   },
   debug: {
     miniMap: false,
@@ -195,6 +210,8 @@ export interface SettingsPatch {
     readonly referentBudget?: Partial<DecisionBudget>
     readonly treeWalk?: Partial<TreeWalkSettings>
     readonly costGuard?: Partial<DecisionCostGuard>
+    readonly useSummaryIfAvailable?: boolean
+    readonly backgroundSummaries?: boolean
   }
   readonly debug?: Partial<DebugToggles>
 }
@@ -212,6 +229,8 @@ export function applySettingsPatch(settings: Settings, patch: SettingsPatch): Se
       referentBudget: { ...settings.routing.referentBudget, ...definedOnly(patch.routing?.referentBudget) },
       treeWalk: { ...settings.routing.treeWalk, ...definedOnly(patch.routing?.treeWalk) },
       costGuard: { ...settings.routing.costGuard, ...definedOnly(patch.routing?.costGuard) },
+      useSummaryIfAvailable: patch.routing?.useSummaryIfAvailable ?? settings.routing.useSummaryIfAvailable,
+      backgroundSummaries: patch.routing?.backgroundSummaries ?? settings.routing.backgroundSummaries,
     },
     debug: { ...settings.debug, ...definedOnly(patch.debug) },
   }
@@ -271,6 +290,8 @@ export function normalizeSettings(stored: Partial<Settings>): Settings {
       referentBudget: { ...DEFAULT_SETTINGS.routing.referentBudget, ...stored.routing?.referentBudget },
       treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, ...stored.routing?.treeWalk },
       costGuard: { ...DEFAULT_SETTINGS.routing.costGuard, ...stored.routing?.costGuard },
+      useSummaryIfAvailable: stored.routing?.useSummaryIfAvailable ?? DEFAULT_SETTINGS.routing.useSummaryIfAvailable,
+      backgroundSummaries: stored.routing?.backgroundSummaries ?? DEFAULT_SETTINGS.routing.backgroundSummaries,
     },
     debug: { ...DEFAULT_SETTINGS.debug, ...stored.debug },
   }

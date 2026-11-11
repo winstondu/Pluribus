@@ -125,7 +125,7 @@ export const treeWalkStrategy: ReferentStrategy = {
         }
       }
       if (Object.keys(questions).length > 0) {
-        const stateText = levelState(shown, request.subject)
+        const stateText = levelState(shown, request)
         const reserve = fallbackCost(request, tree, probability, ask)
         const cost: Cost = { requests: 1, questions: Object.keys(questions).length, inputTokens: ask.estimate(stateText, questions) }
         const limit = exceeded(ask.remaining(), cost, reserve)
@@ -346,10 +346,10 @@ function mostRecent(tree: ReferentTree): SectionNode | null {
 }
 
 /** The state text of a further request: only the answers its questions name, then the subject. */
-function levelState(shown: ReadonlySet<TreeNode>, subject: string): string {
+function levelState(shown: ReadonlySet<TreeNode>, request: ReferentRequest): string {
   const sections = new Map<number, string>()
   for (const node of shown) {
-    for (const s of node.kind === 'section' ? [node] : node.members) sections.set(s.n, sectionLine(s.entry.section, s.n))
+    for (const s of node.kind === 'section' ? [node] : node.members) sections.set(s.n, sectionLine(s.entry.section, s.n, request.decisionContext(s.entry.section)))
   }
   const lines = [...sections].sort((a, b) => a[0] - b[0]).map(([, line]) => line)
   // What the pipeline's state text says under "Lines of work": which of these were requested side by side.
@@ -358,7 +358,7 @@ function levelState(shown: ReadonlySet<TreeNode>, subject: string): string {
       ? [`${node.members.map((m) => `S${m.n}`).join(', ')} were requested in parallel from the same starting point${node.group.open ? ' and are still being answered' : ''}.`]
       : [],
   )
-  return ['Answer sections of this conversation that the questions are about, oldest first:', ...lines, ...(parallel.length > 0 ? ['', ...parallel] : []), '', subject].join('\n')
+  return ['Answer sections of this conversation that the questions are about, oldest first:', ...lines, ...(parallel.length > 0 ? ['', ...parallel] : []), '', request.subject].join('\n')
 }
 
 interface Cost {
