@@ -11,7 +11,7 @@ import {
   type OperationView,
   type PrerequisiteRef,
 } from '@committee/protocol'
-import { activeMembers, groupLabel, prerequisiteLabel, prerequisiteSatisfied, sectionState, unfinishedBehind } from '../queries'
+import { activeMembers, groupLabel, withCurrentLabel, prerequisiteLabel, prerequisiteSatisfied, sectionState, unfinishedBehind } from '../queries'
 import type { ConversationState, DirectiveRow } from '../state'
 import type { Memo } from './tracking'
 
@@ -116,7 +116,7 @@ function sectionStatus(s: ConversationState, d: DirectiveRow, sectionId: string,
     case 'dependency-queued':
       return { status: 'waiting-for-results', text: waitingText(d.waitingFor.map((r) => prerequisiteLabel(s, r)), d.revised) }
     case 'paused':
-      return { status: 'paused', text: d.pause ? pausedText(d.pause.cause) : 'Paused' }
+      return { status: 'paused', text: d.pause ? pausedText(withCurrentLabel(s, d.pause.cause)) : 'Paused' }
     case 'awaiting-elicitation':
       return { status: 'awaiting-answer', text: WORDING.awaitingAnswer }
     case 'ready':

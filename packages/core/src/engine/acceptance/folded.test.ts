@@ -233,7 +233,8 @@ describe('reducers over hand-written logs', () => {
     ])
     const { snap } = foldChecked(s.c, log)
     const section = snap.transcript.sections[j.sectionId ?? '']
-    expect(section?.notes.map((n) => n.text)).toEqual(['Based on superseded neighborhood recommendations'])
+    // The note names the input by its directive's current label, whatever label the record copied.
+    expect(section?.notes.map((n) => n.text)).toEqual(['Based on superseded neighborhoods'])
     expect(section?.actions.regenerate).toBe(true)
   })
 

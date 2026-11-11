@@ -36,6 +36,9 @@ import {
   sectionDropped,
   sectionState,
   unfinishedOutcome,
+  chainLabel,
+  sectionTitle,
+  withCurrentLabel,
 } from '../queries'
 import { resolveTargets } from '../candidates'
 import { startedInSection } from '../lifecycle'
@@ -114,7 +117,11 @@ function messageView(s: ConversationState, m: Memo, id: MessageId): MessageView 
   }
   for (const directiveId of message.directiveIds) {
     const d = s.directives[directiveId]
-    if (d && d.kind === 'answer' && d.state !== 'superseded') addChain(d.chainId)
+    if (!d || d.kind !== 'answer' || d.state === 'superseded') continue
+    // Every chain one of its runs was handled on, as Focus counts them: a late retry runs on the base
+    // chain (Q92), and the member's fork, which handled its first run, keeps its mark (09 §2).
+    for (const attemptId of d.attemptIds) addChain(attemptChain(s, attemptId) ?? undefined)
+    addChain(d.chainId)
   }
   for (const directiveId of [...message.revisedDirectiveIds, ...message.releasedDirectiveIds]) addChain(s.directives[directiveId]?.chainId)
 
@@ -147,7 +154,10 @@ function replyingTo(s: ConversationState, id: MessageId): ReplyingToView | null 
   if (!message) return null
   const original = s.messages[message.originalMessageId]
   const decision = original?.decision ?? null
-  const title = (sectionId: SectionId): string => s.sections[sectionId]?.title ?? ''
+  const title = (sectionId: SectionId): string => {
+    const section = s.sections[sectionId]
+    return section ? sectionTitle(s, section) : ''
+  }
   if (decision) {
     let units = decision.units
     if (message.kind === 'split') {
@@ -401,7 +411,7 @@ function sectionStatus(s: ConversationState, d: DirectiveRow): SectionStatus | n
     case 'dependency-queued':
       return { kind: 'waiting-for-results', text: waitingText(d.waitingFor.map((ref) => prerequisiteLabel(s, ref)), d.revised) }
     case 'paused':
-      return { kind: 'paused', text: d.pause ? pausedText(d.pause.cause) : WORDING.awaitingAnswer }
+      return { kind: 'paused', text: d.pause ? pausedText(withCurrentLabel(s, d.pause.cause)) : WORDING.awaitingAnswer }
     case 'ready':
       // Ready work is only "waiting for a free slot" once the scheduler found every slot taken; until
       // then it is about to start (its tokens are being counted).
@@ -433,10 +443,11 @@ function sectionView(s: ConversationState, m: Memo, id: SectionId): SectionView 
 
   const notes: SectionNote[] = []
   if (section.supersededInputs && section.supersededInputs.inputs.length > 0) {
+    const inputs = section.supersededInputs.inputs.map((i) => (i.kind === 'session-requirement' ? i : withCurrentLabel(s, i)))
     notes.push({
       kind: 'superseded-input',
-      text: supersededInputText(section.supersededInputs.inputs.map((i) => i.label)),
-      inputs: section.supersededInputs.inputs,
+      text: supersededInputText(inputs.map((i) => i.label)),
+      inputs,
     })
   }
   const redone = redoneByDefault(s, section)
@@ -471,7 +482,7 @@ function sectionView(s: ConversationState, m: Memo, id: SectionId): SectionView 
     responseId: section.responseId,
     messageId: response?.messageId ?? d.messageId,
     kind: d.kind,
-    title: section.title,
+    title: sectionTitle(s, section),
     state,
     directiveState: d.state,
     placement,
@@ -696,7 +707,7 @@ function chainAssociation(s: ConversationState, chainId: ChainId): ChainAssociat
     id: chainId,
     kind: chain.kind,
     colorIndex: chain.colorIndex,
-    label: chain.label,
+    label: chainLabel(s, chain),
     focus: {
       own: { messageIds: ownMessages.filter((id) => messageVisible(s, id)), sectionIds: ownSections },
       inherited: {

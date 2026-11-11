@@ -104,7 +104,7 @@ export interface ConversationState {
   readonly operationOrder: readonly OperationId[]
 }
 
-export const STATE_VERSION = 2
+export const STATE_VERSION = 3
 
 export type Table<T> = { readonly [id: string]: T }
 
@@ -276,7 +276,10 @@ export interface ChainRow {
   readonly kind: ChainKind
   readonly colorIndex: number
   readonly baseChainId: ChainId | null
+  /** The label it was created with; shown only when `labelDirectiveId` is null (`chainLabel`). */
   readonly label: string
+  /** The directive it is named after: the chain follows that directive's label. */
+  readonly labelDirectiveId: DirectiveId | null
   /** Its nodes in order along the chain. */
   readonly nodeIds: readonly NodeId[]
 }

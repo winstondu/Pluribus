@@ -1,5 +1,5 @@
-import type { AttemptId, DirectiveId, RunInspection } from '@committee/protocol'
-import { barrierOf, unsatisfiedPrerequisites } from '../queries'
+import type { AttemptId, DirectiveId, NodeId, RunInspection } from '@committee/protocol'
+import { barrierOf, nodeParents, sectionTitle, unsatisfiedPrerequisites } from '../queries'
 import { computeWait } from '../lifecycle'
 import type { ConversationState } from '../state'
 import { waitTarget } from './queue'
@@ -48,7 +48,7 @@ export function runInspection(s: ConversationState, directiveId: DirectiveId, at
     input: attempt?.context ?? null,
     waitingFor,
     barrier: barrierView,
-    ancestry: (attempt?.context.nodeIds ?? []).map((nodeId) => {
+    ancestry: rootFirst(s, attempt?.context.nodeIds ?? []).map((nodeId) => {
       const node = s.nodes[nodeId]
       const label = node?.kind === 'join-back' ? 'join-back' : node?.directiveId ? (s.directives[node.directiveId]?.label ?? '') : ''
       return { nodeId, chainId: node?.chainId ?? d.chainId, label }
@@ -74,6 +74,43 @@ export function runInspection(s: ConversationState, directiveId: DirectiveId, at
       const a = s.attempts[id]
       return { attemptId: id, number: a?.number ?? 0, resultStatus: attemptResultStatus(s, id), sectionId: a?.sectionId ?? (d.sectionId as never) }
     }),
-    section: section ? { sectionId: section.id, responseId: section.responseId, title: section.title } : null,
+    section: section ? { sectionId: section.id, responseId: section.responseId, title: sectionTitle(s, section) } : null,
   }
+}
+
+/**
+ * The consumed nodes with every node after its parents among them, otherwise
+ * in recorded order. Attempts recorded before the context builder listed a
+ * join-back after its members still read root first.
+ */
+function rootFirst(s: ConversationState, nodeIds: readonly NodeId[]): NodeId[] {
+  const parentsOf = (id: NodeId): readonly NodeId[] => {
+    const node = s.nodes[id]
+    if (!node) return []
+    if (node.kind === 'join-back') {
+      const record = node.joinBackId ? s.joinBacks[node.joinBackId] : undefined
+      return (record?.members ?? []).map((m) => m.nodeId)
+    }
+    // A late retry's node is a child of its group's join-back (Q92).
+    const group = Object.values(s.groups).find((g) => g.lateRetryNodeIds.includes(id))
+    if (group) {
+      const latest = group.joinBackIds[group.joinBackIds.length - 1]
+      const joinNode = latest ? s.joinBacks[latest]?.nodeId : undefined
+      return joinNode ? [...nodeParents(s, node), joinNode] : nodeParents(s, node)
+    }
+    return nodeParents(s, node)
+  }
+  const out: NodeId[] = []
+  const placed = new Set<NodeId>()
+  const visiting = new Set<NodeId>()
+  const place = (id: NodeId): void => {
+    if (placed.has(id) || visiting.has(id)) return
+    visiting.add(id)
+    for (const parent of parentsOf(id)) if (nodeIds.includes(parent)) place(parent)
+    visiting.delete(id)
+    placed.add(id)
+    out.push(id)
+  }
+  for (const id of nodeIds) place(id)
+  return out
 }

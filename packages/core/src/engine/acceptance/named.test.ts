@@ -710,6 +710,38 @@ describe('engine lifecycle', () => {
     await expectRebuildable(s)
   })
 
+  test('late retry · rails: the retry is handled on the base chain in its color; the failed attempt, the message and Focus keep the fork it ran on', async () => {
+    const s = await tripWithA(answer('Gion.', 100, 300))
+    await s.ask('Suggest rainy-day activities', { label: 'activities', placement: s.onHeadOf('brief') }, [say(10, 'Mus'), fail(50, 'invalid-request')])
+    await s.t.advance(400)
+    const group = Object.values(s.state().groups)[0]
+    expect(group?.state).toBe('closed')
+    const forkChainId = s.d('activities').chainId
+    const baseChainId = group?.baseChainId
+    expect(forkChainId).not.toBe(baseChainId)
+    const before = await s.snap()
+    const colors = Object.fromEntries(before.genealogy.chainIds.map((id) => [id, before.genealogy.chains[id]?.colorIndex]))
+    expect((await s.section('activities')).chainId).toBe(forkChainId)
+
+    s.t.model.script('Suggest rainy-day activities', answer('Museums.', 10, 20))
+    await s.t.send({ type: 'retry', conversationId: s.c, target: { kind: 'section', sectionId: s.d('activities').sectionId as SectionId } })
+    await s.t.advance(50)
+    expect(s.d('activities').state).toBe('completed')
+    const snap = await s.snap()
+    const view = await s.section('activities')
+    // The retry continues from the join-back: the base chain's color (01 · "Chain colors", Q78), on its node's chain (Q92).
+    expect(view.chainId).toBe(baseChainId)
+    const [failed, retried] = view.attemptIds.map((id) => snap.transcript.attempts[id])
+    expect(failed?.chainId).toBe(forkChainId)
+    expect(retried?.chainId).toBe(baseChainId)
+    // The message's rail shows both chains its runs were handled on, the fork first, as separate marks.
+    expect(snap.transcript.messages[view.messageId]?.chainIds).toEqual([forkChainId, baseChainId])
+    // Focus on the fork still owns the message whose first run it handled; no chain changed color.
+    expect(snap.transcript.chains[forkChainId]?.focus.own.messageIds).toContain(view.messageId)
+    expect(Object.fromEntries(snap.genealogy.chainIds.map((id) => [id, snap.genealogy.chains[id]?.colorIndex]))).toMatchObject(colors)
+    await expectRebuildable(s)
+  })
+
   test('app · conversations are created, titled, listed and deleted; the key reaches only the secrets store', async () => {
     const s = await scenario({ key: false })
     let app = await s.t.backend.snapshot({ kind: 'app' })

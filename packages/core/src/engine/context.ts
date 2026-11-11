@@ -313,8 +313,6 @@ function readJoinBack(state: ConversationState, b: Builder, joinNodeId: NodeId, 
   const latestId = group.joinBackIds[group.joinBackIds.length - 1]
   const record = latestId ? state.joinBacks[latestId] : undefined
   if (!record) return
-  b.node(joinNodeId)
-  if (record.nodeId !== joinNodeId) b.node(record.nodeId)
   for (const member of record.members) {
     const d = state.directives[member.directiveId]
     if (!d) continue
@@ -335,6 +333,9 @@ function readJoinBack(state: ConversationState, b: Builder, joinNodeId: NodeId, 
       b.input({ directiveId: d.id, attemptId: null, marker: member.outcome })
     }
   }
+  // The join-back is a child of its member nodes, and the late-retry tail of the join-back: root first.
+  b.node(joinNodeId)
+  if (record.nodeId !== joinNodeId) b.node(record.nodeId)
   for (const tailId of group.lateRetryNodeIds) {
     if (tailId === runNodeId) continue
     const tail = state.nodes[tailId]

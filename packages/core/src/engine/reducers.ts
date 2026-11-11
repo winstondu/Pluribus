@@ -269,6 +269,7 @@ const REDUCERS: ReducerTable = {
       colorIndex: e.colorIndex,
       baseChainId: e.baseChainId,
       label: e.label,
+      labelDirectiveId: e.labelDirectiveId ?? null,
       nodeIds: [],
     }),
     chainOrder: append(state.chainOrder, e.chainId),

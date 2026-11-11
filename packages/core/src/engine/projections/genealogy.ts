@@ -6,7 +6,7 @@ import {
   type NodeView,
   type SiblingGroupView,
 } from '@committee/protocol'
-import { currentJoinBack, nodeParents, resolvePoint } from '../queries'
+import { chainLabel, currentJoinBack, nodeParents, resolvePoint } from '../queries'
 import type { ConversationState, NodeRow } from '../state'
 import type { Memo } from './tracking'
 
@@ -20,7 +20,7 @@ export function genealogyProjection(s: ConversationState, m: Memo): GenealogyPro
       id,
       kind: chain.kind,
       colorIndex: chain.colorIndex,
-      label: chain.label,
+      label: chainLabel(s, chain),
       baseChainId: chain.baseChainId,
       nodeIds: chain.nodeIds,
     }

@@ -8,7 +8,7 @@ import {
   type QueueProjection,
   type WaitTargetView,
 } from '@committee/protocol'
-import { prerequisiteLabel, unfinishedBehind } from '../queries'
+import { prerequisiteLabel, sectionTitle, unfinishedBehind, withCurrentLabel } from '../queries'
 import type { ConversationState, DirectiveRow } from '../state'
 import type { Memo } from './tracking'
 
@@ -28,7 +28,7 @@ export function queueProjection(s: ConversationState, m: Memo): QueueProjection 
     const waitingFor = d.waitingFor.map((ref) => waitTarget(s, d, ref))
     let recovery: QueueItemView['recovery'] = null
     if (d.state === 'paused' && d.pause) {
-      const cause = d.pause.cause
+      const cause = withCurrentLabel(s, d.pause.cause)
       const prerequisite = s.directives[cause.directiveId]
       const labels = recoveryLabels(cause.label, d.label)
       recovery = {
@@ -50,7 +50,7 @@ export function queueProjection(s: ConversationState, m: Memo): QueueProjection 
       waitingFor,
       text:
         d.state === 'paused' && d.pause
-          ? pausedText(d.pause.cause)
+          ? pausedText(withCurrentLabel(s, d.pause.cause))
           : waitingText(
               waitingFor.map((w) => w.label),
               d.revised,
@@ -78,7 +78,7 @@ export function queueProjection(s: ConversationState, m: Memo): QueueProjection 
             const latest = section?.attemptIds[section.attemptIds.length - 1]
             return {
               sectionId: c.sectionId,
-              title: section?.title ?? '',
+              title: section ? sectionTitle(s, section) : '',
               excerpt: (latest ? (s.attemptText[latest] ?? '') : '').slice(0, 160),
               chainId: d?.chainId ?? ('' as never),
             }
@@ -96,7 +96,7 @@ export function queueProjection(s: ConversationState, m: Memo): QueueProjection 
           // Work the user stopped or cancelled during the wait is no longer part of the choice: it is not redone by default.
           options: record.options
             .filter((o) => !endedByUser(s.directives[o.directiveId]?.state))
-            .map((o) => ({ ...o, selected: o.locked || row.selected.includes(o.directiveId) })),
+            .map((o) => ({ ...withCurrentLabel(s, o), selected: o.locked || row.selected.includes(o.directiveId) })),
           deadlineAt: record.deadlineAt,
           waitMs: Math.max(0, record.deadlineAt - row.raisedAt),
         })

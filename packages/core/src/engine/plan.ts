@@ -365,10 +365,23 @@ interface Placed {
   readonly prerequisites: readonly PrerequisiteRef[]
 }
 
-function newChain(ctx: StepContext, kind: ChainKind, baseChainId: ChainId | null, label: string): ChainId {
+/** A new chain, named after `namedFor`'s label: it follows that directive's label from then on. */
+function newChain(ctx: StepContext, kind: ChainKind, baseChainId: ChainId | null, namedFor: { readonly directiveId: DirectiveId; readonly label: string }): ChainId {
   const chainId = ctx.ids.next('chain')
-  ctx.emit({ type: 'chain-created', chainId, kind, colorIndex: ctx.state.chainOrder.length, baseChainId, label })
+  ctx.emit({
+    type: 'chain-created',
+    chainId,
+    kind,
+    colorIndex: ctx.state.chainOrder.length,
+    baseChainId,
+    label: namedFor.label,
+    labelDirectiveId: namedFor.directiveId,
+  })
   return chainId
+}
+
+function namedAfter(d: { readonly id: DirectiveId; readonly label: string } | undefined): { readonly directiveId: DirectiveId; readonly label: string } | null {
+  return d ? { directiveId: d.id, label: d.label } : null
 }
 
 function newNode(ctx: StepContext, unit: PlannedUnit, chainId: ChainId, plannedParents: readonly PointRef[]): NodeId {
@@ -521,7 +534,7 @@ export function nearestSettledAncestor(state: ConversationState, nodeId: NodeId)
 }
 
 function placeNewChain(unit: PlannedUnit, ctx: StepContext): Placed {
-  const chainId = newChain(ctx, 'root', null, unit.label)
+  const chainId = newChain(ctx, 'root', null, unit)
   return { nodeId: newNode(ctx, unit, chainId, []), chainId, after: [], prerequisites: unit.prerequisites }
 }
 
@@ -621,7 +634,7 @@ function placeJoinChain(unit: PlannedUnit, parents: readonly PointRef[], ctx: St
     if (only?.kind === 'node') return placeConsumer(current, only.nodeId, ctx)
     return placeNewChain(current, ctx)
   }
-  const chainId = newChain(ctx, 'join', null, current.label)
+  const chainId = newChain(ctx, 'join', null, current)
   return { nodeId: newNode(ctx, current, chainId, points), chainId, after: [], prerequisites: current.prerequisites }
 }
 
@@ -692,7 +705,7 @@ function placeOn(unit: PlannedUnit, start: NodeId, ctx: StepContext): Placed {
   // Case 2: P is a member of a sibling group, or not its chain's last node. A branch.
   const isMember = node.groupId !== null
   if (isMember || chainTip(state, node.chainId) !== start) {
-    const chainId = newChain(ctx, 'branch', node.chainId, unit.label)
+    const chainId = newChain(ctx, 'branch', node.chainId, unit)
     return { nodeId: newNode(ctx, unit, chainId, [{ kind: 'node', nodeId: start }]), chainId, after: [], prerequisites }
   }
 
@@ -703,7 +716,7 @@ function placeOn(unit: PlannedUnit, start: NodeId, ctx: StepContext): Placed {
 function placeFork(unit: PlannedUnit, start: NodeId, childIds: readonly DirectiveId[], ctx: StepContext): Placed {
   const open = openGroupAt(ctx.state, start)
   if (open) {
-    const chainId = newChain(ctx, 'fork', open.baseChainId, unit.label)
+    const chainId = newChain(ctx, 'fork', open.baseChainId, unit)
     const nodeId = newNode(ctx, unit, chainId, [{ kind: 'node', nodeId: start }])
     return {
       nodeId,
@@ -722,7 +735,7 @@ function placeFork(unit: PlannedUnit, start: NodeId, childIds: readonly Directiv
   const ownChainId = startNode.chainId
   const continuing = childIds.filter((id) => ctx.state.directives[id]?.chainId === ownChainId)
   const baseChainId = chainMovedOn(ctx.state, start, continuing)
-    ? newChain(ctx, 'branch', ownChainId, ctx.state.directives[startNode.directiveId ?? '']?.label ?? unit.label)
+    ? newChain(ctx, 'branch', ownChainId, namedAfter(ctx.state.directives[startNode.directiveId ?? '']) ?? unit)
     : ownChainId
   const members: SiblingMember[] = []
   const rechained: NodeRechaining[] = []
@@ -731,7 +744,7 @@ function placeFork(unit: PlannedUnit, start: NodeId, childIds: readonly Directiv
     if (!child) continue
     if (child.chainId === ownChainId) {
       // It was continuing P's chain: it moves to a fork chain of its own, with what is queued behind it.
-      const forkChainId = newChain(ctx, 'fork', baseChainId, child.label)
+      const forkChainId = newChain(ctx, 'fork', baseChainId, namedAfter(child) ?? unit)
       const chain = ctx.state.chains[ownChainId]
       const index = chain ? chain.nodeIds.indexOf(child.nodeId) : -1
       const behind = chain && index >= 0 ? chain.nodeIds.slice(index + 1) : []
@@ -744,7 +757,7 @@ function placeFork(unit: PlannedUnit, start: NodeId, childIds: readonly Directiv
       members.push({ directiveId: child.id, nodeId: child.nodeId, chainId: child.chainId })
     }
   }
-  const chainId = newChain(ctx, 'fork', baseChainId, unit.label)
+  const chainId = newChain(ctx, 'fork', baseChainId, unit)
   const nodeId = newNode(ctx, unit, chainId, [{ kind: 'node', nodeId: start }])
   members.push({ directiveId: unit.directiveId, nodeId, chainId })
   return {

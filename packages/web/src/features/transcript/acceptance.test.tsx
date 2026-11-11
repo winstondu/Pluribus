@@ -120,7 +120,10 @@ test('P7 (routing) · routing status and a routing failure are on the provisiona
   expect(within(message).queryByRole('alert')).toBeNull()
   expect(message.textContent).not.toContain('did not answer')
 
-  // Retry on the request routes again.
+  // Retry on the request routes again. It is the request's control (10 · Controls: Retry on "a request"),
+  // offered once: the bubble's failure text carries no second Retry that sends the same command.
+  expect(within(bubble).queryByRole('button', { name: /retry/i })).toBeNull()
+  expect([...view.container.querySelectorAll('button')].filter((button) => /retry/i.test(button.textContent ?? ''))).toHaveLength(1)
   fireEvent.click(within(message).getByRole('button', { name: 'Retry request' }))
   expect(view.backend?.sent.at(-1)).toEqual({
     type: 'retry',

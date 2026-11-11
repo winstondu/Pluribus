@@ -195,7 +195,29 @@ describe('chains, dependencies and context', () => {
     expect((await inspect('evening')).ancestry).toEqual(evening.ancestry)
     const itinerary = await inspect('itinerary')
     const joinNode = s.state().joinBacks[Object.values(s.state().groups)[0]?.joinBackIds[0] ?? '']?.nodeId
-    expect(itinerary.ancestry.map((n) => n.nodeId)).toEqual([s.d('brief').nodeId, joinNode, s.d('neighborhoods').nodeId, s.d('activities').nodeId])
+    // Root first: the join-back after the member nodes it is a child of.
+    expect(itinerary.ancestry.map((n) => n.nodeId)).toEqual([s.d('brief').nodeId, s.d('neighborhoods').nodeId, s.d('activities').nodeId, joinNode])
+  })
+
+  test('run inspector · "Context ancestry, root first" lists every node after the nodes it is a child of', async () => {
+    const s = await trip(answer('Gion.', 100, 400), answer('Museums.', 50, 200))
+    await s.t.advance(500)
+    await s.ask('Use those to make an itinerary', { label: 'itinerary', placement: s.onGroupOf('neighborhoods') })
+    await s.t.advance(50)
+    const result = await s.t.backend.snapshot({ kind: 'run', conversationId: s.c, directiveId: s.id('itinerary'), attemptId: null })
+    if (!result.ok) throw new Error(result.error.message)
+    const ancestry = result.value.ancestry.map((n) => n.nodeId)
+    const { genealogy } = await s.snap()
+    const joinNode = Object.values(genealogy.nodes).find((n) => n.kind === 'join-back')
+    expect(joinNode).toBeDefined()
+    expect(ancestry).toContain(joinNode?.id)
+    for (const [index, id] of ancestry.entries()) {
+      const node = genealogy.nodes[id]
+      const parents = node?.parents ?? []
+      for (const parent of parents) if (ancestry.includes(parent)) expect(ancestry.indexOf(parent)).toBeLessThan(index)
+    }
+    // The recorded input states the same order (ConsumedContext.nodeIds is "root first").
+    expect(result.value.input?.nodeIds).toEqual(ancestry)
   })
 
   test('C11 · D from the same starting context joins an open A/B group; C consuming B does not', async () => {

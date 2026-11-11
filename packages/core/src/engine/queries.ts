@@ -17,7 +17,7 @@ import {
   type SiblingGroupId,
   type UnfinishedOutcome,
 } from '@committee/protocol'
-import type { ConversationState, DirectiveRow, GroupRow, JoinBackRow, NodeRow, SectionRow } from './state'
+import type { ChainRow, ConversationState, DirectiveRow, GroupRow, JoinBackRow, NodeRow, SectionRow } from './state'
 
 /**
  * Reading the state. Pure functions shared by the engine, the projections
@@ -304,6 +304,36 @@ export function unfinishedBehind(state: ConversationState, dependent: DirectiveR
   return activeMembers(group)
     .map((m) => m.directiveId)
     .filter((id) => !dependent.waived.includes(id) && currentResult(state, id) === null)
+}
+
+// ── one name for one piece of work ──
+//
+// A directive's label is the one name of its work: provisional until the
+// decomposer's label arrives (`directive-labeled`), then the generated one.
+// Section titles, chain labels and labels copied into records (a pause cause,
+// a superseded input, a redo option) are shown through these, never as stored,
+// so every surface changes name at the same moment.
+
+/** The current name of a directive's work, or `fallback` when the directive is unknown. */
+export function directiveLabel(state: ConversationState, directiveId: DirectiveId, fallback: string): string {
+  return state.directives[directiveId]?.label ?? fallback
+}
+
+/** An answer section is titled with its directive's label; a clarification question keeps its own title. */
+export function sectionTitle(state: ConversationState, section: SectionRow): string {
+  const d = state.directives[section.directiveId]
+  return d && d.kind === 'answer' ? d.label : section.title
+}
+
+/** A chain is named after the directive it was created for, under that directive's current label. */
+export function chainLabel(state: ConversationState, chain: ChainRow): string {
+  return chain.labelDirectiveId ? directiveLabel(state, chain.labelDirectiveId, chain.label) : chain.label
+}
+
+/** A record that names a directive, with the label as it now stands. */
+export function withCurrentLabel<T extends { readonly directiveId: DirectiveId; readonly label: string }>(state: ConversationState, record: T): T {
+  const label = directiveLabel(state, record.directiveId, record.label)
+  return label === record.label ? record : { ...record, label }
 }
 
 /** "neighborhoods", or "neighborhoods + activities" for a whole group (03 · "Composer queue"). */

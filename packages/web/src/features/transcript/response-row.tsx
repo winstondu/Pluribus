@@ -1,16 +1,13 @@
-import type { MessageId, ResponseId, ResponseReason, ResponseView, SectionCounts, SectionId } from '@committee/protocol'
-import { RotateCwIcon } from 'lucide-react'
+import type { ResponseId, ResponseReason, ResponseView, SectionCounts, SectionId } from '@committee/protocol'
 import { AnimatePresence, motion } from 'motion/react'
 import { memo } from 'react'
-import { useMessage, useResponse, useSection } from '@/backend'
-import { Button } from '@/components/ui/button'
+import { useResponse, useSection } from '@/backend'
 import { ChainRail, useFocusedChainId, useSectionFocus, useSectionsFocus } from '@/features/association'
 import { cn } from '@/lib/utils'
 import { FocusTag } from './focus-style'
 import { StatusLine } from './marks'
 import { ENTER, EXIT, MOVE, useEntrance, useKept } from './motion'
 import { SectionBlock } from './section'
-import { useCommand } from './use-command'
 
 /** What an additional response is, said quietly beside "Committee" (03: never inserted into the earlier response). */
 const REASON_LABEL: { [R in ResponseReason]: string | null } = {
@@ -133,8 +130,8 @@ function isMixed(counts: SectionCounts): boolean {
 /**
  * The provisional responding bubble of a message that is not routed yet.
  * This is where routing status and a routing failure are shown; nothing is
- * drawn on the user message (P7). A routing failure offers Retry here too,
- * which is the request's Retry.
+ * drawn on the user message (P7). A routing failure's Retry is the
+ * request's, in the message header (10 · Controls), and is not repeated here.
  */
 function RoutingBubble({ response, dimmed }: { response: ResponseView; dimmed: boolean }) {
   const routing = response.routing
@@ -147,30 +144,9 @@ function RoutingBubble({ response, dimmed }: { response: ResponseView; dimmed: b
     >
       <ChainRail chainIds={[]} />
       <div className="flex min-w-0 flex-1 flex-col gap-1.5 py-0.5">
-        {routing.state === 'failed' ? (
-          <>
-            {/* Status, not a mark: a request as a whole never shows failed (08, 10). */}
-            <StatusLine kind="routing-failed" text={routing.text} />
-            <RetryRouting messageId={response.messageId} />
-          </>
-        ) : (
-          <StatusLine kind={routing.state} text={routing.text} />
-        )}
+        {/* A failure is status, not a mark: a request as a whole never shows failed (08, 10). */}
+        <StatusLine kind={routing.state === 'failed' ? 'routing-failed' : routing.state} text={routing.text} />
       </div>
-    </div>
-  )
-}
-
-function RetryRouting({ messageId }: { messageId: MessageId }) {
-  const command = useCommand()
-  const retry = useMessage(messageId)?.actions.retry === true
-  if (!retry) return null
-  return (
-    <div className="-ml-2">
-      <Button variant="ghost" size="xs" className="text-muted-foreground" onClick={() => void command({ type: 'retry', target: { kind: 'request', messageId } })}>
-        <RotateCwIcon aria-hidden />
-        Retry
-      </Button>
     </div>
   )
 }

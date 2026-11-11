@@ -248,6 +248,13 @@ export interface ChainCreated extends ConversationEnvelope<'chain-created'> {
   readonly baseChainId: ChainId | null
   /** Short name for legends and tooltips. */
   readonly label: string
+  /**
+   * The directive whose label `label` is. Once `directive-labeled` renames
+   * that directive, the chain is shown under the new label, so a piece of
+   * work has one name everywhere. Absent in logs written before it existed:
+   * the chain then keeps `label`.
+   */
+  readonly labelDirectiveId?: DirectiveId | null
 }
 
 /** Why a genealogy node exists. */
