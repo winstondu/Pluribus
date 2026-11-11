@@ -251,15 +251,28 @@ export function undoSplitAvailable(s: ConversationState, originalId: MessageId):
     }
     nodeIds.add(d.nodeId)
   }
+  // A sibling group with a split directive among its members: waiting for, or building on, the
+  // whole group is waiting for or building on that directive too (04 · "No subset bypass").
+  const groupIds = new Set<string>()
+  for (const group of Object.values(s.groups)) {
+    if (group.state === 'dissolved') continue
+    if (group.members.some((m) => directiveIds.has(m.directiveId) && !group.withdrawn.includes(m.directiveId))) groupIds.add(group.id)
+  }
   for (const id of s.directiveOrder) {
     const d = s.directives[id]
     if (!d || directiveIds.has(id) || d.originalMessageId === originalId) continue
     if (d.targets.some((t) => sectionIds.has(t))) return false
-    if (d.prerequisites.some((p) => p.kind === 'directive' && directiveIds.has(p.directiveId))) return false
-    const node = s.nodes[d.nodeId]
-    if (node?.plannedParents.some((p) => (p.kind === 'node' && nodeIds.has(p.nodeId)) || (p.kind === 'directive' && directiveIds.has(p.directiveId)))) {
+    if (d.prerequisites.some((p) => (p.kind === 'directive' && directiveIds.has(p.directiveId)) || (p.kind === 'sibling-group' && groupIds.has(p.groupId)))) {
       return false
     }
+    const node = s.nodes[d.nodeId]
+    const builds = node?.plannedParents.some(
+      (p) =>
+        (p.kind === 'node' && nodeIds.has(p.nodeId)) ||
+        (p.kind === 'directive' && directiveIds.has(p.directiveId)) ||
+        (p.kind === 'sibling-group' && groupIds.has(p.groupId)),
+    )
+    if (builds) return false
   }
   for (const id of s.messageOrder) {
     const message = s.messages[id]

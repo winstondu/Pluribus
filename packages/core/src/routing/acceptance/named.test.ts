@@ -108,8 +108,8 @@ describe('routing, as the reviews found it', () => {
       {
         composite: 0.9,
         parts: [
-          { relation: 'addition', chain: 'trip' },
-          { relation: 'addition', chain: 'trip' },
+          { relation: 'addition', chain: 'Trip brief: Kyoto, five days, November…' },
+          { relation: 'addition', chain: 'Trip brief: Kyoto, five days, November…' },
           { relation: 'dependent', after: { 1: 0.9, 2: 0.9 } },
         ],
       },
@@ -181,7 +181,7 @@ describe('routing, as the reviews found it', () => {
     s.t.model.script('Suggest some day trips', answer('Nara and Uji.', 10, 20))
     const messageId = await s.send(
       text,
-      { composite: 0.9, parts: [{ corrective: 0.95, targets: { 'Suggest neighborhoods to stay in': 0.9 } }, { relation: 'addition', chain: 'trip' }] },
+      { composite: 0.9, parts: [{ corrective: 0.95, targets: { 'Suggest neighborhoods to stay in': 0.9 } }, { relation: 'addition', chain: 'Trip brief: Kyoto, five days, November…' }] },
       {
         decompose: [
           { part: 'Actually use a luxury budget for the neighborhoods', instruction: 'Use a luxury budget for the neighborhood recommendations.', label: 'luxury' },

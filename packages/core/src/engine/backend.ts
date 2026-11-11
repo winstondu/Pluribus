@@ -62,9 +62,9 @@ import {
   type RouteOptions,
   type StepContext,
 } from './module'
-import { checkPlan } from './plan'
+import { checkPlan, nearestSettledAncestor } from './plan'
 import { Projector, projectSnapshot, runInspection } from './projections'
-import { resolvePlannedParents } from './queries'
+import { nodeInFlight, resolvePlannedParents } from './queries'
 import { fold, reduce } from './reducers'
 import { STATE_VERSION, emptyConversationState, type ConversationState } from './state'
 
@@ -167,6 +167,30 @@ class StepAborted extends Error {
     super(error.message)
     this.commandError = error
   }
+}
+
+/**
+ * A clarification question runs on the node of the work it blocks, which
+ * may wait for a result still being produced. The question reads what that
+ * work could read now: each parent still in flight is replaced by its
+ * starting context, so it never claims to have consumed an unfinished
+ * answer (C3).
+ */
+function settledParents(state: ConversationState, parents: readonly NodeId[]): NodeId[] {
+  const out: NodeId[] = []
+  const add = (id: NodeId): void => {
+    if (!out.includes(id)) out.push(id)
+  }
+  for (const parent of parents) {
+    if (!nodeInFlight(state, parent)) {
+      add(parent)
+      continue
+    }
+    const settled = nearestSettledAncestor(state, parent)
+    if (settled.kind === 'node') add(settled.nodeId)
+    else if (settled.kind === 'join') for (const p of settled.parents) if (p.kind === 'node') add(p.nodeId)
+  }
+  return out
 }
 
 export function createEngine(deps: CoreDependencies, partialOptions?: Partial<CoreOptions>, moduleList?: readonly CoreModule[]): Engine {
@@ -615,7 +639,7 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
     const d = state.directives[directiveId]
     const node = d ? state.nodes[d.nodeId] : undefined
     if (!d || !node) return null
-    const parents = resolvePlannedParents(state, node)
+    const parents = d.kind === 'clarification-question' ? settledParents(state, resolvePlannedParents(state, node)) : resolvePlannedParents(state, node)
     const context = assembleContext(state, directiveId, d.nodeId, parents)
     // Synthesis is for answers on a join chain; a clarification question is always the answer model's (PLAN §2).
     const modelRole = state.chains[d.chainId]?.kind === 'join' && d.kind === 'answer' ? 'synthesis' : 'answer'

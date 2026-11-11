@@ -28,6 +28,7 @@ import {
   openGroupAt,
   resolvePoint,
   currentJoinBack,
+  nodeParents,
 } from './queries'
 import type { ConversationState, GroupRow } from './state'
 
@@ -484,18 +485,18 @@ function placeJoinChain(unit: PlannedUnit, parents: readonly PointRef[], ctx: St
     if (group) memberOf.set(JSON.stringify(leaf), group.id)
     add(points, leaf)
   }
-  // No subset of a sibling group.
-  const byGroup = new Map<SiblingGroupId, number>()
+  // No subset of a sibling group: two members reached, by member points or through a branch from
+  // one sibling, are the whole group (Q30, C9).
   const groupOfPoint = (p: PointRef): SiblingGroupId | null =>
     p.kind === 'sibling-group' ? p.groupId : (memberOf.get(JSON.stringify(p)) ?? null)
-  for (const p of points) {
-    const g = groupOfPoint(p)
-    if (g) byGroup.set(g, (byGroup.get(g) ?? 0) + 1)
+  const reachedTwice = new Set(groupsReachedTwice(state, points))
+  for (const g of reachedTwice) {
+    if (state.groups[g]?.state === 'open') current = withPrerequisite(current, { kind: 'sibling-group', groupId: g })
   }
   const merged: PointRef[] = []
   for (const p of points) {
     const g = groupOfPoint(p)
-    if (g && (byGroup.get(g) ?? 0) >= 2) {
+    if (g && reachedTwice.has(g)) {
       add(merged, { kind: 'sibling-group', groupId: g })
       if (state.groups[g]?.state === 'open') current = withPrerequisite(current, { kind: 'sibling-group', groupId: g })
     } else add(merged, p)
@@ -537,6 +538,49 @@ function placeJoinChain(unit: PlannedUnit, parents: readonly PointRef[], ctx: St
   }
   const chainId = newChain(ctx, 'join', null, current.label)
   return { nodeId: newNode(ctx, current, chainId, points), chainId, after: [], prerequisites: current.prerequisites }
+}
+
+/**
+ * The groups of which the points reach two or more members: a member node
+ * reaches its own group, any node the members in its ancestry, a join-back
+ * every member of its record, a group point all its members.
+ */
+function groupsReachedTwice(state: ConversationState, points: readonly PointRef[]): SiblingGroupId[] {
+  const reached = new Map<SiblingGroupId, Set<DirectiveId>>()
+  const note = (g: SiblingGroupId, d: DirectiveId): void => {
+    const set = reached.get(g) ?? new Set<DirectiveId>()
+    set.add(d)
+    reached.set(g, set)
+  }
+  for (const p of points) {
+    if (p.kind === 'sibling-group') {
+      const group = state.groups[p.groupId]
+      if (group) for (const m of activeMembers(group)) note(group.id, m.directiveId)
+      continue
+    }
+    if (p.kind !== 'node') continue
+    const seen = new Set<NodeId>()
+    const stack: NodeId[] = [p.nodeId]
+    while (stack.length > 0) {
+      const id = stack.pop()
+      if (id === undefined || seen.has(id)) continue
+      seen.add(id)
+      const node = state.nodes[id]
+      if (!node) continue
+      if (node.kind === 'join-back' && node.joinGroupId) {
+        const group = state.groups[node.joinGroupId]
+        if (group) {
+          for (const m of activeMembers(group)) note(group.id, m.directiveId)
+          stack.push(group.startNodeId)
+        }
+        continue
+      }
+      const group = memberGroupOf(state, id)
+      if (group && node.directiveId) note(group.id, node.directiveId)
+      for (const parent of nodeParents(state, node)) stack.push(parent)
+    }
+  }
+  return [...reached].filter(([, set]) => set.size >= 2).map(([g]) => g)
 }
 
 function startOfGroup(state: ConversationState, groupId: SiblingGroupId): NodeId | null {

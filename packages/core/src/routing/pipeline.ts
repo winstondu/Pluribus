@@ -32,7 +32,7 @@ import type {
   RoutingPlan,
 } from '../ports'
 import { Batch, ask, type Answers } from './batch'
-import { AMBIGUITY_FLOOR, derivePlacement, resolveUnitTargets, selected, validatePlan, type TargetMode } from './derive'
+import { AMBIGUITY_FLOOR, derivePlacement, neededWork, resolveUnitTargets, selected, validatePlan, type TargetMode } from './derive'
 import { askUnit, readUnit, sectionNumbers, type UnitScope, type UnitSignals } from './questions'
 import { describeState, supply, type Supplied } from './supply'
 
@@ -172,7 +172,35 @@ async function routeMessage(deps: Deps, input: RoutingInput, signal: CancelSigna
     decomposition = { ...result.decomposition, fragments: [...result.decomposition.fragments].sort((a, b) => firstStart(a) - firstStart(b)) }
   }
 
-  const requirements = new RequirementBook(input, decomposition, sessionWide)
+  // The gate said the message makes something conversation-wide; which of the requirements the
+  // decomposer tagged so is asked of each one on its own, so a local "briefly" beside an explicit
+  // "from now on" stays local (D1, Q17).
+  const confirmed = new Set<string>()
+  if (decomposition && sessionWide) {
+    const tagged: { key: string; text: string }[] = []
+    for (const f of decomposition.fragments) {
+      for (const r of f.requirements) {
+        const key = requirementKey(r)
+        if (r.scope === 'session-wide' && !tagged.some((x) => x.key === key)) tagged.push({ key, text: r.text.trim() })
+      }
+    }
+    if (tagged.length > 0) {
+      const batch = new Batch()
+      tagged.forEach((r, i) => {
+        batch.noul(
+          `rq${i + 1}_sessionwide`,
+          `Does the user explicitly say that the requirement "${r.text}" applies to the whole conversation from now on, rather than only to this request?`,
+        )
+      })
+      const result = await ask(deps.decisionProvider, input.settings.models.decision, describeState(input, supplied, subject), batch, signal)
+      if (!result.ok) return failed(result.error)
+      record.add(result.answers)
+      tagged.forEach((r, i) => {
+        if ((result.answers.noul(`rq${i + 1}_sessionwide`) ?? 0) >= t.clearlyCorrective) confirmed.add(r.key)
+      })
+    }
+  }
+  const requirements = new RequirementBook(input, decomposition, confirmed)
   const compositeDecided: Decided<'atomic' | 'composite'> = { value: 'atomic', confidence: composite }
 
   if (isComposite && decomposition && decomposition.fragments.length >= 2) {
@@ -194,10 +222,11 @@ async function routeMessage(deps: Deps, input: RoutingInput, signal: CancelSigna
     const placed = derivePlacement(supplied, {
       relation: m.relation,
       targets,
-      needsWork: selected(m.needsWork, t.dependency),
+      needsWork: neededWork(m, targets, supplied, t),
       needsGroups: selected(m.needsGroups, t.dependency),
       needsUnits: [],
       chain: m.chain,
+      chainThreshold: t.targetChoice,
       confidences: confidencesOf(m, targets, t),
     })
     units.push({
@@ -335,6 +364,26 @@ async function routeComposite(deps: Deps, input: RoutingInput, signal: CancelSig
     else plans.push({ kind: 'unit', directiveId: input.ids.next('directive'), targets, mode: resolution.mode })
     fragmentIds.set(f.key, fragment.fragmentId)
   }
+  // A section the user replied to explicitly, or chose, is never dropped because no part scored it
+  // at the floor (T1): it goes to the part that refers to it most, preferring parts that are not new work.
+  if (given) {
+    const held = new Set(plans.flatMap((p) => (p.kind === 'unit' ? p.targets : [])))
+    for (const p of plans) if (p.kind === 'revision') for (const id of p.revision.targetDirectiveIds) {
+      const sectionId = supplied.workById.get(id)?.sectionId
+      if (sectionId) held.add(sectionId)
+    }
+    for (const sectionId of answerTargets(supplied, given.sectionIds)) {
+      if (held.has(sectionId)) continue
+      const score = (i: number): number => signals[i]?.targets.find((x) => x.id === sectionId)?.confidence ?? 0
+      const candidates = plans.map((p, i) => ({ p, i })).filter(({ p }) => p.kind === 'unit')
+      const related = candidates.filter(({ i }) => signals[i]?.relation?.value !== 'new')
+      const pool = related.length > 0 ? related : candidates
+      const best = [...pool].sort((x, y) => score(y.i) - score(x.i) || x.i - y.i)[0]
+      if (!best || best.p.kind !== 'unit') continue
+      plans[best.i] = { ...best.p, targets: [...best.p.targets, sectionId], mode: given.mode }
+      held.add(sectionId)
+    }
+  }
   if (ambiguous.size > 0 && !given) {
     return {
       kind: 'target-ambiguity',
@@ -366,10 +415,11 @@ async function routeComposite(deps: Deps, input: RoutingInput, signal: CancelSig
     const placed = derivePlacement(supplied, {
       relation: s.relation,
       targets: p.targets,
-      needsWork: selected(s.needsWork, t.dependency),
+      needsWork: neededWork(s, p.targets, supplied, t),
       needsGroups: selected(s.needsGroups, t.dependency),
       needsUnits,
       chain: s.chain,
+      chainThreshold: t.targetChoice,
       confidences: confidencesOf(s, p.targets, t),
     })
     units.push({
@@ -712,10 +762,11 @@ class RequirementBook {
   private readonly byKey = new Map<string, Requirement>()
   private readonly uses = new Map<string, number>()
 
-  private readonly sessionWide: boolean
+  private readonly confirmed: ReadonlySet<string>
 
-  constructor(input: RoutingInput, decomposition: Decomposition | null, sessionWide: boolean) {
-    this.sessionWide = sessionWide
+  /** `confirmed`: keys of the requirements the decision model confirmed the user made conversation-wide. */
+  constructor(input: RoutingInput, decomposition: Decomposition | null, confirmed: ReadonlySet<string>) {
+    this.confirmed = confirmed
     for (const f of decomposition?.fragments ?? []) {
       const seen = new Set<string>()
       for (const r of f.requirements) {
@@ -732,7 +783,7 @@ class RequirementBook {
         this.byKey.set(key, {
           id: input.ids.next('requirement'),
           text: r.text.trim(),
-          scope: sessionWide && r.scope === 'session-wide' ? 'session-wide' : 'local',
+          scope: r.scope === 'session-wide' && confirmed.has(key) ? 'session-wide' : 'local',
           shared: (this.uses.get(key) ?? 0) >= 2,
           provenance: { messageId: input.messageId, span: r.span },
         })
@@ -755,7 +806,7 @@ class RequirementBook {
 
   /** New conversation-wide requirements, each replacing a changed one in order; changed ones left over are withdrawn. */
   planned(changed: readonly RequirementId[]): Pick<RoutingPlan, 'sessionRequirements' | 'withdrawnSessionRequirementIds'> {
-    const fresh = this.sessionWide ? [...this.byKey.values()].filter((r) => r.scope === 'session-wide') : []
+    const fresh = this.confirmed.size > 0 ? [...this.byKey.values()].filter((r) => r.scope === 'session-wide') : []
     const sessionRequirements: PlannedSessionRequirement[] = fresh.map((requirement, i) => ({ requirement, replacesRequirementId: changed[i] ?? null }))
     return { sessionRequirements, withdrawnSessionRequirementIds: changed.slice(fresh.length) }
   }

@@ -33,6 +33,8 @@ export interface UnitRules {
 export interface MessageRules {
   readonly composite?: number
   readonly sessionwide?: number
+  /** Requirement text → probability that the user made it conversation-wide; defaults to `sessionwide`. */
+  readonly sessionwideRequirements?: { readonly [text: string]: number }
   readonly barrier?: number
   /** Shared requirement number (1-based) → probability that it is ambiguous. */
   readonly sharedClarify?: { readonly [n: number]: number }
@@ -77,6 +79,10 @@ export function answerFrom(rules: { readonly [text: string]: MessageRules }) {
       if (id === 'composite') answers[id] = noul(r.composite)
       else if (id === 'sessionwide') answers[id] = noul(r.sessionwide)
       else if (id === 'barrier') answers[id] = noul(r.barrier)
+      else if (/^rq\d+_sessionwide$/.test(id)) {
+        const text = Object.keys(r.sessionwideRequirements ?? {}).find((x) => q.instructions.includes(`"${x}"`))
+        answers[id] = noul(text ? r.sessionwideRequirements?.[text] : r.sessionwide)
+      }
       else if (/^q(\d+)_clarify$/.test(id)) answers[id] = noul(r.sharedClarify?.[Number(/^q(\d+)/.exec(id)?.[1])])
       else if (/^a\d+_\d+$/.test(id)) {
         const label = Object.keys(r.affected ?? {}).find((l) => q.instructions.includes(`"${l}"`))

@@ -313,7 +313,7 @@ export function oracleDecisionProvider(example: CorpusExample, input: RoutingInp
       probabilities: Object.fromEntries(options.map((o) => [o, o === option ? confidence : (1 - confidence) / Math.max(1, options.length - 1)])),
     })
     if (id === 'composite') return noul(expect.composition !== undefined && expect.composition !== 'atomic')
-    if (id === 'sessionwide') return noul(expect.sessionWide === true)
+    if (id === 'sessionwide' || /^rq\d+_sessionwide$/.test(id)) return noul(expect.sessionWide === true)
     if (id === 'barrier') return noul(expect.barrier === true)
     if (/^q\d+_clarify$/.test(id)) return noul(expect.sharedClarification === true)
     if (/^a\d+_\d+$/.test(id)) {

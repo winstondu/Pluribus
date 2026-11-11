@@ -10,7 +10,7 @@ import {
   type SectionId,
   type SiblingGroupId,
 } from '@committee/protocol'
-import type { PlannedUnit, RoutingInput, RoutingPlan } from '../ports'
+import type { CandidateGroup, CandidateWork, PlannedUnit, RoutingInput, RoutingPlan } from '../ports'
 import type { BaseRelation, Scored, UnitSignals } from './questions'
 import type { Supplied } from './supply'
 
@@ -73,6 +73,30 @@ export function resolveUnitTargets(
   return { kind: 'resolved', sectionIds: [], mode: 'none' }
 }
 
+/**
+ * The results a unit waits for: those selected at the dependency threshold,
+ * and, when the decision model says the unit needs a result that is not
+ * available yet (relation `dependent` at the threshold) but selected none,
+ * the in-flight work it targets, or else the one in-flight result it scored
+ * plausible. Two answers never resolve silently in the direction that runs
+ * (05 · "Result-dependent work", C2).
+ */
+export function neededWork(signals: UnitSignals, targets: readonly SectionId[], supplied: Supplied, thresholds: DecisionThresholds): DirectiveId[] {
+  const chosen = selected(signals.needsWork, thresholds.dependency)
+  if (chosen.length > 0 || selected(signals.needsGroups, thresholds.dependency).length > 0) return chosen
+  const relation = signals.relation
+  if (!relation || relation.value !== 'result-dependent' || relation.confidence < thresholds.dependency) return chosen
+  const inFlight = new Set(supplied.inFlight.map((w) => w.directiveId))
+  const targeted = targets.flatMap((id) => {
+    const directiveId = supplied.sectionById.get(id)?.directiveId
+    return directiveId && inFlight.has(directiveId) ? [directiveId] : []
+  })
+  if (targeted.length > 0) return [...new Set(targeted)]
+  const plausible = signals.needsWork.filter((w) => w.confidence >= AMBIGUITY_FLOOR)
+  const only = plausible.length === 1 ? plausible[0] : undefined
+  return only ? [only.id] : chosen
+}
+
 export function selected<T>(scored: readonly Scored<T>[], threshold: number): T[] {
   return scored.filter((s) => s.confidence >= threshold).map((s) => s.id)
 }
@@ -112,6 +136,11 @@ export function derivePlacement(
     /** Earlier units of the same plan this one needs. */
     readonly needsUnits: readonly DirectiveId[]
     readonly chain: UnitSignals['chain']
+    /**
+     * The confidence the handling-chain choice needs to place the unit. Below it the choice is a
+     * guess, and a guess never decides what a run reads: the unit starts a new chain instead.
+     */
+    readonly chainThreshold: number
     readonly confidences: readonly number[]
   },
 ): DerivedPlacement {
@@ -142,7 +171,7 @@ export function derivePlacement(
 
   let explanation: string
   if (points.length === 0) {
-    const chain = unit.chain ? supplied.chains.find((c) => c.chainId === unit.chain?.id) : undefined
+    const chain = unit.chain && unit.chain.confidence >= unit.chainThreshold ? supplied.chains.find((c) => c.chainId === unit.chain?.id) : undefined
     if (base === 'new' || !chain) {
       return { placement: { kind: 'new-chain' }, prerequisites: [], relation: 'new', confidence: weakest, explanation: 'Unrelated to existing work: a new chain.' }
     }
@@ -152,28 +181,27 @@ export function derivePlacement(
     explanation = ''
   }
 
-  // Two or more members of one sibling group are the whole group (Q30).
-  const groupOf = (p: PointRef): SiblingGroupId | null => {
+  // Two or more members of one sibling group are the whole group (Q30), whether a point is a member
+  // itself or reaches one through its ancestry (a branch from one sibling): work that reads two
+  // members reads the full join-back, never a subset of it (04 · "No subset bypass").
+  const direct = (p: PointRef): SiblingGroupId | null => {
     if (p.kind === 'sibling-group') return p.groupId
     if (p.kind !== 'node') return null
-    const work = supplied.workByNode.get(p.nodeId)
-    return work?.groupId ?? null
+    return supplied.workByNode.get(p.nodeId)?.groupId ?? null
   }
-  const counts = new Map<SiblingGroupId, number>()
-  for (const p of points) {
-    const g = groupOf(p)
-    if (g) counts.set(g, (counts.get(g) ?? 0) + 1)
-  }
+  const promoted = new Set(groupsReachedTwice(supplied.workByNode, supplied.groupById, points))
   let merged: PointRef[] = []
   for (const p of points) {
-    const g = groupOf(p)
-    const ref: PointRef = g && (counts.get(g) ?? 0) >= 2 ? { kind: 'sibling-group', groupId: g } : p
+    const g = direct(p)
+    const ref: PointRef = g && promoted.has(g) ? { kind: 'sibling-group', groupId: g } : p
     if (!merged.some((q) => deepEqual(q, ref))) merged.push(ref)
+  }
+  for (const g of promoted) {
+    if (supplied.groupById.get(g)?.open) addPrerequisite({ kind: 'sibling-group', groupId: g })
   }
   for (const p of merged) {
     if (p.kind === 'sibling-group' && supplied.groupById.get(p.groupId)?.open) addPrerequisite({ kind: 'sibling-group', groupId: p.groupId })
   }
-  const promoted = new Set(merged.flatMap((p) => (p.kind === 'sibling-group' ? [p.groupId] : [])))
   const finalPrerequisites = prerequisites.filter((ref) => {
     if (ref.kind !== 'directive') return true
     const g = supplied.workById.get(ref.directiveId)?.groupId
@@ -211,6 +239,43 @@ function isAncestorPoint(supplied: Supplied, p: PointRef, q: PointRef): boolean 
   return false
 }
 
+/**
+ * The sibling groups whose members, two or more of them, the points reach:
+ * a member point reaches its own group; any node point reaches the groups
+ * of the members in its ancestry (as far as the candidates show it); a
+ * group point reaches every member. Two points that reach the same member
+ * (a sibling and a branch from it) count once.
+ */
+export function groupsReachedTwice(
+  workByNode: ReadonlyMap<NodeId, CandidateWork>,
+  groupById: ReadonlyMap<SiblingGroupId, CandidateGroup>,
+  points: readonly PointRef[],
+): SiblingGroupId[] {
+  const members = new Map<SiblingGroupId, Set<DirectiveId>>()
+  const note = (g: SiblingGroupId, d: DirectiveId): void => {
+    const set = members.get(g) ?? new Set<DirectiveId>()
+    set.add(d)
+    members.set(g, set)
+  }
+  for (const p of points) {
+    if (p.kind === 'sibling-group') {
+      for (const d of groupById.get(p.groupId)?.memberDirectiveIds ?? []) note(p.groupId, d)
+      continue
+    }
+    if (p.kind !== 'node') continue
+    const seen = new Set<NodeId>()
+    let node: NodeId | null = p.nodeId
+    while (node !== null && !seen.has(node)) {
+      seen.add(node)
+      const work = workByNode.get(node)
+      if (!work) break
+      if (work.groupId) note(work.groupId, work.directiveId)
+      node = work.startNodeId
+    }
+  }
+  return [...members].filter(([, set]) => set.size >= 2).map(([g]) => g)
+}
+
 // ───────────────────────────── validation ─────────────────────────────
 
 export type Validation = { readonly ok: true; readonly plan: RoutingPlan } | { readonly ok: false; readonly message: string }
@@ -230,6 +295,7 @@ export function validatePlan(input: RoutingInput, plan: RoutingPlan): Validation
   for (const id of input.explicitTargets) sections.add(id)
   const work = new Map(input.candidates.work.map((w) => [w.directiveId, w]))
   const groups = new Map(input.candidates.groups.map((g) => [g.groupId, g]))
+  const workByNode = new Map(input.candidates.work.map((w) => [w.nodeId, w]))
   const nodes = new Set<NodeId>()
   for (const w of input.candidates.work) nodes.add(w.nodeId)
   for (const c of input.candidates.chains) {
@@ -278,7 +344,11 @@ export function validatePlan(input: RoutingInput, plan: RoutingPlan): Validation
       else add(ref)
     }
     for (const p of points) if (p.kind === 'sibling-group' && groups.get(p.groupId)?.open) add({ kind: 'sibling-group', groupId: p.groupId })
-    repaired.push(deepEqual(prerequisites, unit.prerequisites) ? unit : { ...unit, prerequisites })
+    // Points that reach two members of one open group, directly or through a branch, wait for all of it (C9).
+    const reachedTwice = groupsReachedTwice(workByNode, groups, points)
+    for (const g of reachedTwice) if (groups.get(g)?.open) add({ kind: 'sibling-group', groupId: g })
+    const kept = prerequisites.filter((ref) => ref.kind !== 'directive' || !reachedTwice.includes(work.get(ref.directiveId)?.groupId ?? ('' as SiblingGroupId)))
+    repaired.push(deepEqual(kept, unit.prerequisites) ? unit : { ...unit, prerequisites: kept })
   }
 
   // Acyclic, topological, ties in original text order (Q53).
