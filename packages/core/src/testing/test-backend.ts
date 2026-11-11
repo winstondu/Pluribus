@@ -65,6 +65,8 @@ export interface TestBackend {
   readonly frames: StreamFrame[]
   /** Waits until no step is queued and nothing but live streams is pending. */
   settle(): Promise<void>
+  /** Runs the queued steps without waiting for pending effects (for a test that holds routing in flight). */
+  flush(): Promise<void>
   /** Moves the fake clock forward, firing timers one at a time and settling after each. */
   advance(ms: number): Promise<void>
   createConversation(): Promise<ConversationId>
@@ -149,6 +151,12 @@ export async function createTestBackend(overrides: TestBackendOverrides = {}): P
     ids,
     frames,
     settle,
+    async flush() {
+      for (let i = 0; i < 3; i++) {
+        await internals.drained()
+        await macrotask()
+      }
+    },
     async advance(ms) {
       const target = clock.now() + ms
       await settle()

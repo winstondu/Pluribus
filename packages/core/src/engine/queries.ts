@@ -188,9 +188,11 @@ export function childrenInFlight(state: ConversationState, nodeId: NodeId): Dire
     if (!d || d.kind !== 'answer' || !isInFlightState(d.state)) continue
     const node = state.nodes[d.nodeId]
     if (!node || node.reason === 'retry-after-closure') continue
+    // A join chain's node is not a continuation of any one source: its sources stay independently continuable (04).
+    if (node.plannedParents.length !== 1) continue
     const named =
       node.plannedParents.some((p) => p.kind === 'node' && p.nodeId === nodeId) ||
-      (node.startedParents?.includes(nodeId) ?? false)
+      (node.startedParents?.length === 1 && node.startedParents[0] === nodeId)
     if (named) out.push(d)
   }
   return out
