@@ -14,8 +14,9 @@ export type RetryPolicy = 'standard' | 'persistent' | 'manual'
 export type ModelSettings = { readonly [R in ModelRole]: string }
 
 /**
- * Decision confidence thresholds (Q74). Initial values, to be replaced by
- * values tuned on the routing corpus. All are probabilities in [0, 1].
+ * Decision confidence thresholds (Q74). The defaults are tuned on the
+ * routing corpus against the pinned decision model (docs/build/PLAN.md
+ * section 7, "Threshold tuning"). All are probabilities in [0, 1].
  */
 export interface DecisionThresholds {
   /** Below this confidence for the best target, Committee elicits the target instead of inferring it (Q20). */

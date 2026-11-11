@@ -32,7 +32,7 @@ import type {
   RoutingPlan,
 } from '../ports'
 import { Batch, ask, type Answers } from './batch'
-import { AMBIGUITY_FLOOR, derivePlacement, neededWork, resolveUnitTargets, selected, validatePlan, type TargetMode } from './derive'
+import { AMBIGUITY_FLOOR, derivePlacement, neededWork, placedWithoutTarget, resolveUnitTargets, selected, validatePlan, type TargetMode } from './derive'
 import { askUnit, readUnit, sectionNumbers, type UnitScope, type UnitSignals } from './questions'
 import { describeState, supply, type Supplied } from './supply'
 
@@ -211,7 +211,11 @@ async function routeMessage(deps: Deps, input: RoutingInput, signal: CancelSigna
   }
 
   // ── Atomic ──
-  const resolution = resolveUnitTargets(m, given, t, { fragment: false, mayBeReply: m.relation?.value !== 'new' || (m.corrective ?? 0) >= t.clearlyCorrective })
+  const resolution = resolveUnitTargets(m, given, t, {
+    fragment: false,
+    mayBeReply: m.relation?.value !== 'new' || (m.corrective ?? 0) >= t.clearlyCorrective,
+    placedWithoutTarget: placedWithoutTarget(m, t),
+  })
   if (resolution.kind === 'ambiguous') return { kind: 'target-ambiguity', candidates: resolution.candidates }
   const targets = answerTargets(supplied, resolution.sectionIds)
   const revision = revisionOf(m, targets, changedRequirements, input.text, null, supplied, t)
@@ -357,7 +361,11 @@ async function routeComposite(deps: Deps, input: RoutingInput, signal: CancelSig
   for (const [i, s] of signals.entries()) {
     const f = fragments[i]
     if (!f) continue
-    const resolution = resolveUnitTargets(s, given, t, { fragment: true, mayBeReply: s.relation?.value !== 'new' || (s.corrective ?? 0) >= t.clearlyCorrective })
+    const resolution = resolveUnitTargets(s, given, t, {
+      fragment: true,
+      mayBeReply: s.relation?.value !== 'new' || (s.corrective ?? 0) >= t.clearlyCorrective,
+      placedWithoutTarget: placedWithoutTarget(s, t),
+    })
     if (resolution.kind === 'ambiguous') {
       for (const cand of resolution.candidates) ambiguous.set(cand.sectionId, Math.max(ambiguous.get(cand.sectionId) ?? 0, cand.confidence))
       continue

@@ -188,25 +188,33 @@ describe('validation', () => {
     expect(outcome.kind === 'plan' && outcome.plan.units).toHaveLength(1)
   })
 
-  test('gate · an untargeted reply whose one plausible section is below the target-choice threshold is elicited, never placed by guess', async () => {
+  test('gate · a reply whose one plausible section is below the target-choice threshold is elicited unless its line is chosen with confidence', async () => {
     const e = ROUTING_CORPUS.find((x) => x.id === 'target-single-recent')
     if (!e) throw new Error('missing example')
-    const i = corpusInput(e)
-    const weak = createRouter({
-      decisionProvider: {
-        async decide(r) {
-          const answers: Record<string, unknown> = {}
-          for (const [id, q] of Object.entries(r.questions)) {
-            answers[id] = q.type === 'choice' ? { type: 'choice', choice: id.endsWith('relation') ? 'addition' : Object.keys(q.options)[0], confidence: 0.8, probabilities: {} } : { type: 'noul', probability: id === 'm_s1' ? 0.5 : 0.05 }
-          }
-          return { ok: true, model: 'm', answers: answers as never, usage: null }
+    const route = (chainConfidence: number) =>
+      createRouter({
+        decisionProvider: {
+          async decide(r) {
+            const answers: Record<string, unknown> = {}
+            for (const [id, q] of Object.entries(r.questions)) {
+              answers[id] =
+                q.type === 'choice'
+                  ? { type: 'choice', choice: id.endsWith('relation') ? 'addition' : Object.keys(q.options)[0], confidence: id.endsWith('chain') ? chainConfidence : 0.8, probabilities: {} }
+                  : { type: 'noul', probability: id === 'm_s1' ? 0.5 : 0.05 }
+            }
+            return { ok: true, model: 'm', answers: answers as never, usage: null }
+          },
         },
-      },
-      decomposer: referenceDecomposer(e),
-    })
-    const outcome = await weak.route(i, NEVER_CANCELLED)
-    // 11 · "Below the target-choice confidence threshold, Committee elicits the target" (Q20, Q74).
-    expect(outcome.kind).toBe('target-ambiguity')
-    expect(outcome.kind === 'target-ambiguity' && outcome.candidates.map((c) => c.confidence)).toEqual([0.5])
+        decomposer: referenceDecomposer(e),
+      }).route(corpusInput(e), NEVER_CANCELLED)
+    // 11 · "Below the target-choice confidence threshold, Committee elicits the target" (Q20, Q74):
+    // with no confident line the unit would start a new chain and silently lose its referent.
+    const unsure = await route(0.3)
+    expect(unsure.kind).toBe('target-ambiguity')
+    expect(unsure.kind === 'target-ambiguity' && unsure.candidates.map((c) => c.confidence)).toEqual([0.5])
+    // With its line chosen at the threshold, it continues that line, which holds the section.
+    const placed = await route(0.8)
+    expect(placed.kind).toBe('plan')
+    expect(placed.kind === 'plan' && placed.plan.units[0]?.placement.kind).toBe('continue')
   })
 })

@@ -24,13 +24,15 @@ import type { Supplied } from './supply'
 
 /**
  * Below the target-choice threshold a section is not inferred as a target.
- * When a reply has one or more sections at this floor and none reaches the
- * threshold, its target is not clear and the user is asked (11 · "Below the
+ * When a reply has two or more sections at this floor and none reaches the
+ * threshold, the target is ambiguous and the user is asked (11 · "Below the
  * target-choice confidence threshold, Committee elicits the target", Q20,
- * Q74): a weak candidate is never silently dropped in favour of the
- * handling chain. When the model says the message refers to several
- * sections and one is clear, every section at the floor is a target too.
- * Set from the first live corpus run (PLAN §7, core-routing).
+ * Q74). A single section at the floor is asked about too, unless the unit
+ * is placed with confidence without it (its handling chain clear, a
+ * selected dependency, a requirement change): a weak referent is never
+ * dropped silently by starting a new chain. When the model says the message
+ * refers to several sections and one is clear, every section at the floor
+ * is a target too. Set from the first live corpus run (PLAN §7).
  */
 export const AMBIGUITY_FLOOR = 0.25
 
@@ -51,7 +53,17 @@ export function resolveUnitTargets(
   signals: UnitSignals,
   given: { readonly sectionIds: readonly SectionId[]; readonly mode: 'explicit' | 'elicited' } | null,
   thresholds: DecisionThresholds,
-  options: { readonly fragment: boolean; readonly mayBeReply: boolean },
+  options: {
+    readonly fragment: boolean
+    readonly mayBeReply: boolean
+    /**
+     * Whether the unit is placed with confidence without a target: its handling chain is chosen at
+     * the threshold, it waits for a selected result, or it changes a session-wide requirement. A
+     * single weak candidate is then not asked about: the unit reads that line's context anyway.
+     * Otherwise it would start a new chain and silently lose what the reply may refer to.
+     */
+    readonly placedWithoutTarget: boolean
+  },
 ): TargetResolution {
   const ranked = [...signals.targets].sort((a, b) => b.confidence - a.confidence)
   if (given) {
@@ -73,7 +85,7 @@ export function resolveUnitTargets(
     return { kind: 'resolved', sectionIds: inferred, mode: 'inferred' }
   }
   const weak = ranked.filter((t) => t.confidence >= AMBIGUITY_FLOOR)
-  if (options.mayBeReply && weak.length >= 1) {
+  if (options.mayBeReply && (weak.length >= 2 || (weak.length === 1 && !options.placedWithoutTarget))) {
     return { kind: 'ambiguous', candidates: weak.map((t) => ({ sectionId: t.id, confidence: t.confidence })) }
   }
   return { kind: 'resolved', sectionIds: [], mode: 'none' }
@@ -407,4 +419,14 @@ export function topological(units: readonly PlannedUnit[]): PlannedUnit[] | null
     done.add(next.directiveId)
   }
   return out
+}
+
+/** Whether a unit is placed with confidence without any target (see `resolveUnitTargets`). */
+export function placedWithoutTarget(signals: UnitSignals, thresholds: DecisionThresholds): boolean {
+  return (
+    (signals.chain?.confidence ?? 0) >= thresholds.targetChoice ||
+    signals.needsWork.some((w) => w.confidence >= thresholds.dependency) ||
+    signals.needsGroups.some((g) => g.confidence >= thresholds.dependency) ||
+    signals.sessionRequirements.some((r) => r.confidence >= thresholds.clearlyCorrective)
+  )
 }
