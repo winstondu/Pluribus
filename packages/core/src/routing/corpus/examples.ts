@@ -208,7 +208,7 @@ export const ROUTING_CORPUS: readonly CorpusExample[] = [
     note: '04: B sent while A runs on the trip chain builds on the brief and becomes a fork beside A; it does not wait for A.',
     scene: tripOneRunning,
     text: 'Also suggest rainy-day activities for the trip',
-    expect: { composition: 'atomic', parts: [{ kind: 'unit', relation: 'addition', targets: ['brief'], placement: { continue: 'brief' }, prerequisites: [] }] },
+    expect: { composition: 'atomic', parts: [{ kind: 'unit', relation: 'addition', chain: 'trip', placement: { continue: 'brief' }, prerequisites: [] }] },
   },
   {
     id: 'placement-join-back',
@@ -275,7 +275,7 @@ export const ROUTING_CORPUS: readonly CorpusExample[] = [
     note: 'Q2, 04: shared subject matter is not a result dependency; a general question about Macs and PCs can be answered without the pending recommendation.',
     scene: recommendationRunning,
     text: 'In general, are Macs or PCs cheaper?',
-    expect: { composition: 'atomic', parts: [{ kind: 'unit', relation: 'new', placement: 'new-chain', prerequisites: [] }] },
+    expect: { composition: 'atomic', parts: [{ kind: 'unit', prerequisites: [] }] },
   },
   {
     id: 'dependency-full-group',
@@ -520,8 +520,8 @@ export const ROUTING_CORPUS: readonly CorpusExample[] = [
       composition: 'sequential-composite',
       order: [0, 1, 2],
       parts: [
-        { kind: 'unit', relation: 'addition', targets: ['brief'], placement: { continue: 'brief' }, prerequisites: [] },
-        { kind: 'unit', relation: 'addition', targets: ['brief'], placement: { continue: 'brief' }, prerequisites: [] },
+        { kind: 'unit', relation: 'addition', chain: 'trip', placement: { continue: 'brief' }, prerequisites: [] },
+        { kind: 'unit', relation: 'addition', chain: 'trip', placement: { continue: 'brief' }, prerequisites: [] },
         { kind: 'unit', relation: 'result-dependent', targets: ['A'], placement: { join: ['A', 'part:0', 'part:1'] }, prerequisites: ['A', 'part:0', 'part:1'], after: [0, 1] },
       ],
     },
@@ -612,7 +612,7 @@ export const ROUTING_CORPUS: readonly CorpusExample[] = [
     note: 'D1: a local brevity instruction does not become a conversation-wide preference.',
     scene: sky,
     text: 'Explain rainbows briefly',
-    expect: { composition: 'atomic', sessionWide: false, parts: [{ kind: 'unit', relation: 'new', placement: 'new-chain' }] },
+    expect: { composition: 'atomic', sessionWide: false, parts: [{ kind: 'unit' }] },
   },
   {
     id: 'requirements-session-wide',

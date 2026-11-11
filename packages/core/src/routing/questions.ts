@@ -57,6 +57,8 @@ export interface UnitSignals {
   readonly shared: number | null
   readonly relation: { readonly value: BaseRelation; readonly confidence: number; readonly probabilities: { readonly [r in BaseRelation]?: number } } | null
   readonly targets: readonly Scored<SectionId>[]
+  /** Probability that the unit refers to several sections at once. */
+  readonly several: number | null
   readonly chain: Scored<ChainId> | null
   readonly needsWork: readonly Scored<DirectiveId>[]
   readonly needsGroups: readonly Scored<SiblingGroupId>[]
@@ -85,6 +87,9 @@ export function askUnit(batch: Batch, supplied: Supplied, input: RoutingInput, s
     )
   }
   if (scope.relation) batch.choice(`${k}_relation`, `How does ${it} relate to the existing work?`, RELATION_OPTIONS)
+  if (scope.sections.length >= 2) {
+    batch.noul(`${k}_several`, `Does ${it} plainly refer to more than one of the answer sections at once (for example "both", "compare", or two answers named)?`)
+  }
   for (const { n, section } of scope.sections) {
     batch.noul(
       `${k}_s${n}`,
@@ -150,6 +155,7 @@ export function readUnit(answers: Answers, supplied: Supplied, input: RoutingInp
     shared: answers.noul(`${k}_shared`),
     relation: relation ? { value: OPTION_RELATION[relation.choice] ?? 'addition', confidence: relation.confidence, probabilities } : null,
     targets: scope.sections.flatMap(({ n, section }) => scored(section.sectionId, `${k}_s${n}`)),
+    several: answers.noul(`${k}_several`),
     chain: chain && chainCandidate ? { id: chainCandidate.chainId, confidence: chain.confidence } : null,
     needsWork: supplied.inFlight.flatMap((w, i) => scored(w.directiveId, `${k}_w${i + 1}`)),
     needsGroups: supplied.openGroups.flatMap((g, i) => scored(g.groupId, `${k}_g${i + 1}`)),

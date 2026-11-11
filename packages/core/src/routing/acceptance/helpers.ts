@@ -16,6 +16,8 @@ export interface UnitRules {
   readonly relation?: 'new' | 'addition' | 'dependent'
   /** Section title (or "Question") → probability that the unit refers to it. */
   readonly targets?: { readonly [title: string]: number }
+  /** Probability that the unit refers to several sections at once. */
+  readonly several?: number
   /** Line label the unit continues. */
   readonly chain?: string
   /** Work label, or a group label "a + b" → probability that the unit needs its result. */
@@ -86,6 +88,7 @@ export function answerFrom(rules: { readonly [text: string]: MessageRules }) {
         const n = Number(/\d+$/.exec(question)?.[0])
         if (question === 'corrective') answers[id] = noul(u.corrective)
         else if (question === 'shared') answers[id] = noul(u.shared)
+        else if (question === 'several') answers[id] = noul(u.several)
         else if (question === 'relation') answers[id] = choice(options, u.relation ?? 'new')
         else if (question === 'clarify') answers[id] = noul(u.clarify)
         else if (question === 'why') answers[id] = choice(options, u.why ?? 'missing')

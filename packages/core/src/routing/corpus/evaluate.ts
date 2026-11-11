@@ -326,6 +326,7 @@ export function oracleDecisionProvider(example: CorpusExample, input: RoutingInp
     const question = match?.[2] ?? ''
     const part = partFor(key)
     const targets = part ? part.targets : []
+    if (question === 'several') return noul((targets?.length ?? 0) >= 2)
     if (question === 'corrective') return noul(part?.kind === 'revision')
     if (question === 'shared') return noul(part?.kind === 'revision' && part.scope === 'shared-requirement')
     if (question === 'relation') return choice(relationOption(part))

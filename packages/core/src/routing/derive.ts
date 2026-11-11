@@ -27,9 +27,11 @@ import type { Supplied } from './supply'
  * When two or more sections reach this floor and none reaches the
  * threshold, the target is genuinely ambiguous and the user is asked (Q20).
  * One weak candidate alone is not a choice between sections: the message is
- * then placed by its handling chain.
+ * then placed by its handling chain. When the model says the message refers
+ * to several sections and one is clear, every section at the floor is a
+ * target too. Set from the first live corpus run (PLAN §7, core-routing).
  */
-export const AMBIGUITY_FLOOR = 0.3
+export const AMBIGUITY_FLOOR = 0.25
 
 export type TargetMode = 'explicit' | 'inferred' | 'elicited' | 'none'
 
@@ -57,7 +59,13 @@ export function resolveUnitTargets(
     return { kind: 'resolved', sectionIds: mine, mode: mine.length > 0 ? given.mode : 'none' }
   }
   const inferred = ranked.filter((t) => t.confidence >= thresholds.targetChoice).map((t) => t.id)
-  if (inferred.length > 0) return { kind: 'resolved', sectionIds: inferred, mode: 'inferred' }
+  if (inferred.length > 0) {
+    // A message that plainly refers to several sections names a clear one and further ones the model scores lower (Q20).
+    if ((signals.several ?? 0) >= thresholds.targetChoice) {
+      for (const t of ranked) if (t.confidence >= AMBIGUITY_FLOOR && !inferred.includes(t.id)) inferred.push(t.id)
+    }
+    return { kind: 'resolved', sectionIds: inferred, mode: 'inferred' }
+  }
   const weak = ranked.filter((t) => t.confidence >= AMBIGUITY_FLOOR)
   if (options.mayBeReply && weak.length >= 2) {
     return { kind: 'ambiguous', candidates: weak.map((t) => ({ sectionId: t.id, confidence: t.confidence })) }

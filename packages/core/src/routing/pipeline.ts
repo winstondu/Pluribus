@@ -485,14 +485,23 @@ function revisionOf(
   t: RoutingInput['settings']['thresholds'],
 ): PlannedRevision | null {
   const corrective = (s.corrective ?? 0) >= t.clearlyCorrective
-  const targetDirectiveIds = corrective
+  let targetDirectiveIds = corrective
     ? [...new Set(targets.flatMap((id) => {
         const directiveId = supplied.sectionById.get(id)?.directiveId
         return directiveId && supplied.workById.has(directiveId) ? [directiveId] : []
       }))]
     : []
   if (targetDirectiveIds.length === 0 && changedRequirements.length === 0) return null
-  const scope = changedRequirements.length > 0 || (s.shared ?? 0) >= t.clearlyCorrective ? 'shared-requirement' : 'work'
+  // A brief is shared only when other work consumed it (Q42): a correction of work nothing else read is local to it.
+  const consumers = (ids: readonly DirectiveId[]) =>
+    [...supplied.workById.values()].filter((w) => !ids.includes(w.directiveId) && w.consumed.some((c) => ids.includes(c)))
+  const sharedBrief = (s.shared ?? 0) >= t.clearlyCorrective && consumers(targetDirectiveIds).length > 0
+  if (sharedBrief) {
+    // The target is the work that established the brief; work that consumed another target is affected work, not a target.
+    const roots = targetDirectiveIds.filter((id) => !supplied.workById.get(id)?.consumed.some((c) => c !== id && targetDirectiveIds.includes(c)))
+    if (roots.length > 0) targetDirectiveIds = roots
+  }
+  const scope = changedRequirements.length > 0 || sharedBrief ? 'shared-requirement' : 'work'
   return { scope, correction, fragment, targetDirectiveIds, targetRequirementIds: [...changedRequirements], affected: [] }
 }
 
