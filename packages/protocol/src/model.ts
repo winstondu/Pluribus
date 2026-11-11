@@ -102,12 +102,16 @@ export const NOT_STARTED_STATES: readonly DirectiveState[] = [
 ]
 
 /**
- * States in which a directive is still going to produce, or may still
- * produce, a result without user action. A sibling-group member in one of
- * these keeps its group open (Q49, Q92).
+ * States in which a directive has not settled: it is still going to produce
+ * a result, or may yet, without having ended. A sibling-group member in one
+ * of these keeps its group open (Q49, Q92). `paused` is here because a
+ * paused member is waiting for the user and may still run; the group closes
+ * once every member is `completed`, `failed`, `stopped`, `interrupted` or
+ * `cancelled`.
  */
 export const IN_FLIGHT_STATES: readonly DirectiveState[] = [
   'dependency-queued',
+  'paused',
   'ready',
   'waiting-for-capacity',
   'running',
@@ -142,6 +146,14 @@ export type TerminalAttemptState = Exclude<AttemptState, 'running' | 'streaming'
  * replaced by a revision.
  */
 export type AttemptResultStatus = 'in-flight' | 'current' | 'superseded' | 'failed' | 'stopped' | 'interrupted'
+
+/**
+ * How work ended without completing. `cancelled` is the build's extension of
+ * Q49 and Q92 to a sibling-group member or prerequisite that the user
+ * cancelled before it started: it is recorded like the others, as a request
+ * and a marker with no text.
+ */
+export type UnfinishedOutcome = 'failed' | 'stopped' | 'interrupted' | 'cancelled'
 
 /** Why an attempt exists. */
 export type AttemptOrigin =
@@ -562,15 +574,16 @@ export type ContextOrigin =
       readonly joinBackId: JoinBackId | null
     }
   /**
-   * A join-back member that failed, was stopped, or was interrupted: its
-   * request and a marker, never its partial text (Q49, Q92).
+   * An ancestor exchange that failed, was stopped, or was interrupted: its
+   * request and a marker, never its partial text (Q49, Q92, invariant 7).
+   * `joinBackId` is set when it was read as a member of a join-back record.
    */
   | {
-      readonly kind: 'member-marker'
+      readonly kind: 'unfinished-exchange'
       readonly nodeId: NodeId
       readonly directiveId: DirectiveId
-      readonly joinBackId: JoinBackId
-      readonly outcome: 'failed' | 'stopped' | 'interrupted'
+      readonly joinBackId: JoinBackId | null
+      readonly outcome: UnfinishedOutcome
     }
   /**
    * The user's correction, standing with the replacement in place of a
@@ -627,7 +640,7 @@ export interface ConsumedInput {
   readonly directiveId: DirectiveId
   /** The completed attempt whose answer was read, or null when only a marker was read. */
   readonly attemptId: AttemptId | null
-  readonly marker: 'failed' | 'stopped' | 'interrupted' | null
+  readonly marker: UnfinishedOutcome | null
 }
 
 // ───────────────────────── sibling groups and join-backs ─────────────────────────
@@ -647,7 +660,7 @@ export interface JoinBackMember {
    * `completed` members contribute their exchange. The others contribute
    * their request and a marker, without partial text (Q49, Q92).
    */
-  readonly outcome: 'completed' | 'failed' | 'stopped' | 'interrupted'
+  readonly outcome: 'completed' | UnfinishedOutcome
   /** The attempt whose answer the record holds; null unless completed. */
   readonly attemptId: AttemptId | null
 }
@@ -661,7 +674,7 @@ export interface PauseCause {
   /** The directive that did not finish. */
   readonly directiveId: DirectiveId
   readonly label: string
-  readonly outcome: 'failed' | 'stopped' | 'interrupted'
+  readonly outcome: UnfinishedOutcome
 }
 
 /** One piece of work offered in a choice with default (Q44). */

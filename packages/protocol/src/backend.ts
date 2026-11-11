@@ -37,7 +37,7 @@ export interface ConversationFrame {
   readonly fromSeq: number
   /** Sequence number of the last event in `events`: what a snapshot has after applying `patches`. */
   readonly throughSeq: number
-  /** At least one event, in sequence order. */
+  /** The events of the step, in sequence order. Empty only from a fixture backend, which has no log. */
   readonly events: readonly ConversationEvent[]
   /** Apply with `applyPatches(snapshot, patches, throughSeq)`. May be empty. */
   readonly patches: readonly ProjectionPatch[]

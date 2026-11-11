@@ -229,6 +229,14 @@ export interface PlannedRevision {
  * validation has already passed: dependencies are acyclic, no subset
  * bypasses a full join-back, and `units` of a sequential composite are in
  * topological order with ties in original textual order (Q53).
+ *
+ * Validation repairs what has one correct reading and refuses the rest:
+ * two or more members of a sibling group become the whole group (Q30); a
+ * join-chain parent that is not a leaf becomes its chain's current leaf,
+ * whose ancestry already includes it (Q86, Q97); a reference to something
+ * that was not a supplied candidate, or a dependency cycle, makes the
+ * outcome `failed` with code `malformed-response`. The engine checks the
+ * same rules again before acting and refuses a plan that breaks them.
  */
 export interface RoutingPlan {
   /** The record for the `routing-decided` event and the run inspector. */

@@ -325,7 +325,7 @@ export interface SectionView {
    * - `reply`: "Reply to this". False for superseded sections, which are
    *   not targets for new work (Q43), and for dropped ones.
    * - `stop`: the section has work in flight (Q22).
-   * - `retry`: failed, stopped or interrupted, and not retrying on its own.
+   * - `retry`: failed, stopped, interrupted or cancelled, and not retrying on its own.
    * - `regenerate`: carries a superseded-input note (Q40).
    */
   readonly actions: {

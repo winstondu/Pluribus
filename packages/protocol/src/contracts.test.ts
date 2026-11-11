@@ -67,10 +67,12 @@ describe('provider errors', () => {
 })
 
 describe('directive states', () => {
-  test('a retrying member counts as in flight, a failed one does not', () => {
+  test('retrying and paused members keep a sibling group open; settled ones do not', () => {
     expect(IN_FLIGHT_STATES).toContain('retrying')
-    expect(IN_FLIGHT_STATES).not.toContain('failed')
-    expect(IN_FLIGHT_STATES).not.toContain('paused')
+    expect(IN_FLIGHT_STATES).toContain('paused')
+    for (const settled of ['completed', 'failed', 'stopped', 'interrupted', 'cancelled', 'superseded'] as const) {
+      expect(IN_FLIGHT_STATES).not.toContain(settled)
+    }
     expect(NOT_STARTED_STATES).toContain('paused')
     expect(NOT_STARTED_STATES).not.toContain('running')
   })

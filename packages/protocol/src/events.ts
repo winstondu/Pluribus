@@ -311,7 +311,8 @@ export interface DirectiveCreated extends ConversationEnvelope<'directive-create
   readonly label: string
   /** Applicable requirements with provenance; local unless explicitly session-wide (Q17). */
   readonly requirements: readonly Requirement[]
-  readonly relation: ReplyRelation
+  /** Never `revision`: a revision creates no directive (see `revision-recorded`). */
+  readonly relation: Exclude<ReplyRelation, 'revision'>
   /** Resolved reply targets. A target alone does not make the work a revision, a fork or a join (Q20). */
   readonly targets: readonly SectionId[]
   /** The node created for it by the preceding `node-created`. */
