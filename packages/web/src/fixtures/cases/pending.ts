@@ -22,6 +22,8 @@ const fixture: Fixture = {
     .message('rail', 'Is a rail pass worth it for five days based in Kyoto?')
     .response('rail', { message: 'rail' })
     .section('rail', { response: 'rail', chain: 'rail', state: 'pending', status: 'retrying', title: 'rail pass' })
+    // What the backend reports while an automatic retry is pending: the failed attempt is listed, with no text.
+    .attempt('rail-1', { section: 'rail', state: 'failed', failure: fx.error('service-unavailable', 'The provider is unavailable.') })
     .message('ryokan', 'What should I know before staying in a ryokan?')
     .response('ryokan', { message: 'ryokan' })
     .section('ryokan', {
@@ -31,6 +33,7 @@ const fixture: Fixture = {
       status: 'waiting-for-capacity',
       title: 'ryokan etiquette',
     })
+    .attempt('ryokan-1', { section: 'ryokan', state: 'failed', failure: fx.error('rate-limited', 'The provider is rate limiting requests.') })
     .message('temple', 'Which temples open before eight in the morning?')
     .response('temple', { message: 'temple' })
     .section('temple', {

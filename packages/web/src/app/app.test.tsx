@@ -5,7 +5,7 @@ import { describe, expect, test } from 'vitest'
 import { createKeyValidator, keyFormatProblem, type KeyValidator } from '@/app/key-validation'
 import { KeyPrompt } from '@/app/key-prompt'
 import { Shell } from '@/app/shell'
-import { chainColor, chainSegments } from '@/design/chains'
+import { CHAIN_COLOR_LIMIT, chainColor, chainSegments, chainTint } from '@/design/chains'
 import { getFixture } from '@/fixtures'
 import { renderWithBackend } from '@/test/render'
 
@@ -123,6 +123,24 @@ describe('shell', () => {
     expect(backend?.sent.map((command) => command.type)).toEqual(['create-conversation', 'delete-conversation'])
   })
 
+  test('the empty state’s New conversation button creates a conversation and opens it', async () => {
+    const user = userEvent.setup()
+    const { ready, store } = renderWithBackend(<Shell />, { fixture: fixture('empty') })
+    await act(() => ready)
+    const list = screen.getByRole('navigation', { name: 'Conversations' })
+    await user.click(within(list).getByRole('button', { name: /^Options for / }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Delete' }))
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Delete' }))
+    const main = screen.getByRole('main')
+    await within(main).findByRole('heading', { name: 'Start the first conversation' })
+
+    await user.click(within(main).getByRole('button', { name: 'New conversation' }))
+    await waitFor(() => expect(store.getState().activeConversationId).toBe('cnv_new-1'))
+    await waitFor(() => expect(within(main).queryByRole('heading', { name: /conversation/ })).toBeNull())
+    expect(store.getState().app?.conversations).toHaveLength(1)
+    expect(await within(main).findByRole('textbox', { name: 'Message' })).toBeInTheDocument()
+  })
+
   test('settings show every row, send each change, and show only whether a key is configured', async () => {
     const user = userEvent.setup()
     const { ready, backend, store } = renderWithBackend(<Shell />, { fixture: fixture('trip') })
@@ -175,7 +193,12 @@ describe('shell', () => {
 describe('chain colors', () => {
   test('a chain color is its token; several chains are hard segments, never a blend', () => {
     expect(chainColor(3)).toBe('var(--chain-3)')
-    expect(chainColor(9)).toBe('var(--chain-1)')
+    // 01 · Chain colors: every chain has its own. Past the eight tokens a color is derived from one, never repeated.
+    expect(chainColor(9)).toContain('from var(--chain-1)')
+    const colors = Array.from({ length: CHAIN_COLOR_LIMIT }, (_, index) => chainColor(index))
+    expect(new Set(colors).size).toBe(CHAIN_COLOR_LIMIT)
+    expect(CHAIN_COLOR_LIMIT).toBeGreaterThanOrEqual(32)
+    expect(new Set(colors.map((_, index) => chainTint(index))).size).toBe(CHAIN_COLOR_LIMIT)
     expect(chainSegments([0, 1])).toBe(
       'linear-gradient(to bottom, var(--chain-0) 0.000% 50.000%, var(--chain-1) 50.000% 100.000%)',
     )

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useActiveConversationId, useApp, useConversationLoading, useSend } from '@/backend'
+import { useActiveConversationId, useApp, useConversationLoading } from '@/backend'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
 import { useMediaQuery } from '@/hooks/use-media-query'
@@ -12,6 +12,7 @@ import { Sidebar } from './sidebar'
 import { ComposerStandIn, TranscriptStandIn } from './stand-ins'
 import { BackendGate } from './standby-notice'
 import { useUiState } from './ui-state'
+import { useCreateConversation } from './use-create-conversation'
 
 // Entry components of the features, or null while a feature does not exist.
 const TranscriptPane = featureComponent('transcript', 'TranscriptPane')
@@ -151,7 +152,7 @@ function ShellLayout() {
 }
 
 function NoConversation() {
-  const send = useSend()
+  const createConversation = useCreateConversation()
   const app = useApp()
   const none = (app?.conversations.length ?? 0) === 0
   return (
@@ -163,7 +164,7 @@ function NoConversation() {
             ? 'Committee answers several requests at once in one chat, and shows you how they relate.'
             : 'Choose one from the list, or start a new one.'}
         </p>
-        <Button className="mt-5" onClick={() => void send({ type: 'create-conversation' })}>
+        <Button className="mt-5" onClick={() => void createConversation()}>
           New conversation
         </Button>
       </div>

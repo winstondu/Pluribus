@@ -487,3 +487,18 @@ test('collapsed text · the one-line excerpt is plain text, without Markdown syn
   // A marker the stream left open.
   expect(excerpt('The **unfinished')).toBe('The unfinished')
 })
+
+test('F3 (web) · no Failed mark while an automatic retry or a rate-limit wait is pending: status text only', async () => {
+  const view = await open('pending')
+  for (const [name, status] of [
+    ['rail', WORDING.retrying],
+    ['ryokan', WORDING.waitingForCapacity],
+  ] as const) {
+    const bubble = section(view.container, name)
+    // The failed attempt is listed, as the backend reports it, and leaves no mark of its own.
+    expect(bubble.querySelector('[data-attempt-id][data-state="failed"]')).not.toBeNull()
+    expect(bubble.querySelector('[data-mark]')).toBeNull()
+    expect(within(bubble).queryByRole('alert')).toBeNull()
+    expect(within(bubble).getByRole('status').textContent).toBe(status)
+  }
+})

@@ -23,6 +23,7 @@ import { cn } from '@/lib/utils'
 import { BrandMark, Wordmark } from './brand'
 import { ThemeToggle } from './theme-toggle'
 import { useUiState } from './ui-state'
+import { useCreateConversation } from './use-create-conversation'
 
 /**
  * The conversation list: create, open, delete (Q70). The same content is
@@ -37,6 +38,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const openSettings = useUiState((state) => state.openSettings)
   const openKeyPrompt = useUiState((state) => state.openKeyPrompt)
   const resetForConversation = useUiState((state) => state.resetForConversation)
+  const createConversation = useCreateConversation()
   const [deleting, setDeleting] = useState<ConversationSummary | null>(null)
   const conversations = app?.conversations ?? []
 
@@ -47,12 +49,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   }
 
   async function create(): Promise<void> {
-    const result = await send({ type: 'create-conversation' })
-    if (!result.ok) {
-      toast.error('Could not start a conversation', { description: result.error.message })
-      return
-    }
-    open(result.output.conversation.id)
+    if (await createConversation()) onNavigate?.()
   }
 
   async function confirmDelete(): Promise<void> {

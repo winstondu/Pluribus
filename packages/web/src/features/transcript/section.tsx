@@ -206,7 +206,14 @@ function AttemptBody({ attempt, current, sectionState, historyOpen, directiveId 
   const open = inSuperseded ? historyOpen : !attempt.collapsed || expanded
   const hasText = attempt.text.length > 0
   // The failure notice of a failed section already says "Failed" for its current attempt.
-  const mark = attempt.markText !== null && !(current && sectionState === 'failed') && !(inSuperseded && attempt.state === 'superseded')
+  // While the section is still being worked on (a retry is pending, waiting for capacity, or running), an earlier
+  // attempt that left no text has nothing to mark: the status line says what is happening (08 · Retries, F3).
+  const working = sectionState === 'pending' || sectionState === 'streaming'
+  const mark =
+    attempt.markText !== null &&
+    !(current && sectionState === 'failed') &&
+    !(inSuperseded && attempt.state === 'superseded') &&
+    !(working && !hasText)
   const kind = markKind(attempt.state)
 
   return (
@@ -258,8 +265,11 @@ function AttemptBody({ attempt, current, sectionState, historyOpen, directiveId 
   )
 }
 
-/** One plain line of a collapsed text: Markdown syntax is dropped, since the line is not rendered as Markdown. */
-export function excerpt(text: string): string {
+/**
+ * One plain line of answer text, for places that do not render Markdown (a collapsed text's line, a candidate
+ * in the target-ambiguity modal): Markdown syntax is dropped. At most `max` characters.
+ */
+export function excerpt(text: string, max = 96): string {
   const line = text
     .replace(/^\s*(`{3,}|~{3,}).*$/gm, ' ') // code fences
     .replace(/^\s{0,3}#{1,6}\s+/gm, '') // headings
@@ -275,7 +285,7 @@ export function excerpt(text: string): string {
     .replace(/\*\*|__|`/g, '') // a marker left open by a stream that stopped
     .replace(/\s+/g, ' ')
     .trim()
-  return line.length > 96 ? `${line.slice(0, 96)}…` : line
+  return line.length > max ? `${line.slice(0, max)}…` : line
 }
 
 function Note({ note, section }: { note: SectionNote; section: SectionView }) {

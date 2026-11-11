@@ -1,7 +1,7 @@
 import { fx, type Fixture } from '@/fixtures'
 
 const TEA =
-  'A tea ceremony lasts about forty-five minutes. The host cleans each utensil in front of you, whisks the matcha, and serves it with a sweet that is eaten first.'
+  '**A tea ceremony** lasts about forty-five minutes. The host cleans each utensil in front of you, whisks the matcha, and serves it with a sweet that is eaten first.'
 const RAIL =
   'Not for five days based in Kyoto. A national rail pass only pays off with long shinkansen trips; local trains and buses cost a few hundred yen each.'
 

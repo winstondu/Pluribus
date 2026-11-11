@@ -609,6 +609,7 @@ export class ConversationBuilder {
     // ── attempts ──
     const attempts: { [id: string]: AttemptView } = {}
     const listedAttempts = new Map<string, string[]>()
+    const allAttempts = new Map<string, string[]>()
     for (const [name, attempt] of bySeq(d.attempt)) {
       const section = need('section', attempt.section, `attempt "${name}"`)
       const directive = directiveOf(attempt.section)
@@ -662,9 +663,16 @@ export class ConversationBuilder {
               ? providerError('provider-error', 'The provider returned an error', { httpStatus: 500 })
               : null,
       }
-      // Attempts that ended with no visible output are not listed in the bubble.
-      const visible = text !== '' || inFlight || attempt.state === 'completed'
-      if (visible) listedAttempts.set(attempt.section, [...(listedAttempts.get(attempt.section) ?? []), name])
+      allAttempts.set(attempt.section, [...(allAttempts.get(attempt.section) ?? []), name])
+    }
+    // As the transcript projection lists them: the attempts with text, and the section's latest attempt
+    // whether or not it has text (it carries the status or the failure).
+    for (const [sectionName, names] of allAttempts) {
+      const latest = names.at(-1)
+      listedAttempts.set(
+        sectionName,
+        names.filter((name) => name === latest || (d.attempt.get(name)?.text ?? '') !== ''),
+      )
     }
 
     // ── operations (IDs are needed by sections) ──

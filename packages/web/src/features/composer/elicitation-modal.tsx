@@ -12,7 +12,7 @@ import { useChain, useQueue } from '@/backend'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { chainColor } from '@/design/chains'
-import { ENTER, EXIT, RISE, useCommand } from '@/features/transcript'
+import { ENTER, EXIT, excerpt, RISE, useCommand } from '@/features/transcript'
 import { cn } from '@/lib/utils'
 
 type TargetAmbiguity = Extract<ElicitationView, { kind: 'target-ambiguity' }>
@@ -139,7 +139,8 @@ function Candidate(props: { candidate: TargetAmbiguity['candidates'][number]; ch
         <span aria-hidden className="chain-rail" style={{ background: chain ? chainColor(chain.colorIndex) : 'var(--border-strong)' }} />
         <span className="flex min-w-0 flex-col">
           <span className="text-[0.8125rem] font-medium">{candidate.title}</span>
-          <span className="truncate text-xs text-muted-foreground">{candidate.excerpt}</span>
+          {/* One plain line: the excerpt is answer text, so its Markdown syntax is dropped, not shown raw. */}
+          <span className="truncate text-xs text-muted-foreground">{excerpt(candidate.excerpt, 240)}</span>
         </span>
       </button>
       <button

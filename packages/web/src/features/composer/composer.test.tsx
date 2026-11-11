@@ -174,6 +174,9 @@ test('target ambiguity · a modal above the composer offers the candidate sectio
   const composer = byId(view.container, 'data-slot', 'composer')
   expect(modal.compareDocumentPosition(composer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   expect(within(modal).getByText('Make that shorter.')).toBeInTheDocument()
+  // A candidate's excerpt is one plain line: the answer's Markdown syntax is not shown raw.
+  expect(within(modal).getByText(/^A tea ceremony lasts about forty-five minutes/)).toBeInTheDocument()
+  expect(modal.textContent).not.toContain('**')
 
   const choose = within(modal).getByRole('button', { name: 'Choose section' })
   expect(choose).toBeDisabled()
