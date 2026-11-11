@@ -278,7 +278,7 @@ A simulated interruption is: dispose the backend, build a new one over the same 
 | `src/indexeddb-adapter.ts`, `src/memory-adapter.ts` | The two adapters (`idb`; tests use `fake-indexeddb`) |
 | `src/event-store.ts`, `src/projection-cache.ts` | `createEventStore(adapter)`, `createProjectionCache(adapter)` implementing the ports, including `EventStoreConflictError` on a gap and atomic appends |
 | `src/secrets-store.ts` | `createSecretsStore(adapter)` over a **separate** IndexedDB database |
-| `src/index.ts` | `openIndexedDbStorage()` → `{ eventStore, projectionCache, secretsStore }`, `createMemoryStorage()`, and the conformance suites |
+| `src/index.ts` | `openIndexedDbStorage()` → `{ eventStore, projectionCache, secretsStore }`, `createMemoryStorage()`. The conformance suites are the sub-entry `@committee/storage/conformance` (`src/conformance.ts`), because they import `vitest` and the root entry is bundled into the Worker |
 | `src/conformance.ts` + tests | `describeEventStore(name, make)`, `describeProjectionCache(name, make)`, `describeSecretsStore(name, make)`: one suite, run against both adapters |
 | `src/core-fakes.test.ts` | Written by **integration**, the one file in this package that is not storage's: runs the same suites against `MemoryEventStore`, `MemoryProjectionCache` and `MemorySecretsStore` from `@committee/core/testing`, so core's tests and the real stores are held to one contract |
 
@@ -454,6 +454,7 @@ Fixtures to exist, one file each under `src/fixtures/cases/`, owned by the autho
 | `modal-target-ambiguity`, `modal-choice-default` | Both modals above the composer, the second with a countdown and a locked option; `respond` rejects one command to show an error | ui-transcript |
 | `split-messages` | Split bubbles with the link; Undo split available, then gone after first text | ui-transcript |
 | `clarification` | Question as an additional response, then the clarified answer | ui-transcript |
+| `genealogy-marks` | Failed and stopped siblings, a late retry, a superseded node, interrupted and cancelled nodes, a branch, a join chain with three parents, a later source continuation | ui-debug |
 | `operation-states` | Every `OperationStatus`, an operation held by the barrier with its barrier edges, retired operations, a pending section inside a placed group | ui-debug |
 | `run-inspection` | `runs` for a started attempt, a queued directive, and two attempts of one directive (`byAttempt`), one of them superseded | ui-debug |
 | `compare` | An independent composite with a shared requirement and one corrective fragment | ui-debug |
@@ -633,6 +634,27 @@ Recorded by core-routing when milestone 4 landed. The code is `packages/core/src
 **A message routed again keeps its options.** Retry after a routing failure, and a routing lost with the executor, route with the chosen targets of its latest answered target-ambiguity elicitation and with `forcedComposition: 'atomic'` after Undo split (`queries.routeOptionsFor`).
 
 **The routing corpus** is `packages/core/src/routing/corpus/`: 44 labelled examples over hand-written scenes, each with the spec reference that justifies its label. `evaluateCorpus({ decisionProvider, decomposer?, settings? })` routes every example and reports mismatches by topic; without a decomposer it uses each example's reference decomposition, so the decision model is evaluated alone. A core test runs it with a provider that answers as the labels say (`oracleDecisionProvider`), which checks the deterministic stages. The live run belongs in a providers smoke test. A first live run against `typesafe/jev-1.13` on 2026-11-11, with `DEFAULT_SETTINGS.thresholds`, matched 42 of 44 labels; the floor, the several-sections question and the shared-brief rule above came from the misses of the run before it (34 of 44). The thresholds themselves were not changed: they are the architect's defaults.
+
+### Decisions made by core-engine and core-recovery
+
+Recorded by integration from the slices' reports, so that the plan matches the code.
+
+- **Command handlers are asked from the last module to the first.** A slice overrides the engine's default and returns `null` to fall back to it. Reactions, plan appliers and startup reactions run in module order (engine, routing, recovery).
+- **The engine's default `retry`** retries failed, stopped, interrupted or cancelled sections and requests, in place or as the late-retry node after closure; recovery overrides it and returns `null` for a request whose routing failed.
+- **A join-chain node is not a "child in flight" of its sources** (`childrenInFlight` counts single-parent continuations only), so a source chain stays independently continuable while a join chain over it runs (04, C18).
+- **Corrections in an ancestor read:** corrections recorded before the ancestor's current result started are read before its answer, later ones after it.
+- **Queue items** appear only while a directive is dependency-queued or paused, never while it is `ready` and waiting for a slot (P6).
+- **Work released but not yet started still counts as queued** and waits again when a prerequisite's result is replaced (R3); the engine also refuses to start queued work whose prerequisites stopped being satisfied after its release.
+- **Queued work gains a `directive` prerequisite** on any input it would read whose replacement is still running (`waitForInFlightReads`, R5).
+- **A member's replacement node becomes the member's node**, and join-backs formed or re-formed afterwards are its children; a late retry's node never does.
+- **A second revision of a running replacement** rewinds to the last finished answer that a revision replaced and reads it between the corrections made before and after it.
+- **Only work that was in flight carries "Redid … by default".** Finished work redone by default is only the new `redo` response.
+
+### Decisions made by integration
+
+- **One Worker per page.** `src/worker/client.ts` returns one `PortClient` for every call, so React's StrictMode double mount never starts a second Worker that would stand by behind the first. The Worker takes the `committee-backend` lock with `ifAvailable` first; when that fails it posts `standby` and waits for the lock.
+- **The model catalog is read when the Worker starts.** Every run's tokens are counted before it starts, and the first count reads OpenRouter's catalog; reading it at start keeps the first run after a load from showing "Waiting for a free slot" while a slot is free.
+- **End-to-end flows** are `packages/web/e2e/run.mjs` (`pnpm e2e`), live against OpenRouter with the cheap model for every generative role; they are not part of `pnpm test`. The live routing corpus runs in `pnpm smoke` (`packages/providers/src/routing-corpus.smoke.test.ts`).
 
 ## 8. Order of work and reviews
 

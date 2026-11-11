@@ -72,12 +72,27 @@ export async function waitReady(page, timeout = 30_000) {
   await page.getByText('New conversation').first().waitFor({ timeout })
 }
 
-/** First run: the key prompt opens by itself; take the key from the dev server's environment. */
+/**
+ * First run: the key prompt opens by itself. On the dev server it offers the
+ * key from its environment, and that is what the flows use. A production
+ * build (vite preview) does not offer it; then the key is typed into the
+ * prompt's field like a user would paste it, and never printed.
+ */
 export async function useEnvironmentKey(page) {
   const button = page.getByRole('button', { name: /Use the key from this environment/ })
-  await button.waitFor({ timeout: 30_000 })
-  await button.click()
-  await button.waitFor({ state: 'detached', timeout: 30_000 })
+  const field = page.getByLabel('API key')
+  await field.waitFor({ timeout: 30_000 })
+  if (await button.isVisible()) {
+    await button.click()
+    await button.waitFor({ state: 'detached', timeout: 30_000 })
+    return
+  }
+  if (!SECRET) throw new Error('No "Use the key from this environment" offer and no OPENROUTER_KEY to type')
+  await field.fill(SECRET)
+  await page.locator('[data-key-status="valid"]').waitFor({ timeout: 30_000 })
+  const save = page.getByRole('button', { name: 'Save key' })
+  await save.click()
+  await save.waitFor({ state: 'detached', timeout: 30_000 })
 }
 
 /** Settings → Models: every generative role on the cheap model. The decision model stays pinned. */

@@ -10,7 +10,7 @@ pnpm vitest run --project web packages/web
 
 | URL | Shows |
 |---|---|
-| `/` | The app on the Worker backend. Until `src/worker/client.ts` exists it says "Worker backend not wired" and links to the gallery |
+| `/` | The app on the Worker backend: core, the OpenRouter providers and IndexedDB storage in a Web Worker (`src/worker/`) |
 | `/?fixtures` | The fixture gallery: every fixture in the real shell, with a stepper, a phone-width frame and the theme switch |
 | `/?fixture=<id>` | One fixture, playing its steps on timers |
 | `/?fixture=<id>&manual` | One fixture, steps played by hand: `window.__committeeFixture.step()` |
@@ -30,7 +30,8 @@ Fixtures are available on the dev server, and in a build made with `VITE_FIXTURE
 | `src/test/` | `setup.ts` (jsdom polyfills), `render.tsx` (`renderWithBackend`) | ui-foundation |
 | `src/features/transcript`, `composer`, `association` | Transcript, composer dock, rails and Focus | ui-transcript |
 | `src/features/debug` | Mini-map, operation graph, run inspector, Compare | ui-debug |
-| `src/worker/` | Worker entry and `client.ts` | integration |
+| `src/worker/` | `backend.worker.ts` (the Worker: takes the `committee-backend` lock, opens storage, builds and serves the backend), `client.ts` (one Worker per page, `connectWorker`), `system.ts` (clock, timers, IDs) | integration |
+| `e2e/` | End-to-end flows in Chromium over the Worker with live OpenRouter (`pnpm e2e`, not part of `pnpm test`) | integration |
 
 ## How a feature plugs in
 
@@ -205,7 +206,7 @@ The backend:
 - `fixture.respond(command, current)` is asked first. Return `{ result }` to reject a command, `{ steps }` to script what follows it, `{ app }` to change app state, or `null` to fall through. Every other command is accepted with an empty output.
 - `fixture.runs` answers `run` queries, by directive and then attempt.
 
-Cases in the tree from ui-foundation: `empty`, `no-key`, `routing`, `pending`, `streaming`, `overtaking`, `reply-group-mixed`, `trip`.
+Cases in the tree from ui-foundation: `empty`, `no-key`, `routing`, `pending`, `streaming`, `overtaking`, `reply-group-mixed`, `trip`. From ui-transcript: `failed-retry`, `stopped`, `interrupted`, `cancelled`, `superseded`, `section-notes`, `queue-waiting`, `queue-paused`, `barrier-ordered-group`, `modal-target-ambiguity`, `modal-choice-default`, `split-messages`, `clarification`, `group-first-output`. From ui-debug: `genealogy-marks`, `operation-states`, `run-inspection`, `compare`; a case that needs debug toggles on or hand-written `RunInspection` records can use `@/features/debug/fixture-support`.
 
 ## Tests
 
