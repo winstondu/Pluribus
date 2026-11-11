@@ -12,7 +12,10 @@ import { createContext, useContext, useState, type RefObject } from 'react'
  *   bubble being pushed down, a section taking its place in a group. Only
  *   a change of order starts it; text streaming above an item never does,
  *   so nothing jitters while answers grow.
- * - Something new fades in with a short rise (`ENTER`).
+ * - A reply or a section that arrives fades in (`ENTER`); a user message
+ *   appears at once, because sending is a keystroke the user makes all day.
+ *   Panels in the dock (a queue item, a modal, "New output ↓") fade in with
+ *   a short rise.
  * - Something dropped fades out, faster, while its neighbours close the gap
  *   at the same time (`EXIT`, with `popLayout`).
  * - Partial text collapses by height (`COLLAPSE`): it is an accordion.
@@ -44,4 +47,16 @@ export function useEntrance(): boolean {
   const entrances = useContext(EntranceContext)
   const [enter] = useState(() => entrances.current)
   return enter
+}
+
+/**
+ * The last value that was defined. A record that is removed from the
+ * projection (a dropped status-only bubble, split messages after Undo
+ * split) is drawn from this while its element fades out; without it the
+ * element would empty in one frame and the fade would show nothing.
+ */
+export function useKept<T>(value: T | undefined): T | undefined {
+  const [kept, setKept] = useState(value)
+  if (value !== undefined && value !== kept) setKept(value)
+  return value ?? kept
 }

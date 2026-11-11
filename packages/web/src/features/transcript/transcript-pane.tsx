@@ -113,8 +113,10 @@ function TranscriptItem({ item, index, ref }: { item: TranscriptItemRef; index: 
       layout="position"
       layoutDependency={index}
       data-transcript-item={item.kind}
-      initial={enter ? { opacity: 0, y: RISE } : false}
-      animate={{ opacity: 1, y: 0 }}
+      // A user message appears at once: it is the user's own keystroke, and nothing should make them wait
+      // to see it. A reply fades in, without travel; the only movement in the transcript is a change of place.
+      initial={enter && item.kind === 'response' ? { opacity: 0 } : false}
+      animate={{ opacity: 1 }}
       exit={{ opacity: 0, transition: EXIT }}
       transition={{ ...ENTER, layout: MOVE }}
     >

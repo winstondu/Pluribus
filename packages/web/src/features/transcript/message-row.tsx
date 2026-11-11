@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { ChainRail, useMessageFocus } from '@/features/association'
 import { cn } from '@/lib/utils'
 import { focusClass, FocusTag } from './focus-style'
+import { useKept } from './motion'
 import { useCommand } from './use-command'
 
 const TIME = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' })
@@ -19,7 +20,7 @@ const TIME = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-di
  * on the responding bubble (Q81, P7).
  */
 export const MessageRow = memo(function MessageRow({ id }: { id: MessageId }) {
-  const message = useMessage(id)
+  const message = useKept(useMessage(id))
   return message ? <MessageBody message={message} /> : null
 })
 

@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { ChainRail, useFocusedChainId, useSectionsFocus } from '@/features/association'
 import { cn } from '@/lib/utils'
 import { Mark, StatusLine } from './marks'
-import { ENTER, EXIT, MOVE, RISE, useEntrance } from './motion'
+import { ENTER, EXIT, MOVE, useEntrance, useKept } from './motion'
 import { SectionBlock } from './section'
 import { useCommand } from './use-command'
 
@@ -27,7 +27,7 @@ const REASON_LABEL: { [R in ResponseReason]: string | null } = {
  * in `sectionIds` order, which the backend decides.
  */
 export const ResponseRow = memo(function ResponseRow({ id }: { id: ResponseId }) {
-  const response = useResponse(id)
+  const response = useKept(useResponse(id))
   return response ? <ResponseBody response={response} /> : null
 })
 
@@ -91,8 +91,8 @@ function SectionSlot({ id, index, grouped, ref }: { id: SectionId; index: number
       ref={ref}
       layout="position"
       layoutDependency={index}
-      initial={enter ? { opacity: 0, y: RISE } : false}
-      animate={{ opacity: 1, y: 0 }}
+      initial={enter ? { opacity: 0 } : false}
+      animate={{ opacity: 1 }}
       exit={{ opacity: 0, transition: EXIT }}
       transition={{ ...ENTER, layout: MOVE }}
     >

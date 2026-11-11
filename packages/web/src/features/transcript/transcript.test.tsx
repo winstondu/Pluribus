@@ -72,6 +72,25 @@ test('P8 (web) · a reply group keeps its position and honours an explicit outpu
   expect(drawnOrder(view.container)).toEqual(before)
 })
 
+test('reply group · the group is fixed by its first section’s first output, and sections take their places at their own', async () => {
+  const view = await open('group-first-output')
+  const titles = () =>
+    [...response(view.container, 'ask').querySelectorAll<HTMLElement>('[data-section-id]')].map((element) => element.getAttribute('aria-label'))
+  expect(drawnOrder(view.container)).toEqual([m('ask'), m('tea'), r('ask'), r('tea')])
+  await play(view) // another reply shows text first and overtakes the pending group
+  expect(drawnOrder(view.container)).toEqual([m('ask'), m('tea'), r('tea'), r('ask')])
+  await play(view) // the group's first output fixes it where it is
+  expect(response(view.container, 'ask').dataset.placement).toBe('fixed')
+  expect(titles()).toEqual(['Menu translation', 'Why the sky is blue', 'Weekend hike'])
+  await play(view) // a second section overtakes the one still pending, inside the group
+  expect(titles()).toEqual(['Menu translation', 'Weekend hike', 'Why the sky is blue'])
+  expect(section(view.container, 'sky').dataset.placement).toBe('pending')
+  expect(response(view.container, 'ask').contains(section(view.container, 'sky'))).toBe(true)
+  await play(view)
+  expect(titles()).toEqual(['Menu translation', 'Weekend hike', 'Why the sky is blue'])
+  expect(drawnOrder(view.container)).toEqual([m('ask'), m('tea'), r('tea'), r('ask')])
+})
+
 test('reply group · a section per fragment, a pending section inside the placed group, and the mixed-result count with no overall label', async () => {
   const view = await open('reply-group-mixed')
   const group = response(view.container, 'ask')

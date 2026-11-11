@@ -20,7 +20,7 @@ import { cn } from '@/lib/utils'
 import { AnswerText } from './answer-text'
 import { focusClass, FocusTag } from './focus-style'
 import { Mark, StatusLine, type MarkKind } from './marks'
-import { COLLAPSE } from './motion'
+import { COLLAPSE, useKept } from './motion'
 import { useCommand } from './use-command'
 
 const MARK_KINDS: ReadonlySet<string> = new Set(['failed', 'stopped', 'interrupted', 'cancelled', 'superseded'])
@@ -31,7 +31,7 @@ function markKind(state: string): MarkKind {
 
 /** One answer section: the slot one directive's output occupies. Renders exactly what the projection says. */
 export const SectionBlock = memo(function SectionBlock({ id, grouped }: { id: SectionId; grouped: boolean }) {
-  const section = useSection(id)
+  const section = useKept(useSection(id))
   return section ? <SectionBody section={section} grouped={grouped} /> : null
 })
 
@@ -186,7 +186,7 @@ interface AttemptBlockProps {
 }
 
 const AttemptBlock = memo(function AttemptBlock(props: AttemptBlockProps) {
-  const attempt = useAttempt(props.id)
+  const attempt = useKept(useAttempt(props.id))
   return attempt ? <AttemptBody attempt={attempt} {...props} /> : null
 })
 

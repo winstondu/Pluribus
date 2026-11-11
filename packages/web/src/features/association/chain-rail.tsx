@@ -61,7 +61,7 @@ function RailButton({ chain }: { chain: ChainAssociation }) {
       className={cn(
         // The bar is 3 px wide; the control around it is wide enough to hit.
         'group/rail relative min-h-4 flex-1 cursor-pointer rounded-full outline-none',
-        'before:absolute before:inset-y-0 before:-inset-x-2.5 before:content-[""]',
+        'before:absolute before:inset-y-0 before:-right-2.5 before:-left-4 before:content-[""]',
         'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
       )}
     >
