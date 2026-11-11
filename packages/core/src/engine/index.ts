@@ -58,5 +58,5 @@ export {
   RETRY_TIMER,
   type WaitDecision,
 } from './lifecycle'
-export { routingCandidates, resolveTargets } from './candidates'
+export { routingCandidates, resolveTargets, sessionLogTokens } from './candidates'
 export { Projector, projectSnapshot, rebuildSnapshot, runInspection, undoSplitAvailable } from './projections'

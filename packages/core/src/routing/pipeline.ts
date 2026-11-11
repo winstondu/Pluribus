@@ -41,8 +41,8 @@ import type {
 import { Batch, ask, type Answers } from './batch'
 import { AMBIGUITY_FLOOR, derivePlacement, neededWork, placedWithoutTarget, referentCovered, resolveUnitTargets, selected, validatePlan, type TargetMode } from './derive'
 import { askUnit, readUnit, sectionNumbers, withReferents, type UnitScope, type UnitSignals } from './questions'
-import { createReferentAsk, decisionAllowance, estimateRequestTokens, referentStrategyFor, type ReferentSpend } from './referents'
-import { decisionContextOf, describeState, numberedAnswerSections, supply, type Supplied } from './supply'
+import { createReferentAsk, estimateRequestTokens, referentStrategyFor, routingTokenBudget, type ReferentSpend, type RoutingTokenBudget } from './referents'
+import { MAX_SECTIONS, MIN_SECTIONS, decisionContextOf, describeState, numberedAnswerSections, supply, type Supplied } from './supply'
 
 /**
  * The default router: the routing pipeline of 11 · "Routing".
@@ -69,6 +69,13 @@ import { decisionContextOf, describeState, numberedAnswerSections, supply, type 
  * in the calls above, and any further call it makes is counted against the
  * routing's decision budget. The pipeline does not know which strategy it
  * has; thresholds, placement and validation are the same after any of them.
+ *
+ * Every decision request of a routing draws from one token budget
+ * (`routingTokenBudget`): the smaller of `settings.routing.tokenBudget` and
+ * the price guard's allowance. The pipeline's own request comes first: when
+ * it would not fit with the full window of answer sections it lists fewer,
+ * the most recent ones, down to `MIN_SECTIONS`. What is left is the referent
+ * strategy's.
  *
  * Shared-requirement revisions take one more call over the brief's
  * consumers, to pre-select the work actually affected (Q44).
@@ -106,7 +113,9 @@ class Record {
   referentNote = ''
   /** Whether the decision model was shown stored summaries, for the decision's explanation. Empty when not. */
   contextNote = ''
-  /** Estimated input tokens of the pipeline's own decision requests so far: the price guard counts them first. */
+  /** Why the pipeline's request listed fewer answer sections than its window, for the decision's explanation. Empty when it listed them all. */
+  windowNote = ''
+  /** Estimated input tokens of the pipeline's own decision requests so far: they are counted against the routing's token budget first. */
   pipelineTokens = 0
 
   /** One of the pipeline's own decision requests. */
@@ -129,50 +138,58 @@ async function routeMessage(deps: Deps, input: RoutingInput, signal: CancelSigna
     : input.explicitTargets.length > 0
       ? { sectionIds: input.explicitTargets, mode: 'explicit' }
       : null
-  const supplied = supply(input, given?.sectionIds ?? [])
   const record = new Record()
 
   // A reply aimed at an open clarification question is its answer (Q98).
-  const answered = given?.sectionIds.map((id) => supplied.sectionById.get(id)?.asksElicitationId ?? null).find((id) => id !== null)
+  const everything = supply(input, given?.sectionIds ?? [])
+  const answered = given?.sectionIds.map((id) => everything.sectionById.get(id)?.asksElicitationId ?? null).find((id) => id !== null)
   if (answered) return answerPlan(input, answered, record, given?.mode ?? 'explicit', given?.sectionIds ?? [])
 
   const relate = input.candidates.sections.length > 0 || input.candidates.chains.length > 0
-  const numbers = sectionNumbers(supplied)
+  const strategy = deps.referentStrategy ?? referentStrategyFor(input.settings.routing.referentStrategy)
 
   // ── 1. The decision gate ──
-  const gate = new Batch()
-  if (!forced) {
-    gate.noul('composite', 'Does the new message contain two or more independent requests that could each be answered on its own? Several topics, a requested contrast, or one integrated output are one request.')
-    gate.noul(
-      'sessionwide',
-      'Does the user explicitly say that a requirement in the new message applies to the whole conversation from now on ("from now on", "in this chat", "for all answers")? A requirement for this request alone does not count.',
-    )
+  /** The gate's request when the pipeline lists at most `window` answer sections. */
+  const buildGate = (window: number) => {
+    const supplied = supply(input, given?.sectionIds ?? [], window)
+    const numbers = sectionNumbers(supplied)
+    const gate = new Batch()
+    if (!forced) {
+      gate.noul('composite', 'Does the new message contain two or more independent requests that could each be answered on its own? Several topics, a requested contrast, or one integrated output are one request.')
+      gate.noul(
+        'sessionwide',
+        'Does the user explicitly say that a requirement in the new message applies to the whole conversation from now on ("from now on", "in this chat", "for all answers")? A requirement for this request alone does not count.',
+      )
+    }
+    const messageScope: UnitScope = {
+      key: 'm',
+      name: 'the new message',
+      sections: given ? [] : supplied.sections.map((section) => ({ n: numbers.get(section.sectionId) ?? 0, section })),
+      corrective: relate,
+      relation: relate,
+      chain: relate,
+      dependencies: relate,
+      sessionRequirements: input.sessionRequirements.length > 0,
+      clarify: true,
+      after: [],
+    }
+    askUnit(gate, supplied, input, messageScope)
+    const subject = [
+      `New message: "${input.text}"`,
+      ...(given ? [`The user replied to ${given.sectionIds.map((id) => `S${numbers.get(id) ?? '?'}`).join(' and ')}.`] : []),
+    ].join('\n')
+    const stateText = describeState(input, supplied, subject)
+    // Explicit and chosen targets are used as given: nothing is asked about the message's referents.
+    const referentRequest = referentRequestFor(input, supplied, given ? [] : [{ key: 'm', name: 'the new message' }], stateText, subject)
+    addReferentQuestions(gate, strategy, referentRequest)
+    return { supplied, batch: gate, messageScope, subject, stateText, referentRequest }
   }
-  const messageScope: UnitScope = {
-    key: 'm',
-    name: 'the new message',
-    sections: given ? [] : supplied.sections.map((section) => ({ n: numbers.get(section.sectionId) ?? 0, section })),
-    corrective: relate,
-    relation: relate,
-    chain: relate,
-    dependencies: relate,
-    sessionRequirements: input.sessionRequirements.length > 0,
-    clarify: true,
-    after: [],
-  }
-  askUnit(gate, supplied, input, messageScope)
-  const subject = [
-    `New message: "${input.text}"`,
-    ...(given ? [`The user replied to ${given.sectionIds.map((id) => `S${numbers.get(id) ?? '?'}`).join(' and ')}.`] : []),
-  ].join('\n')
-  const stateText = describeState(input, supplied, subject)
+  // The request lists as many answer sections as the routing's token budget has room for.
+  const fitted = fitWindow(input, buildGate, tokenBudgetFor(input, 1), record)
+  const { supplied, batch: gate, messageScope, subject, stateText, referentRequest } = fitted
   // Which the decision model saw, for the run inspector: a stored summary and the section's own content, or the usual line.
   const summarised = supplied.sections.filter((s) => decisionContextOf(input, s) !== null).length
   if (summarised > 0) record.contextNote = ` Decision context: a stored summary was shown for ${summarised} of the ${supplied.sections.length} listed sections.`
-  const strategy = deps.referentStrategy ?? referentStrategyFor(input.settings.routing.referentStrategy)
-  // Explicit and chosen targets are used as given: nothing is asked about the message's referents.
-  const referentRequest = referentRequestFor(input, supplied, given ? [] : [{ key: 'm', name: 'the new message' }], stateText, subject)
-  addReferentQuestions(gate, strategy, referentRequest)
   const gateResult = await record.ask(deps.decisionProvider, input.settings.models.decision, stateText, gate, signal)
   if (!gateResult.ok) return failed(gateResult.error)
   const g = gateResult.answers
@@ -242,7 +259,7 @@ async function routeMessage(deps: Deps, input: RoutingInput, signal: CancelSigna
   const compositeDecided: Decided<'atomic' | 'composite'> = { value: 'atomic', confidence: composite }
 
   if (isComposite && decomposition && decomposition.fragments.length >= 2) {
-    return routeComposite(deps, input, signal, { supplied, given, record, decomposition, requirements, composite, strategy })
+    return routeComposite(deps, input, signal, { given, record, decomposition, requirements, composite, strategy })
   }
 
   // ── Atomic ──
@@ -329,7 +346,6 @@ function finish(input: RoutingInput, plan: RoutingPlan): RoutingOutcome {
 // ───────────────────────────── composite ─────────────────────────────
 
 interface CompositeContext {
-  readonly supplied: Supplied
   readonly given: Given | null
   readonly record: Record
   readonly decomposition: Decomposition
@@ -340,54 +356,61 @@ interface CompositeContext {
 
 async function routeComposite(deps: Deps, input: RoutingInput, signal: CancelSignal, c: CompositeContext): Promise<RoutingOutcome> {
   const t = input.settings.thresholds
-  const { supplied, given, record, decomposition, requirements } = c
+  const { given, record, decomposition, requirements } = c
   const fragments = decomposition.fragments
-  const numbers = sectionNumbers(supplied)
   const keyOf = new Map(fragments.map((f, i) => [f.key, `f${i}`]))
   const fragmentIds = new Map<string, FragmentId>()
   const relate = input.candidates.sections.length > 0 || input.candidates.chains.length > 0
-
-  const batch = new Batch()
-  const scopes: UnitScope[] = fragments.map((f, i) => ({
-    key: `f${i}`,
-    name: `part F${i + 1}`,
-    // Every part is asked about every section, given ones included: a part that does not refer to
-    // the given sections keeps its own clear target (T1).
-    sections: supplied.sections.map((section) => ({ n: numbers.get(section.sectionId) ?? 0, section })),
-    corrective: relate,
-    relation: relate,
-    chain: relate,
-    dependencies: relate,
-    sessionRequirements: input.sessionRequirements.length > 0,
-    clarify: true,
-    after: f.dependsOnFragments.flatMap((key) => {
-      const other = keyOf.get(key)
-      return other ? [{ key: other, name: `part F${Number(other.slice(1)) + 1}` }] : []
-    }),
-  }))
-  for (const scope of scopes) askUnit(batch, supplied, input, scope)
   const shared = requirements.sharedRequirements()
-  shared.forEach((r, i) => {
-    batch.noul(
-      `q${i + 1}_clarify`,
-      `Is the requirement "${r.text}", which several parts share, ambiguous or missing information, so that the user must be asked before those parts can be answered?`,
-    )
-  })
-  if (decomposition.barrier) {
-    batch.noul(
-      'barrier',
-      `Does the message relate its parts' outputs to one another (${decomposition.barrier.qualifier ? `"${decomposition.barrier.qualifier}"` : 'an explicit order, a combined limit, or one integrated presentation'}), rather than give requirements that apply to each part separately?`,
-    )
+
+  /** The request about the parts when the pipeline lists at most `window` answer sections. */
+  const buildParts = (window: number) => {
+    const supplied = supply(input, given?.sectionIds ?? [], window)
+    const numbers = sectionNumbers(supplied)
+    const batch = new Batch()
+    const scopes: UnitScope[] = fragments.map((f, i) => ({
+      key: `f${i}`,
+      name: `part F${i + 1}`,
+      // Every part is asked about every section, given ones included: a part that does not refer to
+      // the given sections keeps its own clear target (T1).
+      sections: supplied.sections.map((section) => ({ n: numbers.get(section.sectionId) ?? 0, section })),
+      corrective: relate,
+      relation: relate,
+      chain: relate,
+      dependencies: relate,
+      sessionRequirements: input.sessionRequirements.length > 0,
+      clarify: true,
+      after: f.dependsOnFragments.flatMap((key) => {
+        const other = keyOf.get(key)
+        return other ? [{ key: other, name: `part F${Number(other.slice(1)) + 1}` }] : []
+      }),
+    }))
+    for (const scope of scopes) askUnit(batch, supplied, input, scope)
+    shared.forEach((r, i) => {
+      batch.noul(
+        `q${i + 1}_clarify`,
+        `Is the requirement "${r.text}", which several parts share, ambiguous or missing information, so that the user must be asked before those parts can be answered?`,
+      )
+    })
+    if (decomposition.barrier) {
+      batch.noul(
+        'barrier',
+        `Does the message relate its parts' outputs to one another (${decomposition.barrier.qualifier ? `"${decomposition.barrier.qualifier}"` : 'an explicit order, a combined limit, or one integrated presentation'}), rather than give requirements that apply to each part separately?`,
+      )
+    }
+    const subject = [
+      `New message: "${input.text}"`,
+      'Its parts:',
+      ...fragments.map((f, i) => `F${i + 1}. ${JSON.stringify(f.instruction)} (from ${JSON.stringify(f.sourceSpans.map((s) => input.text.slice(s.start, s.end)).join(' … '))})`),
+      ...(given ? [`The user replied to ${given.sectionIds.map((id) => `S${numbers.get(id) ?? '?'}`).join(' and ')}.`] : []),
+    ].join('\n')
+    const stateText = describeState(input, supplied, subject)
+    const referentRequest = referentRequestFor(input, supplied, scopes.map((scope) => ({ key: scope.key, name: scope.name })), stateText, subject)
+    addReferentQuestions(batch, c.strategy, referentRequest)
+    return { supplied, batch, scopes, stateText, referentRequest }
   }
-  const subject = [
-    `New message: "${input.text}"`,
-    'Its parts:',
-    ...fragments.map((f, i) => `F${i + 1}. ${JSON.stringify(f.instruction)} (from ${JSON.stringify(f.sourceSpans.map((s) => input.text.slice(s.start, s.end)).join(' … '))})`),
-    ...(given ? [`The user replied to ${given.sectionIds.map((id) => `S${numbers.get(id) ?? '?'}`).join(' and ')}.`] : []),
-  ].join('\n')
-  const stateText = describeState(input, supplied, subject)
-  const referentRequest = referentRequestFor(input, supplied, scopes.map((scope) => ({ key: scope.key, name: scope.name })), stateText, subject)
-  addReferentQuestions(batch, c.strategy, referentRequest)
+  // Each part is a piece of work with an answer of its own, so the budget is that of as many answers.
+  const { supplied, batch, scopes, stateText, referentRequest } = fitWindow(input, buildParts, tokenBudgetFor(input, fragments.length), record)
   const result = await record.ask(deps.decisionProvider, input.settings.models.decision, stateText, batch, signal)
   if (!result.ok) return failed(result.error)
   const a = result.answers
@@ -637,18 +660,71 @@ async function resolveReferents(
 }
 
 /**
- * What the strategy may add to this routing: its budget, with the input
- * tokens cut to what the price guard leaves after the pipeline's own
- * requests. The request and question caps stand as they are.
+ * What one routing may use in decision input tokens, in every request it
+ * makes: the smaller of the token budget and the price guard's allowance
+ * for `units` pieces of work.
  */
-function guardedBudget(input: RoutingInput, units: number, pipelineTokens: number): DecisionBudget {
-  const budget = input.settings.routing.referentBudget
-  const allowance = decisionAllowance(input.settings.routing.costGuard, {
+function tokenBudgetFor(input: RoutingInput, units: number): RoutingTokenBudget {
+  return routingTokenBudget(input.settings.routing, {
+    sessionLogTokens: input.sessionLogTokens,
     messageLength: input.text.length,
     answerLengths: input.candidates.sections.filter((s) => s.state === 'completed' && !s.asksElicitationId).map((s) => s.answerLength),
     units,
   })
-  return { ...budget, inputTokens: Math.max(0, Math.min(budget.inputTokens, allowance - pipelineTokens)) }
+}
+
+/**
+ * What the strategy may add to this routing: the request and question caps
+ * as they are set, and the input tokens the routing's budget has left after
+ * the pipeline's own requests.
+ */
+function guardedBudget(input: RoutingInput, units: number, pipelineTokens: number): DecisionBudget {
+  return { ...input.settings.routing.referentBudget, inputTokens: Math.max(0, Math.floor(tokenBudgetFor(input, units).total - pipelineTokens)) }
+}
+
+/**
+ * The pipeline's request with as many answer sections listed as the
+ * routing's token budget has room for, after what the routing has already
+ * used. The full window when it fits; otherwise the widest that fits, found
+ * by halving (a request only grows with its window), and never fewer than
+ * `MIN_SECTIONS`: a request has to be sent for the message to be routed at
+ * all, so below that the budget is exceeded by what the smallest request
+ * costs, and the decision's explanation says so.
+ */
+function fitWindow<T extends { readonly stateText: string; readonly batch: Batch }>(
+  input: RoutingInput,
+  build: (window: number) => T,
+  budget: RoutingTokenBudget,
+  record: Record,
+): T {
+  const available = budget.total - record.pipelineTokens
+  const cost = (built: T): number => estimateRequestTokens(built.stateText, built.batch.questions)
+  const full = build(MAX_SECTIONS)
+  if (cost(full) <= available) return full
+  // Nothing to leave out: the conversation has no more sections or lines of work than the smallest window lists.
+  const listable = Math.max(input.candidates.sections.length, input.candidates.chains.length)
+  const limit = budget.limitedBy === 'price-guard' ? 'the price guard on decision cost' : 'the decision token budget'
+  if (listable <= MIN_SECTIONS) {
+    record.windowNote = ` The routing request costs more than ${limit} allows (${Math.max(0, Math.floor(available))} tokens) and could not be made smaller.`
+    return full
+  }
+  let fitting: { readonly built: T; readonly window: number } | null = null
+  let low = MIN_SECTIONS
+  let high = Math.min(MAX_SECTIONS, listable) - 1
+  while (low <= high) {
+    const window = Math.floor((low + high) / 2)
+    const built = build(window)
+    if (cost(built) <= available) {
+      fitting = { built, window }
+      low = window + 1
+    } else high = window - 1
+  }
+  if (fitting) {
+    record.windowNote = ` The routing request listed the ${fitting.window} most recent answer sections and lines of work, not ${MAX_SECTIONS}, to stay within ${limit}.`
+    return fitting.built
+  }
+  record.windowNote = ` The routing request listed the ${MIN_SECTIONS} most recent answer sections and lines of work, the fewest it lists, and still costs more than ${limit} allows (${Math.max(0, Math.floor(available))} tokens).`
+  return build(MIN_SECTIONS)
 }
 
 function clamp01(value: number): number {
@@ -902,7 +978,7 @@ function decisionRecord(
     composition,
     units,
     thresholds: { ...input.settings.thresholds, ambiguityFloor: AMBIGUITY_FLOOR },
-    explanation: `${explanation}${record.referentNote}${record.contextNote}`,
+    explanation: `${explanation}${record.windowNote}${record.referentNote}${record.contextNote}`,
     questions: record.questions,
   }
 }

@@ -40,7 +40,7 @@ export interface DecisionThresholds {
  *   anyway. No further request.
  * - `tree-walk`: breadth-first over the context tree from each root, pruned
  *   where a line of work is not relevant, one further request per branching
- *   level, within `referentBudget` and `costGuard`. Long runs of only
+ *   level, within `tokenBudget`, `referentBudget` and `costGuard`. Long runs of only
  *   children are searched (`treeWalk`).
  */
 export type ReferentStrategyName = 'one-pass' | 'tree-walk'
@@ -48,10 +48,13 @@ export type ReferentStrategyName = 'one-pass' | 'tree-walk'
 export const REFERENT_STRATEGY_NAMES: readonly ReferentStrategyName[] = ['one-pass', 'tree-walk']
 
 /**
- * The most decision work a referent strategy may add to one routing, beyond
- * the requests the pipeline sends anyway. A strategy checks it before every
+ * What a referent strategy may still add to one routing, beyond the
+ * requests the pipeline sends anyway. A strategy checks it before every
  * further request and falls back deterministically instead of exceeding it,
- * so decision cost stays a small fraction of the answer it routes.
+ * so decision cost stays a small fraction of the answer it routes. The
+ * request and question limits are settings (`DecisionCaps`); the token
+ * limit is what the routing's token budget and the price guard leave once
+ * the pipeline's own requests are counted.
  */
 export interface DecisionBudget {
   /** Further decision requests per routing. Whole number ≥ 0. */
@@ -60,6 +63,52 @@ export interface DecisionBudget {
   readonly questions: number
   /** Estimated input tokens of those requests, in total. Whole number ≥ 0. */
   readonly inputTokens: number
+}
+
+/** The backstops that hold whatever the token budget and the prices are: further requests and their questions. */
+export type DecisionCaps = Pick<DecisionBudget, 'requests' | 'questions'>
+
+/**
+ * The decision input tokens one routing may use, in every decision request
+ * it makes: the pipeline's own, the strategy selector's and the referent
+ * strategy's (docs/build/dependency-decisioning.md · "The token budget").
+ *
+ * - `absolute`: a fixed number of tokens.
+ * - `relative`: `fraction` of the tokens recorded in the conversation's log
+ *   (every user message and the text of every attempt, superseded, failed,
+ *   stopped and interrupted ones included; one token per four characters),
+ *   never below `floor`, so a new conversation is not starved, and never
+ *   above `ceiling`, so a huge one is not unbounded.
+ *
+ * The price guard (`DecisionCostGuard`) applies as well: a routing may use
+ * the smaller of the two.
+ */
+export type DecisionTokenBudget =
+  | { readonly mode: 'absolute'; /** Whole number ≥ 0. */ readonly inputTokens: number }
+  | {
+      readonly mode: 'relative'
+      /** Decision tokens per token of the conversation's log. Greater than 0; above 1 it is a multiple. */
+      readonly fraction: number
+      /** Whole number ≥ 0. */
+      readonly floor: number
+      /** Whole number ≥ `floor`. */
+      readonly ceiling: number
+    }
+
+/** Characters per token where text is sized without a tokenizer: the conversation's log, and an answer's expected length. */
+export const CHARACTERS_PER_TOKEN = 4
+
+/** The size in tokens of text of `characters` characters, as the token budget and the price guard count it. */
+export function textTokens(characters: number): number {
+  return Math.ceil(Math.max(0, characters) / CHARACTERS_PER_TOKEN)
+}
+
+export const TOKEN_BUDGET_MODES: readonly DecisionTokenBudget['mode'][] = ['relative', 'absolute']
+
+/** The tokens a budget allows a routing in a conversation whose log holds `sessionLogTokens`. */
+export function resolveTokenBudget(budget: DecisionTokenBudget, sessionLogTokens: number): number {
+  if (budget.mode === 'absolute') return budget.inputTokens
+  return Math.min(budget.ceiling, Math.max(budget.floor, Math.floor(budget.fraction * Math.max(0, sessionLogTokens))))
 }
 
 /**
@@ -98,9 +147,10 @@ export interface TreeWalkSettings {
  * decision requests, as a multiple of what answering it costs. The
  * allowance is `maxAnswerCostRatio` × the price of one answer run per piece
  * of work routed (its least input, the message itself, and its expected
- * output), converted to decision input tokens. The pipeline's own requests
- * are counted first; what is left, and at most `referentBudget`, is what a
- * referent strategy may add. Prices are US dollars per million tokens and
+ * output), converted to decision input tokens. A routing may use the
+ * smaller of this and `tokenBudget`: the pipeline's own request lists fewer
+ * answers to fit, and what is left is what a referent strategy may add,
+ * within `referentBudget`. Prices are US dollars per million tokens and
  * default to the cheapest answer model offered, so the bound holds on any
  * dearer one (docs/build/dependency-decisioning.md · "The guard").
  */
@@ -120,7 +170,8 @@ export interface DecisionCostGuard {
 
 export interface RoutingSettings {
   readonly referentStrategy: ReferentStrategyName
-  readonly referentBudget: DecisionBudget
+  readonly referentBudget: DecisionCaps
+  readonly tokenBudget: DecisionTokenBudget
   readonly treeWalk: TreeWalkSettings
   readonly costGuard: DecisionCostGuard
   /**
@@ -159,6 +210,11 @@ export interface Settings {
   readonly debug: DebugToggles
 }
 
+/** The relative token budget a routing gets unless the user chose another. */
+export const DEFAULT_RELATIVE_TOKEN_BUDGET: Extract<DecisionTokenBudget, { mode: 'relative' }> = { mode: 'relative', fraction: 0.02, floor: 16_000, ceiling: 40_000 }
+/** The absolute token budget offered when the user switches to a fixed one: the relative budget's floor. */
+export const DEFAULT_ABSOLUTE_TOKEN_BUDGET: Extract<DecisionTokenBudget, { mode: 'absolute' }> = { mode: 'absolute', inputTokens: 16_000 }
+
 export const DEFAULT_SETTINGS: Settings = {
   retryPolicy: 'standard',
   defaultChoiceWaitMs: 30_000,
@@ -180,7 +236,11 @@ export const DEFAULT_SETTINGS: Settings = {
   routing: {
     // Chosen on the routing corpus and on cost (docs/build/dependency-decisioning.md).
     referentStrategy: 'tree-walk',
-    referentBudget: { requests: 4, questions: 96, inputTokens: 12_000 },
+    referentBudget: { requests: 4, questions: 96 },
+    // 2% of the conversation's log, at least what the pipeline's request and a search of a long run cost (16,000) and
+    // at most what twice a 1,700-token answer on the cheapest answer model buys (40,000): the budget grows with what
+    // there is to search. Evidence in docs/build/dependency-decisioning.md · "The token budget".
+    tokenBudget: DEFAULT_RELATIVE_TOKEN_BUDGET,
     // Both switches cost a further request whenever a skipped answer is referred to and save little inside the
     // pipeline's window; a long run is searched anyway. Measured in docs/build/dependency-decisioning.md.
     treeWalk: { startAtTrunkBase: false, hopBetweenBranchPoints: false, searchRunsOverTokens: 1_500 },
@@ -207,7 +267,9 @@ export interface SettingsPatch {
   readonly thresholds?: Partial<DecisionThresholds>
   readonly routing?: {
     readonly referentStrategy?: ReferentStrategyName
-    readonly referentBudget?: Partial<DecisionBudget>
+    readonly referentBudget?: Partial<DecisionCaps>
+    /** Replaced as a whole: the two modes share no field. */
+    readonly tokenBudget?: DecisionTokenBudget
     readonly treeWalk?: Partial<TreeWalkSettings>
     readonly costGuard?: Partial<DecisionCostGuard>
     readonly useSummaryIfAvailable?: boolean
@@ -227,6 +289,7 @@ export function applySettingsPatch(settings: Settings, patch: SettingsPatch): Se
     routing: {
       referentStrategy: patch.routing?.referentStrategy ?? settings.routing.referentStrategy,
       referentBudget: { ...settings.routing.referentBudget, ...definedOnly(patch.routing?.referentBudget) },
+      tokenBudget: patch.routing?.tokenBudget ?? settings.routing.tokenBudget,
       treeWalk: { ...settings.routing.treeWalk, ...definedOnly(patch.routing?.treeWalk) },
       costGuard: { ...settings.routing.costGuard, ...definedOnly(patch.routing?.costGuard) },
       useSummaryIfAvailable: patch.routing?.useSummaryIfAvailable ?? settings.routing.useSummaryIfAvailable,
@@ -262,6 +325,21 @@ export function validateSettingsPatch(patch: SettingsPatch): string | null {
       return `Decision budget "${name}" must be a whole number of at least 0`
     }
   }
+  const tokenBudget = patch.routing?.tokenBudget
+  if (tokenBudget !== undefined) {
+    const whole = (value: unknown): boolean => typeof value === 'number' && Number.isInteger(value) && value >= 0
+    if (tokenBudget.mode === 'absolute') {
+      if (!whole(tokenBudget.inputTokens)) return 'The decision token budget must be a whole number of at least 0'
+    } else if (tokenBudget.mode === 'relative') {
+      if (!(typeof tokenBudget.fraction === 'number' && Number.isFinite(tokenBudget.fraction) && tokenBudget.fraction > 0)) {
+        return 'The decision token budget\'s share of the conversation must be greater than 0'
+      }
+      if (!whole(tokenBudget.floor) || !whole(tokenBudget.ceiling)) return 'The decision token budget\'s floor and ceiling must be whole numbers of at least 0'
+      if (tokenBudget.ceiling < tokenBudget.floor) return 'The decision token budget\'s ceiling cannot be below its floor'
+    } else {
+      return `Unknown decision token budget mode "${String((tokenBudget as { mode?: unknown }).mode)}"`
+    }
+  }
   const searchOver = patch.routing?.treeWalk?.searchRunsOverTokens
   if (searchOver !== undefined && (!Number.isInteger(searchOver) || searchOver < 1)) {
     return 'The run size above which the tree walk searches must be a whole number of at least 1'
@@ -280,6 +358,7 @@ export function validateSettingsPatch(patch: SettingsPatch): string | null {
  * every group it does not have yet.
  */
 export function normalizeSettings(stored: Partial<Settings>): Settings {
+  const caps = stored.routing?.referentBudget as (Partial<DecisionCaps> & { readonly inputTokens?: unknown }) | undefined
   return {
     ...DEFAULT_SETTINGS,
     ...stored,
@@ -287,7 +366,11 @@ export function normalizeSettings(stored: Partial<Settings>): Settings {
     thresholds: { ...DEFAULT_SETTINGS.thresholds, ...stored.thresholds },
     routing: {
       referentStrategy: stored.routing?.referentStrategy ?? DEFAULT_SETTINGS.routing.referentStrategy,
-      referentBudget: { ...DEFAULT_SETTINGS.routing.referentBudget, ...stored.routing?.referentBudget },
+      referentBudget: {
+        requests: caps?.requests ?? DEFAULT_SETTINGS.routing.referentBudget.requests,
+        questions: caps?.questions ?? DEFAULT_SETTINGS.routing.referentBudget.questions,
+      },
+      tokenBudget: normalizeTokenBudget(stored.routing?.tokenBudget, caps?.inputTokens),
       treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, ...stored.routing?.treeWalk },
       costGuard: { ...DEFAULT_SETTINGS.routing.costGuard, ...stored.routing?.costGuard },
       useSummaryIfAvailable: stored.routing?.useSummaryIfAvailable ?? DEFAULT_SETTINGS.routing.useSummaryIfAvailable,
@@ -295,6 +378,30 @@ export function normalizeSettings(stored: Partial<Settings>): Settings {
     },
     debug: { ...DEFAULT_SETTINGS.debug, ...stored.debug },
   }
+}
+
+/** What `referentBudget.inputTokens` was before the token budget became a setting of its own. */
+export const LEGACY_REFERENT_INPUT_TOKENS = 12_000
+
+/**
+ * The stored token budget, or the one an earlier version stored as
+ * `referentBudget.inputTokens`. Settings are stored whole, so the earlier
+ * default (12,000) was never a choice and becomes the current default; any
+ * other value was set by the user and is kept as an absolute budget.
+ */
+function normalizeTokenBudget(stored: DecisionTokenBudget | undefined, legacyInputTokens: unknown): DecisionTokenBudget {
+  if (stored?.mode === 'absolute' && Number.isInteger(stored.inputTokens) && stored.inputTokens >= 0) return { mode: 'absolute', inputTokens: stored.inputTokens }
+  if (stored?.mode === 'relative') {
+    const fallback = DEFAULT_RELATIVE_TOKEN_BUDGET
+    const fraction = Number.isFinite(stored.fraction) && stored.fraction > 0 ? stored.fraction : fallback.fraction
+    const floor = Number.isInteger(stored.floor) && stored.floor >= 0 ? stored.floor : fallback.floor
+    const ceiling = Number.isInteger(stored.ceiling) && stored.ceiling >= floor ? stored.ceiling : Math.max(floor, fallback.ceiling)
+    return { mode: 'relative', fraction, floor, ceiling }
+  }
+  if (typeof legacyInputTokens === 'number' && Number.isInteger(legacyInputTokens) && legacyInputTokens >= 0 && legacyInputTokens !== LEGACY_REFERENT_INPUT_TOKENS) {
+    return { mode: 'absolute', inputTokens: legacyInputTokens }
+  }
+  return DEFAULT_SETTINGS.routing.tokenBudget
 }
 
 function definedOnly<T extends object>(value: T | undefined): Partial<T> {

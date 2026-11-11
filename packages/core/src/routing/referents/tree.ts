@@ -93,11 +93,26 @@ export function buildTree(request: Pick<ReferentRequest, 'sections' | 'candidate
     return null
   }
 
+  // The root of the tree a node is in so far, with the path to it shortened on every lookup: a chain of thousands of
+  // answers is attached without walking it once per node.
+  const towardsRoot = new Map<TreeNode, TreeNode>()
+  const rootOf = (node: TreeNode): TreeNode => {
+    const path: TreeNode[] = []
+    let at = node
+    for (let up = towardsRoot.get(at); up; up = towardsRoot.get(at)) {
+      path.push(at)
+      at = up
+    }
+    for (const passed of path) towardsRoot.set(passed, at)
+    return at
+  }
   const attach = (node: TreeNode, parent: TreeNode | null): void => {
     // A parent that is the node itself or one of its descendants would be a cycle in malformed candidates: treat as a root.
-    for (let p = parent; p; p = p.parent) if (p === node) return
+    if (parent && rootOf(parent) === node) return
     node.parent = parent
-    parent?.children.push(node)
+    if (!parent) return
+    parent.children.push(node)
+    towardsRoot.set(node, parent)
   }
   for (const node of bySection.values()) {
     const work = workByNode.get(node.entry.section.nodeId)
@@ -110,12 +125,16 @@ export function buildTree(request: Pick<ReferentRequest, 'sections' | 'candidate
   const all: TreeNode[] = [...bySection.values(), ...byGroup.values()]
   for (const node of all) node.children.sort(order)
   const roots = all.filter((n) => n.parent === null).sort(order)
+  // Depth first without recursion: a conversation that only ever continued one chain is as deep as it is long.
   const nodes: TreeNode[] = []
-  const visit = (n: TreeNode): void => {
-    nodes.push(n)
-    n.children.forEach(visit)
+  const stack: TreeNode[] = [...roots].reverse()
+  for (let node = stack.pop(); node; node = stack.pop()) {
+    nodes.push(node)
+    for (let i = node.children.length - 1; i >= 0; i--) {
+      const child = node.children[i]
+      if (child) stack.push(child)
+    }
   }
-  roots.forEach(visit)
   return { roots, nodes, bySection, byGroup }
 }
 

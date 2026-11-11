@@ -8,7 +8,8 @@ import { estimateRequestTokens } from './ask'
 
 /**
  * The price guard over a grid of conversations of up to a million tokens
- * (docs/build/dependency-decisioning.md · "The guard"). Each cell routes
+ * (docs/build/dependency-decisioning.md · "The guard"), with the default
+ * token budget (relative to the conversation's log). Each cell routes
  * the message that costs a strategy most: every question is answered
  * "plausible" (0.5), so every line of work is walked into and every chunk
  * of a search is followed. Tokens are the guard's own estimate, summed over
@@ -25,8 +26,16 @@ const MESSAGE = 'Look at that again and tell me what you would change'
 export type CostGridShape = 'flat' | 'early split' | 'bushy' | 'nested forks' | 'many roots'
 const SHAPES: readonly CostGridShape[] = ['flat', 'early split', 'bushy', 'nested forks', 'many roots']
 
-/** Sections × tokens per exchange: every cell is a conversation of at most a million tokens. */
+/**
+ * Sections × tokens per exchange: every cell is a conversation of at most a
+ * million tokens. The 120-token exchanges have answers of 102 tokens, just
+ * above the shortest the price guard is held to (`SHORTEST_ANSWER_TOKENS`):
+ * there the pipeline's own request has to list fewer answer sections to fit.
+ */
 export const COST_GRID_SIZES: readonly (readonly [number, number])[] = [
+  [50, 120],
+  [500, 120],
+  [8_000, 120],
   [50, 300],
   [50, 2_000],
   [50, 10_000],
@@ -115,8 +124,9 @@ function worstCase(): { readonly provider: DecisionProvider; readonly requests: 
   return { provider, requests }
 }
 
-const UNGUARDED: Pick<RoutingSettings, 'referentBudget' | 'costGuard'> = {
-  referentBudget: { requests: 1_000_000, questions: 100_000_000, inputTokens: 1_000_000_000 },
+const UNGUARDED: Pick<RoutingSettings, 'referentBudget' | 'tokenBudget' | 'costGuard'> = {
+  referentBudget: { requests: 1_000_000, questions: 100_000_000 },
+  tokenBudget: { mode: 'absolute', inputTokens: 1_000_000_000 },
   costGuard: { ...DEFAULT_SETTINGS.routing.costGuard, maxAnswerCostRatio: 0 },
 }
 const NO_SEARCH = 1_000_000_000
@@ -167,21 +177,20 @@ export interface CostGridRow {
   readonly answer: number
 }
 
-/** Every shape and strategy for one size, with the guard off and with the default guard. */
-export async function costGridRows(sections: number, exchange: number): Promise<CostGridRow[]> {
+/**
+ * Every shape and strategy for one size, with the default guard and with
+ * the guard off. `unguarded: false` leaves the second out (the row then
+ * repeats the guarded figures): unguarded, the worst message in the largest
+ * cells takes thousands of requests.
+ */
+export async function costGridRows(sections: number, exchange: number, options: { readonly unguarded?: boolean } = {}): Promise<CostGridRow[]> {
   const rows: CostGridRow[] = []
   for (const shape of SHAPES) {
     const sc = conversation(shape, sections, exchange)
     for (const [strategy, settings] of STRATEGIES) {
-      rows.push({
-        sections,
-        exchange,
-        shape,
-        strategy,
-        guarded: await spend(sc, { ...DEFAULT_SETTINGS.routing, ...settings }),
-        unguarded: await spend(sc, { ...DEFAULT_SETTINGS.routing, ...settings, ...UNGUARDED }),
-        answer: haikuAnswer(exchange),
-      })
+      const guarded = await spend(sc, { ...DEFAULT_SETTINGS.routing, ...settings })
+      const unguarded = options.unguarded === false ? guarded : await spend(sc, { ...DEFAULT_SETTINGS.routing, ...settings, ...UNGUARDED })
+      rows.push({ sections, exchange, shape, strategy, guarded, unguarded, answer: haikuAnswer(exchange) })
     }
   }
   return rows

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest'
 import { COMMAND_TYPES } from './commands'
 import { APP_EVENT_TYPES, APP_LOG, CONVERSATION_EVENT_TYPES, EVENT_SCHEMA_VERSION, upcastEvent } from './events'
 import { IN_FLIGHT_STATES, NOT_STARTED_STATES, PROVIDER_ERROR_CLASS, providerError, providerErrorCodeForStatus } from './model'
-import { DEFAULT_SETTINGS, RETRY_POLICIES, applySettingsPatch, normalizeSettings, validateSettingsPatch } from './settings'
+import { DEFAULT_ABSOLUTE_TOKEN_BUDGET, DEFAULT_RELATIVE_TOKEN_BUDGET, DEFAULT_SETTINGS, LEGACY_REFERENT_INPUT_TOKENS, RETRY_POLICIES, applySettingsPatch, normalizeSettings, resolveTokenBudget, textTokens, validateSettingsPatch } from './settings'
 import { groupCountText, pausedText, provisionalLabel, recoveryLabels, redoneByDefaultText, supersededInputText, waitingText } from './wording'
 
 describe('commands', () => {
@@ -111,7 +111,7 @@ describe('settings', () => {
     expect(next.thresholds).toEqual(DEFAULT_SETTINGS.thresholds)
     expect(applySettingsPatch(DEFAULT_SETTINGS, { routing: {} })).toBe(DEFAULT_SETTINGS)
     expect(validateSettingsPatch({ routing: { referentStrategy: 'guess' as never } })).toMatch(/referent strategy/)
-    expect(validateSettingsPatch({ routing: { referentBudget: { inputTokens: -1 } } })).toMatch(/inputTokens/)
+    expect(validateSettingsPatch({ routing: { referentBudget: { questions: -1 } } })).toMatch(/questions/)
     expect(validateSettingsPatch({ routing: { referentBudget: { requests: 1.5 } } })).toMatch(/requests/)
     expect(validateSettingsPatch({ routing: { referentStrategy: 'tree-walk', referentBudget: { requests: 0 } } })).toBeNull()
     const { routing: _dropped, ...stored } = { ...DEFAULT_SETTINGS, retryPolicy: 'manual' as const }
@@ -133,7 +133,8 @@ describe('settings', () => {
     const old = { ...DEFAULT_SETTINGS, routing: { referentStrategy: 'one-pass', referentBudget: { requests: 1, questions: 10, inputTokens: 500 } } } as unknown as typeof DEFAULT_SETTINGS
     expect(normalizeSettings(old).routing).toEqual({
       referentStrategy: 'one-pass',
-      referentBudget: { requests: 1, questions: 10, inputTokens: 500 },
+      referentBudget: { requests: 1, questions: 10 },
+      tokenBudget: { mode: 'absolute', inputTokens: 500 },
       treeWalk: DEFAULT_SETTINGS.routing.treeWalk,
       costGuard: DEFAULT_SETTINGS.routing.costGuard,
       useSummaryIfAvailable: false,
@@ -144,6 +145,59 @@ describe('settings', () => {
     expect(summaries.routing.useSummaryIfAvailable).toBe(true)
     expect(summaries.routing.backgroundSummaries).toBe(false)
     expect(applySettingsPatch(summaries, { routing: { backgroundSummaries: true } }).routing).toMatchObject({ useSummaryIfAvailable: true, backgroundSummaries: true })
+  })
+})
+
+describe('the decision token budget', () => {
+  const relative = DEFAULT_RELATIVE_TOKEN_BUDGET
+
+  test('budget · the default is relative to the conversation\'s log: 2% of it, never below 16,000 tokens and never above 40,000', () => {
+    expect(DEFAULT_SETTINGS.routing.tokenBudget).toEqual({ mode: 'relative', fraction: 0.02, floor: 16_000, ceiling: 40_000 })
+    expect(DEFAULT_ABSOLUTE_TOKEN_BUDGET).toEqual({ mode: 'absolute', inputTokens: 16_000 })
+    expect(resolveTokenBudget(relative, 0)).toBe(16_000)
+    expect(resolveTokenBudget(relative, 500_000)).toBe(16_000)
+    expect(resolveTokenBudget(relative, 1_000_000)).toBe(20_000)
+    expect(resolveTokenBudget(relative, 1_234_567)).toBe(24_691)
+    expect(resolveTokenBudget(relative, 5_000_000)).toBe(40_000)
+    // A multiple of the log is a fraction above 1.
+    expect(resolveTokenBudget({ mode: 'relative', fraction: 2, floor: 0, ceiling: 1_000_000 }, 3_000)).toBe(6_000)
+    expect(resolveTokenBudget({ mode: 'absolute', inputTokens: 9_000 }, 5_000_000)).toBe(9_000)
+    // The log is sized at one token per four characters, rounded up.
+    expect([textTokens(0), textTokens(1), textTokens(4), textTokens(5)]).toEqual([0, 1, 1, 2])
+  })
+
+  test('budget · it is one setting, replaced as a whole and validated by mode', () => {
+    const fixed = applySettingsPatch(DEFAULT_SETTINGS, { routing: { tokenBudget: { mode: 'absolute', inputTokens: 9_000 } } })
+    expect(fixed.routing.tokenBudget).toEqual({ mode: 'absolute', inputTokens: 9_000 })
+    expect(fixed.routing.referentBudget).toEqual(DEFAULT_SETTINGS.routing.referentBudget)
+    expect(applySettingsPatch(fixed, { routing: { tokenBudget: relative } }).routing.tokenBudget).toEqual(relative)
+    expect(applySettingsPatch(DEFAULT_SETTINGS, { routing: { tokenBudget: { ...relative } } })).toBe(DEFAULT_SETTINGS)
+    expect(validateSettingsPatch({ routing: { tokenBudget: { mode: 'absolute', inputTokens: 0 } } })).toBeNull()
+    expect(validateSettingsPatch({ routing: { tokenBudget: { mode: 'absolute', inputTokens: -1 } } })).toMatch(/whole number/)
+    expect(validateSettingsPatch({ routing: { tokenBudget: { mode: 'absolute', inputTokens: 1.5 } } })).toMatch(/whole number/)
+    expect(validateSettingsPatch({ routing: { tokenBudget: { ...relative, fraction: 0 } } })).toMatch(/greater than 0/)
+    expect(validateSettingsPatch({ routing: { tokenBudget: { ...relative, floor: 50_000 } } })).toMatch(/ceiling cannot be below/)
+    expect(validateSettingsPatch({ routing: { tokenBudget: { ...relative, floor: 0.5 } } })).toMatch(/whole numbers/)
+    expect(validateSettingsPatch({ routing: { tokenBudget: { ...relative, fraction: 3 } } })).toBeNull()
+    expect(validateSettingsPatch({ routing: { tokenBudget: { mode: 'guess' } as never } })).toMatch(/Unknown decision token budget mode/)
+  })
+
+  test('budget · stored settings normalise: a token cap an earlier version stored under the referent budget becomes an absolute budget, its untouched default the relative one', () => {
+    const stored = (routing: object): typeof DEFAULT_SETTINGS => ({ ...DEFAULT_SETTINGS, routing } as unknown as typeof DEFAULT_SETTINGS)
+    // Chosen by the user under the earlier version.
+    const chosen = normalizeSettings(stored({ referentStrategy: 'tree-walk', referentBudget: { requests: 4, questions: 96, inputTokens: 30_000 } })).routing
+    expect(chosen.tokenBudget).toEqual({ mode: 'absolute', inputTokens: 30_000 })
+    expect(chosen.referentBudget).toEqual({ requests: 4, questions: 96 })
+    // Settings are stored whole: 12,000 was that version's default, not a choice.
+    expect(LEGACY_REFERENT_INPUT_TOKENS).toBe(12_000)
+    expect(normalizeSettings(stored({ referentStrategy: 'tree-walk', referentBudget: { requests: 4, questions: 96, inputTokens: 12_000 } })).routing.tokenBudget).toEqual(relative)
+    // A budget stored by this version is kept, whatever the earlier field says; a broken one is repaired field by field.
+    expect(normalizeSettings(stored({ referentBudget: { requests: 4, questions: 96, inputTokens: 30_000 }, tokenBudget: { mode: 'absolute', inputTokens: 7_000 } })).routing.tokenBudget).toEqual({ mode: 'absolute', inputTokens: 7_000 })
+    expect(normalizeSettings(stored({ tokenBudget: { mode: 'relative', fraction: 0.05, floor: 8_000, ceiling: 4_000 } })).routing.tokenBudget).toEqual({ mode: 'relative', fraction: 0.05, floor: 8_000, ceiling: 40_000 })
+    expect(normalizeSettings(stored({ tokenBudget: { mode: 'relative', fraction: -1, floor: 8_000, ceiling: 9_000 } })).routing.tokenBudget).toEqual({ mode: 'relative', fraction: 0.02, floor: 8_000, ceiling: 9_000 })
+    expect(normalizeSettings(stored({})).routing.tokenBudget).toEqual(relative)
+    // Normalised settings are valid as a patch.
+    expect(validateSettingsPatch({ routing: { tokenBudget: chosen.tokenBudget } })).toBeNull()
   })
 })
 

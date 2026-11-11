@@ -164,7 +164,18 @@ describe('shell', () => {
     await waitFor(() => expect(store.getState().app?.settings.models.decomposition).toBe('anthropic/claude-opus-5.5'))
 
     await user.click(within(dialog).getByRole('tab', { name: 'Routing' }))
-    expect(within(dialog).getAllByRole('slider')).toHaveLength(5)
+    // Five thresholds and the decision token budget's value.
+    expect(within(dialog).getAllByRole('slider')).toHaveLength(6)
+    // The token budget: a share of the conversation by default, or a fixed number; one setting, the mode and its value.
+    expect(within(dialog).getByRole('radio', { name: /Share of the conversation/ })).toBeChecked()
+    expect(within(dialog).getByText(/Never fewer than 16,000 tokens.*never more than 40,000/)).toBeInTheDocument()
+    expect(within(dialog).getByText('2.0%')).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('radio', { name: /Fixed/ }))
+    await waitFor(() => expect(store.getState().app?.settings.routing.tokenBudget).toEqual({ mode: 'absolute', inputTokens: 16_000 }))
+    expect(await within(dialog).findByText('16,000')).toBeInTheDocument()
+    expect(within(dialog).getByText('Tokens per message')).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('radio', { name: /Share of the conversation/ }))
+    await waitFor(() => expect(store.getState().app?.settings.routing.tokenBudget).toEqual({ mode: 'relative', fraction: 0.02, floor: 16_000, ceiling: 40_000 }))
     // The tree walk's two switches sit under the strategy, are independent, and are shown only for the tree walk.
     expect(within(dialog).getByRole('radio', { name: /Tree walk/ })).toBeChecked()
     expect(within(dialog).getAllByRole('switch')).toHaveLength(4)

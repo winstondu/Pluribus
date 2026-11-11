@@ -14,10 +14,18 @@ import type { CandidateChain, CandidateGroup, CandidateSection, CandidateWork, D
  * - Session-wide requirements in force, for corrections to them.
  */
 export const MAX_SECTIONS = 24
+/**
+ * The fewest sections and lines of work the pipeline's request lists when
+ * it is cut to fit the routing's decision token budget: the latest answer,
+ * and room for a small sibling group and what it was requested from.
+ */
+export const MIN_SECTIONS = 4
 export const MAX_DEPENDENCIES = 16
 export const MAX_CHAINS = 24
 
 export interface Supplied {
+  /** The most sections and lines of work listed: `MAX_SECTIONS` unless the request was cut to fit the token budget. */
+  readonly window: number
   readonly sections: readonly CandidateSection[]
   readonly inFlight: readonly CandidateWork[]
   readonly openGroups: readonly CandidateGroup[]
@@ -29,14 +37,24 @@ export interface Supplied {
   readonly groupById: ReadonlyMap<SiblingGroupId, CandidateGroup>
 }
 
-export function supply(input: RoutingInput, given: readonly SectionId[]): Supplied {
+/**
+ * `window` is the most sections, and the most lines of work, that are
+ * listed. It is `MAX_SECTIONS` unless the pipeline's request has to be cut
+ * to fit the routing's decision token budget; then the most recent stay,
+ * and an open clarification question stays listed however old it is, so
+ * that its answer is still recognised.
+ */
+export function supply(input: RoutingInput, given: readonly SectionId[], window: number = MAX_SECTIONS): Supplied {
   const c = input.candidates
-  const recent = c.sections.slice(-MAX_SECTIONS)
-  const sections = [...c.sections.filter((s) => given.includes(s.sectionId) && !recent.includes(s)), ...recent]
+  const size = Math.min(MAX_SECTIONS, Math.max(1, Math.floor(window)))
+  const recent = c.sections.slice(-size)
+  const kept = (s: CandidateSection): boolean => given.includes(s.sectionId) || (size < MAX_SECTIONS && s.asksElicitationId !== null)
+  const sections = [...c.sections.filter((s) => kept(s) && !recent.includes(s)), ...recent]
   const inFlight = c.work.filter((w) => IN_FLIGHT_STATES.includes(w.state)).slice(-MAX_DEPENDENCIES)
   const openGroups = c.groups.filter((g) => g.open)
-  const chains = c.chains.slice(-MAX_CHAINS)
+  const chains = c.chains.slice(-Math.min(MAX_CHAINS, size))
   return {
+    window: size,
     sections,
     inFlight,
     openGroups,

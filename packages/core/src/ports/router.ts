@@ -81,6 +81,16 @@ export interface RoutingInput {
   readonly candidates: RoutingCandidates
   /** Requirements already session-wide in this conversation (Q17). */
   readonly sessionRequirements: readonly Requirement[]
+  /**
+   * The size of the conversation's log in tokens, which a relative decision
+   * token budget is a share of (`settings.routing.tokenBudget`): the text of
+   * every user message as typed and of every attempt, whatever became of it
+   * (superseded, failed, stopped and interrupted attempts are in the log and
+   * count, with the partial text they recorded), at one token per four
+   * characters. Routing records, events' own fields and context sent again
+   * to a run are not counted.
+   */
+  readonly sessionLogTokens: number
   readonly settings: Pick<Settings, 'models' | 'thresholds' | 'routing'>
   /**
    * What the decision model may be shown for a node in place of its usual

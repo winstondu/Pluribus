@@ -1,8 +1,11 @@
 import {
+  DEFAULT_ABSOLUTE_TOKEN_BUDGET,
+  DEFAULT_RELATIVE_TOKEN_BUDGET,
   DEFAULT_SETTINGS,
   RETRY_POLICIES,
   type DebugToggles,
   type DecisionThresholds,
+  type DecisionTokenBudget,
   type ReferentStrategyName,
   type RetryPolicy,
   type Settings,
@@ -85,6 +88,7 @@ export function SettingsDialog() {
               <TabsContent value="routing">
                 <div className="grid gap-8">
                   <ReferentSettings settings={app.settings} />
+                  <DecisionBudgetSettings settings={app.settings} />
                   <ThresholdSettings settings={app.settings} />
                 </div>
               </TabsContent>
@@ -454,6 +458,78 @@ function ReferentSettings({ settings }: { settings: Settings }) {
           onChange={(checked) => void change({ routing: { [entry.key]: checked } })}
         />
       ))}
+    </Panel>
+  )
+}
+
+// ───────────────────────── decision budget ─────────────────────────
+
+const wholeNumber = new Intl.NumberFormat('en-US')
+
+const TOKEN_BUDGET_MODES: readonly { value: DecisionTokenBudget['mode']; label: string; description: string }[] = [
+  {
+    value: 'relative',
+    label: 'Share of the conversation',
+    description: 'Grows with everything recorded in the conversation, so a long one can be searched further back for what a message refers to.',
+  },
+  {
+    value: 'absolute',
+    label: 'Fixed',
+    description: 'The same number of tokens for every message, however long the conversation is. Predictable; in a very long conversation an old answer may be out of reach.',
+  },
+]
+
+/** The decision input tokens routing one message may use: a share of the conversation's log, or a fixed number. */
+function DecisionBudgetSettings({ settings }: { settings: Settings }) {
+  const change = useChangeSettings()
+  const modeLabel = useId()
+  const valueLabel = useId()
+  const budget = settings.routing.tokenBudget
+  const setBudget = (tokenBudget: DecisionTokenBudget): Promise<boolean> => change({ routing: { tokenBudget } })
+  return (
+    <Panel
+      title="Decision budget"
+      description="The most decision-model input routing one message may use, in tokens. Whatever is set here, routing is also held to twice the cost of the answer it routes; the smaller limit applies."
+    >
+      <Row label="Token budget" labelId={modeLabel} stacked>
+        <ChoiceCards
+          labelledBy={modeLabel}
+          options={TOKEN_BUDGET_MODES}
+          value={budget.mode}
+          onChoose={(mode) => void setBudget(mode === 'relative' ? DEFAULT_RELATIVE_TOKEN_BUDGET : DEFAULT_ABSOLUTE_TOKEN_BUDGET)}
+          className="sm:grid-cols-2"
+        />
+      </Row>
+      {budget.mode === 'relative' ? (
+        <Row
+          label="Share of the conversation"
+          labelId={valueLabel}
+          description={`Of the tokens in every message and every answer attempt recorded so far. Never fewer than ${wholeNumber.format(budget.floor)} tokens, so a new conversation is not starved, and never more than ${wholeNumber.format(budget.ceiling)}.`}
+          stacked
+        >
+          <CommittedSlider
+            labelledBy={valueLabel}
+            value={Math.round(budget.fraction * 1000)}
+            min={5}
+            max={100}
+            step={5}
+            format={(perMille) => `${(perMille / 10).toFixed(1)}%`}
+            onCommit={(perMille) => setBudget({ ...budget, fraction: perMille / 1000 })}
+          />
+        </Row>
+      ) : (
+        <Row label="Tokens per message" labelId={valueLabel} description="Counts every decision request made to route one message." stacked>
+          <CommittedSlider
+            labelledBy={valueLabel}
+            value={budget.inputTokens}
+            min={2_000}
+            max={40_000}
+            step={1_000}
+            format={(tokens) => wholeNumber.format(tokens)}
+            onCommit={(inputTokens) => setBudget({ mode: 'absolute', inputTokens })}
+          />
+        </Row>
+      )}
     </Panel>
   )
 }

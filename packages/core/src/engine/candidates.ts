@@ -1,4 +1,4 @@
-import type { DirectiveId, NodeId, SectionId, TargetRedirect } from '@committee/protocol'
+import { textTokens, type DirectiveId, type NodeId, type SectionId, type TargetRedirect } from '@committee/protocol'
 import type { CandidateChain, CandidateGroup, CandidateSection, CandidateWork, RoutingCandidates } from '../ports'
 import {
   activeMembers,
@@ -92,6 +92,21 @@ export function routingCandidates(state: ConversationState): RoutingCandidates {
     })
   }
   return { sections, chains, work, groups }
+}
+
+/**
+ * The size of the conversation's log in tokens, which a relative decision
+ * token budget is a share of (`RoutingInput.sessionLogTokens`): every user
+ * message as typed, and the text of every attempt, whatever became of it.
+ * Superseded, failed, stopped and interrupted attempts are in the log and
+ * count with the text they recorded, so the figure never falls when work is
+ * revised or retried. Each text is sized at one token per four characters.
+ */
+export function sessionLogTokens(state: ConversationState): number {
+  let tokens = 0
+  for (const id of state.messageOrder) tokens += textTokens(state.messages[id]?.text.length ?? 0)
+  for (const text of Object.values(state.attemptText)) tokens += textTokens(text.length)
+  return tokens
 }
 
 /**

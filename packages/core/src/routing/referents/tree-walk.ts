@@ -1,7 +1,7 @@
 import type { DecisionBudget } from '@committee/protocol'
 import type { ReferentAsk, ReferentQuestions, ReferentRequest, ReferentResult, ReferentStrategy, ReferentUnit, UnitReferents } from '../../ports'
 import { sectionLine } from '../supply'
-import { estimateDecisionTokens } from './ask'
+import { STATE_TOKENS_PER_CHARACTER, estimateDecisionTokens } from './ask'
 import { onePassQuestions } from './one-pass'
 import { chunkQuestion, groupQuestion, ownQuestion, questionId, referentsFromScores, severalQuestion, underQuestion } from './shared'
 import { buildTree, segmentFrom, type ReferentTree, type SectionNode, type TreeNode } from './tree'
@@ -224,11 +224,26 @@ function listed(node: TreeNode): boolean {
   return node.kind === 'section' ? node.entry.listed : node.members.every((m) => m.entry.listed)
 }
 
+/** What listing one section adds to a request of the walk: the characters of its line, and the tokens of its question. */
+function listPart(unit: ReferentUnit, node: SectionNode): { readonly line: number; readonly question: number } {
+  const line = sectionLine(node.entry.section, node.n).length
+  const question = estimateDecisionTokens('', { [questionId.own(unit, node)]: ownQuestion(unit, node) }) - estimateDecisionTokens('', {})
+  return { line, question }
+}
+
+/** The tokens of a list whose lines hold `characters` in all, newlines between them included, and whose questions cost `questions`. */
+const listTokens = (characters: number, questions: number): number => Math.ceil(characters * STATE_TOKENS_PER_CHARACTER) + questions
+
 /** The estimated input tokens of asking about sections one by one in a request of the walk: a line and a question each. */
 function listCost(unit: ReferentUnit, nodes: readonly SectionNode[]): number {
-  const lines = nodes.map((node) => sectionLine(node.entry.section, node.n)).join('\n')
-  const questions = Object.fromEntries(nodes.map((node) => [questionId.own(unit, node), ownQuestion(unit, node)]))
-  return estimateDecisionTokens(lines, questions) - estimateDecisionTokens('', {})
+  let characters = Math.max(0, nodes.length - 1)
+  let questions = 0
+  for (const node of nodes) {
+    const part = listPart(unit, node)
+    characters += part.line
+    questions += part.question
+  }
+  return listTokens(characters, questions)
 }
 
 /**
@@ -239,11 +254,19 @@ function listCost(unit: ReferentUnit, nodes: readonly SectionNode[]): number {
 function split(unit: ReferentUnit, nodes: readonly SectionNode[], threshold: number, beside: SectionNode | null): Chunk[] {
   const leaves: SectionNode[][] = []
   let current: SectionNode[] = []
+  // The cost of the chunk so far, kept as it grows: a run of thousands of sections is sized once, not once per section.
+  let characters = 0
+  let questions = 0
   for (const node of nodes) {
-    if (current.length > 0 && listCost(unit, [...current, node]) > threshold) {
+    const part = listPart(unit, node)
+    if (current.length > 0 && listTokens(characters + 1 + part.line, questions + part.question) > threshold) {
       leaves.push(current)
       current = []
+      characters = 0
+      questions = 0
     }
+    characters += (current.length > 0 ? 1 : 0) + part.line
+    questions += part.question
     current.push(node)
   }
   if (current.length > 0) leaves.push(current)

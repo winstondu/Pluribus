@@ -1,10 +1,10 @@
-import { DEFAULT_SETTINGS, type NodeId, type DecisionBudget, type DecisionCostGuard, type ReferentStrategyName, type RoutingSettings, type TreeWalkSettings } from '@committee/protocol'
+import { DEFAULT_SETTINGS, resolveTokenBudget, type NodeId, type DecisionBudget, type DecisionCostGuard, type DecisionTokenBudget, type ReferentStrategyName, type RoutingSettings, type TreeWalkSettings } from '@committee/protocol'
 import { describe, expect, test } from 'vitest'
 import { NEVER_CANCELLED, type DecisionContext, type RoutingInput, type DecisionProvider, type DecisionQuestions, type DecisionRequest, type DecisionResult, type ReferentStrategy, type RoutingOutcome, type RoutingPlan } from '../../ports'
-import { corpusInput, referenceDecomposer, scene, sceneIds, type CorpusExample, type Scene } from '../corpus'
+import { compareWithLabel as compare, corpusInput, oracleDecisionProvider, referenceDecomposer, scene, sceneIds, sceneLogTokens, suppliedIn, type CorpusExample, type Scene } from '../corpus'
 import { createRouter } from '../pipeline'
-import { numberedAnswerSections, supply } from '../supply'
-import { ancestorsOf, branchingDepth, buildTree, decisionAllowance, estimateDecisionTokens, segmentFrom } from './index'
+import { MIN_SECTIONS, numberedAnswerSections, supply } from '../supply'
+import { ancestorsOf, branchingDepth, buildTree, decisionAllowance, estimateDecisionTokens, estimateRequestTokens, routingTokenBudget, segmentFrom } from './index'
 
 /**
  * The two referent strategies over a scripted decision provider
@@ -51,15 +51,26 @@ interface Rules {
   readonly alone?: { readonly [handle: string]: number }
 }
 
-/** Answers by handle and records every request. Sections are found by their number in the state text, as the pipeline numbered them. */
-function scripted(sc: Scene, rules: Rules, numberOf: ReadonlyMap<string, number>) {
+/**
+ * Answers by handle and records every request. Sections are found by their number in the state text, as the pipeline
+ * numbered them: `numberOf` is brought up to date from each of the pipeline's own requests, whose window the budget may cut.
+ */
+function scripted(sc: Scene, rules: Rules, numberOf: Map<string, number>, input: RoutingInput) {
   const requests: DecisionRequest<DecisionQuestions>[] = []
   const seen = new Set<string>()
-  const handleOf = new Map([...numberOf].map(([h, n]) => [n, h]))
+  let handleOf = new Map([...numberOf].map(([h, n]) => [n, h]))
   const groupHandle = (index: number): string => sc.handles.get(sc.candidates.groups[index - 1]?.groupId ?? '')?.replace('group:', '') ?? ''
+  const follow = (state: string): void => {
+    const listed = suppliedIn(input, [], state)
+    if (!listed) return
+    numberOf.clear()
+    for (const s of numberedAnswerSections(input, listed)) numberOf.set(sc.handles.get(s.section.sectionId) ?? '', s.n)
+    handleOf = new Map([...numberOf].map(([h, n]) => [n, h]))
+  }
   const provider: DecisionProvider = {
     async decide<Q extends DecisionQuestions>(request: DecisionRequest<Q>): Promise<DecisionResult<Q>> {
       requests.push(request)
+      follow(request.state)
       const answers: { [id: string]: unknown } = {}
       for (const [id, q] of Object.entries(request.questions)) {
         const question = id.replace(/^m_/, '')
@@ -97,16 +108,30 @@ interface Routed {
   readonly numberOf: ReadonlyMap<string, number>
 }
 
-async function route(
-  sc: Scene,
-  text: string,
-  rules: Rules,
-  routing: { readonly strategy?: ReferentStrategyName; readonly budget?: Partial<DecisionBudget>; readonly inject?: ReferentStrategy; readonly treeWalk?: Partial<TreeWalkSettings>; readonly costGuard?: Partial<DecisionCostGuard>; readonly summaries?: (nodeId: NodeId) => DecisionContext | null } = {},
-): Promise<Routed> {
+/** `budget.inputTokens` is what the strategy may add beyond the pipeline's own request: the routing's token budget is set to that request's size plus it. */
+interface RouteOptions {
+  readonly strategy?: ReferentStrategyName
+  readonly budget?: Partial<DecisionBudget>
+  readonly tokenBudget?: DecisionTokenBudget
+  readonly inject?: ReferentStrategy
+  readonly treeWalk?: Partial<TreeWalkSettings>
+  readonly costGuard?: Partial<DecisionCostGuard>
+  readonly summaries?: (nodeId: NodeId) => DecisionContext | null
+}
+
+async function route(sc: Scene, text: string, rules: Rules, routing: RouteOptions = {}): Promise<Routed> {
   const example: CorpusExample = { id: 'test', covers: ['targets'], note: 'a test scene', scene: sc, text, expect: {} }
+  let tokenBudget = routing.tokenBudget ?? DEFAULT_SETTINGS.routing.tokenBudget
+  if (routing.budget?.inputTokens !== undefined) {
+    const { inputTokens: _further, ...caps } = routing.budget
+    const unlimited = await route(sc, text, rules, { ...routing, budget: caps, tokenBudget: { mode: 'absolute', inputTokens: 1_000_000_000 } })
+    const own = unlimited.requests[0]
+    tokenBudget = { mode: 'absolute', inputTokens: (own ? estimateRequestTokens(own.state, own.questions) : 0) + routing.budget.inputTokens }
+  }
   const settings: RoutingSettings = {
     referentStrategy: routing.strategy ?? 'tree-walk',
-    referentBudget: { ...DEFAULT_SETTINGS.routing.referentBudget, ...routing.budget },
+    referentBudget: { requests: routing.budget?.requests ?? DEFAULT_SETTINGS.routing.referentBudget.requests, questions: routing.budget?.questions ?? DEFAULT_SETTINGS.routing.referentBudget.questions },
+    tokenBudget,
     treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, ...routing.treeWalk },
     costGuard: { ...DEFAULT_SETTINGS.routing.costGuard, ...routing.costGuard },
     useSummaryIfAvailable: routing.summaries !== undefined,
@@ -114,7 +139,7 @@ async function route(
   }
   const input: RoutingInput = { ...corpusInput(example, { ...DEFAULT_SETTINGS, routing: settings }), ...(routing.summaries ? { decisionContext: routing.summaries } : {}) }
   const numberOf = new Map(numberedAnswerSections(input, supply(input, [])).map((s) => [sc.handles.get(s.section.sectionId) ?? '', s.n]))
-  const { provider, requests } = scripted(sc, rules, numberOf)
+  const { provider, requests } = scripted(sc, rules, numberOf, input)
   const router = createRouter({ decisionProvider: provider, decomposer: referenceDecomposer(example), ...(routing.inject ? { referentStrategy: routing.inject } : {}) })
   const outcome = await router.route(input, NEVER_CANCELLED)
   const asked = requests.map((r) => Object.keys(r.questions).filter((id) => /^m_((s|j|u|uj)\d+|c\d+_\d+)$/.test(id)))
@@ -377,9 +402,9 @@ describe('price guard', () => {
     }
     // The allowance: 2 × (14 tokens of message × $0.10 + 1,700 × $0.50) ÷ $0.042, per piece of work.
     expect(decisionAllowance(DEFAULT_SETTINGS.routing.costGuard, { messageLength: 55, answerLengths: [], units: 1 })).toBe(40_542)
-    // Five completed answers or more: their median length, not below 250 tokens.
+    // Five completed answers or more: their median length, not below 100 tokens.
     expect(decisionAllowance(DEFAULT_SETTINGS.routing.costGuard, { messageLength: 0, answerLengths: [400, 4000, 4000, 4000, 40_000], units: 1 })).toBe(Math.floor((2 * 1000 * 0.5) / 0.042))
-    expect(decisionAllowance(DEFAULT_SETTINGS.routing.costGuard, { messageLength: 0, answerLengths: [4, 4, 4, 4, 4], units: 2 })).toBe(Math.floor((2 * 2 * 250 * 0.5) / 0.042))
+    expect(decisionAllowance(DEFAULT_SETTINGS.routing.costGuard, { messageLength: 0, answerLengths: [40, 40, 40, 40, 40], units: 2 })).toBe(Math.floor((2 * 2 * 100 * 0.5) / 0.042))
   })
 })
 
@@ -459,6 +484,7 @@ const runs = (() => {
 const chunkIds = (routed: Routed, request: number): string[] => (routed.asked[request] ?? []).filter((id) => /^m_c/.test(id))
 const ownIds = (routed: Routed, request: number): string[] => (routed.asked[request] ?? []).filter((id) => /^m_s/.test(id))
 /** What the guard counted for the further requests. */
+const allTokens = (routed: Routed): number => routed.requests.reduce((sum, r) => sum + estimateRequestTokens(r.state, r.questions), 0)
 const furtherTokens = (routed: Routed): number => routed.requests.slice(1).reduce((sum, r) => sum + estimateDecisionTokens(r.state, r.questions as never), 0)
 const NEVER_SEARCH: Partial<TreeWalkSettings> = { searchRunsOverTokens: 1_000_000 }
 
@@ -485,7 +511,7 @@ describe('long runs · search', () => {
     expect(unit(routed).targets).toEqual(sections(['T40']))
     expect(unit(routed).placement).toEqual({ kind: 'continue', buildsOn: { kind: 'node', nodeId: sceneIds.node('T40') } })
     expect(planOf(routed).decision.explanation).not.toContain('budget was reached')
-    expect(furtherTokens(routed)).toBeLessThanOrEqual(DEFAULT_SETTINGS.routing.referentBudget.inputTokens)
+    expect(allTokens(routed)).toBeLessThanOrEqual(resolveTokenBudget(DEFAULT_SETTINGS.routing.tokenBudget, 0))
 
     // Asked about one by one, the older sections do not fit the budget: the walk falls back and never reaches the section.
     const listed = await route(sc, 'Make the answer to question 40 shorter', { own: { T40: 0.9 } }, { treeWalk: NEVER_SEARCH })
@@ -557,7 +583,7 @@ describe('long runs · search', () => {
   test('search · the budget guard holds: a search never sends more than the budget allows, whatever the tree', async () => {
     for (const budget of [{ requests: 0 }, { requests: 1 }, { requests: 2 }, { questions: 10 }, { inputTokens: 900 }]) {
       const routed = await route(wide(300), 'Compare the answer on topic 3 with the one on topic 150', { own: { T3: 0.9, T150: 0.9 }, several: 0.9 }, { budget })
-      const allowed = { ...DEFAULT_SETTINGS.routing.referentBudget, ...budget }
+      const allowed = { ...DEFAULT_SETTINGS.routing.referentBudget, inputTokens: resolveTokenBudget(DEFAULT_SETTINGS.routing.tokenBudget, 0), ...budget }
       const further = routed.requests.slice(1)
       expect(further.length).toBeLessThanOrEqual(allowed.requests)
       expect(further.reduce((sum, r) => sum + Object.keys(r.questions).length, 0)).toBeLessThanOrEqual(allowed.questions)
@@ -710,7 +736,7 @@ describe.each(COMBINATIONS)('long runs · %s', (_name, treeWalk) => {
       for (const budget of [{ requests: 0 }, { requests: 1 }, { questions: 4 }, { inputTokens: 700 }]) {
         const first = await route(sc, 'Look at that again', rules, { treeWalk, budget })
         const again = await route(sc, 'Look at that again', rules, { treeWalk, budget })
-        const allowed = { ...DEFAULT_SETTINGS.routing.referentBudget, ...budget }
+        const allowed = { ...DEFAULT_SETTINGS.routing.referentBudget, inputTokens: resolveTokenBudget(DEFAULT_SETTINGS.routing.tokenBudget, 0), ...budget }
         expect(first.requests.length - 1).toBeLessThanOrEqual(allowed.requests)
         expect(first.requests.slice(1).reduce((sum, r) => sum + Object.keys(r.questions).length, 0)).toBeLessThanOrEqual(allowed.questions)
         expect(furtherTokens(first)).toBeLessThanOrEqual(allowed.inputTokens)
@@ -781,9 +807,138 @@ describe.each(STRATEGIES)('context summaries, referents by %s', (strategy) => {
   test('summaries · the guard counts what is sent: with longer lines the budget still holds', async () => {
     for (const budget of [{ inputTokens: 300 }, { inputTokens: 700 }, { requests: 1 }]) {
       const routed = await route(tripFull, J_TEXT, rules, { strategy, summaries: summarised(['brief', 'A', 'B', 'J', 'B2']), budget })
-      const allowed = { ...DEFAULT_SETTINGS.routing.referentBudget, ...budget }
+      const allowed = { ...DEFAULT_SETTINGS.routing.referentBudget, inputTokens: resolveTokenBudget(DEFAULT_SETTINGS.routing.tokenBudget, 0), ...budget }
       expect(routed.requests.length - 1).toBeLessThanOrEqual(allowed.requests)
       expect(furtherTokens(routed)).toBeLessThanOrEqual(allowed.inputTokens)
     }
+  })
+})
+
+describe('token budget', () => {
+  /** One chain of `n` exchanges whose requests are 80 characters and whose answers are `answerTokens` long, each shown by its opening as a live section is. */
+  const chain = (n: number, answerTokens: number): Scene => {
+    const s = scene().chain('chat', 'root', 'chat')
+    for (let i = 0; i < n; i++) {
+      s.add(`T${i}`, { chain: 'chat', on: i === 0 ? null : `T${i - 1}`, label: `turn ${i}`, request: `Please go into point ${i} of the plan in detail, with examples `.repeat(2).slice(0, 80), answer: `Answer ${i}: here is what matters about that point of the plan. `.repeat(6).slice(0, Math.min(280, answerTokens * 4)), answerLength: answerTokens * 4 })
+    }
+    return s.build()
+  }
+  const logOf = (sc: Scene, text: string): number => sceneLogTokens({ scene: sc, text })
+
+  test('budget · a routing may use the smaller of the token budget and the price guard\'s allowance, whichever mode the budget is in', () => {
+    const routing = DEFAULT_SETTINGS.routing
+    const run = { messageLength: 55, answerLengths: [], units: 1 }
+    // Few answers yet: the allowance is that of a 1,700-token answer (40,542), so the budget binds.
+    expect(routingTokenBudget(routing, { ...run, sessionLogTokens: 0 })).toEqual({ total: 16_000, limitedBy: 'token-budget' })
+    expect(routingTokenBudget(routing, { ...run, sessionLogTokens: 1_500_000 })).toEqual({ total: 30_000, limitedBy: 'token-budget' })
+    // A huge conversation is not unbounded: the ceiling, still under the allowance.
+    expect(routingTokenBudget(routing, { ...run, sessionLogTokens: 50_000_000 })).toEqual({ total: 40_000, limitedBy: 'token-budget' })
+    // Short answers: twice a 300-token answer buys 7,209 decision tokens, less than any budget.
+    const short = { ...run, answerLengths: [1200, 1200, 1200, 1200, 1200] }
+    expect(routingTokenBudget(routing, { ...short, sessionLogTokens: 1_500_000 })).toEqual({ total: 7_209, limitedBy: 'price-guard' })
+    expect(routingTokenBudget({ ...routing, tokenBudget: { mode: 'absolute', inputTokens: 5_000 } }, { ...short, sessionLogTokens: 1_500_000 })).toEqual({ total: 5_000, limitedBy: 'token-budget' })
+    // The price guard off: the budget alone.
+    expect(routingTokenBudget({ ...routing, costGuard: { ...routing.costGuard, maxAnswerCostRatio: 0 } }, { ...short, sessionLogTokens: 0 })).toEqual({ total: 16_000, limitedBy: 'token-budget' })
+  })
+
+  test('budget · every decision request of a routing counts, the pipeline\'s own included: the total never passes the budget', async () => {
+    for (const tokenBudget of [{ mode: 'absolute', inputTokens: 4_000 }, { mode: 'absolute', inputTokens: 9_000 }, DEFAULT_SETTINGS.routing.tokenBudget] as const) {
+      const sc = chain(300, 1_700)
+      const text = 'Make the answer to point 40 shorter'
+      const routed = await route(sc, text, { own: { T40: 0.9 } }, { tokenBudget })
+      expect(allTokens(routed)).toBeLessThanOrEqual(resolveTokenBudget(tokenBudget, logOf(sc, text)))
+      expect(routed.requests.length).toBeGreaterThanOrEqual(1)
+    }
+  })
+
+  test('budget · relative to the log, a search reaches an old section of a long conversation that a fixed budget of the same floor does not', async () => {
+    const sc = chain(700, 1_700)
+    const text = 'Make the answer to point 40 shorter'
+    // 700 exchanges of 1,720 tokens: 2% of the log is 24,080 tokens.
+    expect(resolveTokenBudget(DEFAULT_SETTINGS.routing.tokenBudget, logOf(sc, text))).toBe(24_080)
+    const relative = await route(sc, text, { own: { T40: 0.9 } })
+    expect(unit(relative).targets).toEqual(sections(['T40']))
+    expect(planOf(relative).decision.explanation).not.toContain('budget was reached')
+    expect(allTokens(relative)).toBeLessThanOrEqual(24_080)
+    // The same floor as a fixed budget: the chunks of the search do not fit, the walk falls back and the section is not reached.
+    const fixed = await route(sc, text, { own: { T40: 0.9 } }, { tokenBudget: { mode: 'absolute', inputTokens: 16_000 } })
+    expect(planOf(fixed).decision.explanation).toContain('its input-token budget was reached')
+    expect(unit(fixed).targets).not.toEqual(sections(['T40']))
+    expect(allTokens(fixed)).toBeLessThanOrEqual(16_000)
+    // In a conversation short enough for the floor, the two are the same routing.
+    const small = chain(200, 1_700)
+    const a = await route(small, text, { own: { T40: 0.9 } })
+    const b = await route(small, text, { own: { T40: 0.9 } }, { tokenBudget: { mode: 'absolute', inputTokens: 16_000 } })
+    expect(a.outcome).toEqual(b.outcome)
+    expect(a.requests).toEqual(b.requests)
+  })
+
+  describe.each(STRATEGIES)('referents by %s', (strategy) => {
+    test('guard · with short answers the pipeline\'s own request lists fewer answer sections, the most recent, so that routing costs at most twice the answer', async () => {
+      // Answers of 110 tokens: twice one buys about 2,700 decision tokens, and the request with its full window costs more.
+      const sc = chain(40, 110)
+      const text = 'Make that shorter'
+      const unguarded = await route(sc, text, { own: { T39: 0.9 } }, { strategy, costGuard: { maxAnswerCostRatio: 0 } })
+      const allowance = decisionAllowance(DEFAULT_SETTINGS.routing.costGuard, { messageLength: text.length, answerLengths: Array.from({ length: 40 }, () => 440), units: 1 })
+      expect(estimateRequestTokens(unguarded.requests[0]?.state ?? '', unguarded.requests[0]?.questions ?? {})).toBeGreaterThan(allowance)
+
+      const routed = await route(sc, text, { own: { T39: 0.9 } }, { strategy })
+      expect(allTokens(routed)).toBeLessThanOrEqual(allowance)
+      const listed = [...(routed.requests[0]?.state ?? '').matchAll(/^S\d+\. "turn (\d+)"/gm)].map((m) => Number(m[1]))
+      expect(listed.length).toBeLessThan(24)
+      expect(listed.length).toBeGreaterThanOrEqual(MIN_SECTIONS)
+      // The most recent ones, and as many as fit: one more would not have.
+      expect(listed).toEqual(Array.from({ length: listed.length }, (_, i) => 40 - listed.length + i))
+      expect(unit(routed).targets).toEqual(sections(['T39']))
+      expect(planOf(routed).decision.explanation).toContain(`The routing request listed the ${listed.length} most recent answer sections and lines of work, not 24, to stay within the price guard on decision cost.`)
+      // Deterministic: the same routing again is the same requests.
+      expect((await route(sc, text, { own: { T39: 0.9 } }, { strategy })).requests).toEqual(routed.requests)
+    })
+
+    test('guard · a fixed token budget cuts the pipeline\'s request the same way, and with answers of ordinary length nothing is cut', async () => {
+      const sc = chain(40, 1_700)
+      const whole = await route(sc, 'Make that shorter', { own: { T39: 0.9 } }, { strategy })
+      expect(whole.requests[0]?.state).toContain('S24. ')
+      expect(planOf(whole).decision.explanation).not.toContain('most recent answer sections')
+      const cut = await route(sc, 'Make that shorter', { own: { T39: 0.9 } }, { strategy, tokenBudget: { mode: 'absolute', inputTokens: 3_000 } })
+      expect(allTokens(cut)).toBeLessThanOrEqual(3_000)
+      expect(cut.requests[0]?.state).not.toContain('S24. ')
+      expect(unit(cut).targets).toEqual(sections(['T39']))
+      expect(planOf(cut).decision.explanation).toContain('to stay within the decision token budget.')
+    })
+
+    test('guard · a request that cannot be made small enough is still sent, with the fewest sections it lists, and the explanation says so', async () => {
+      const routed = await route(chain(40, 1_700), 'Make that shorter', { own: { T39: 0.9 } }, { strategy, tokenBudget: { mode: 'absolute', inputTokens: 300 } })
+      expect(routed.requests).toHaveLength(1)
+      expect([...(routed.requests[0]?.state ?? '').matchAll(/^S\d+\. /gm)]).toHaveLength(MIN_SECTIONS)
+      expect(unit(routed).targets).toEqual(sections(['T39']))
+      expect(planOf(routed).decision.explanation).toContain(`listed the ${MIN_SECTIONS} most recent answer sections and lines of work, the fewest it lists, and still costs more than the decision token budget allows (300 tokens)`)
+    })
+  })
+
+  test('guard · a composite is as many answers as it has parts: the request about its parts is cut to that budget', async () => {
+    const sc = chain(40, 110)
+    const text = 'Make that shorter and explain how volcanoes form'
+    const example: CorpusExample = {
+      id: 'composite',
+      covers: ['splits'],
+      note: 'two independent requests',
+      scene: sc,
+      text,
+      decomposition: { fragments: [{ part: 'Make that shorter', instruction: 'Make that shorter', label: 'shorter' }, { part: 'explain how volcanoes form', instruction: 'Explain how volcanoes form', label: 'volcanoes' }] },
+      expect: { composition: 'independent-composite', parts: [{ kind: 'unit', targets: ['T39'] }, { kind: 'unit', relation: 'new', targets: [] }] },
+    }
+    const input = corpusInput(example, DEFAULT_SETTINGS)
+    const requests: DecisionRequest<DecisionQuestions>[] = []
+    const oracle = oracleDecisionProvider(example, input)
+    const provider: DecisionProvider = { decide: (request, signal) => (requests.push(request), oracle.decide(request, signal)) }
+    const outcome = await createRouter({ decisionProvider: provider, decomposer: referenceDecomposer(example) }).route(input, NEVER_CANCELLED)
+    expect(compare(example, outcome)).toEqual([])
+    const allowance = (units: number): number => decisionAllowance(DEFAULT_SETTINGS.routing.costGuard, { messageLength: text.length, answerLengths: Array.from({ length: 40 }, () => 440), units })
+    const tokens = requests.map((r) => estimateRequestTokens(r.state, r.questions))
+    // The gate is held to one answer; the gate and the request about the two parts together to two.
+    expect(tokens[0]).toBeLessThanOrEqual(allowance(1))
+    expect(tokens.reduce((sum, n) => sum + n, 0)).toBeLessThanOrEqual(allowance(2))
+    expect(requests[1]?.state).not.toContain('S24. ')
   })
 })

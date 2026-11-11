@@ -3,6 +3,7 @@ import {
   createIdFactory,
   createSeededRandom,
   createUlidFactory,
+  textTokens,
   type DecisionQuestionRecord,
   type IdFactory,
   type PointRef,
@@ -26,7 +27,7 @@ import type {
 import { NEVER_CANCELLED } from '../../ports'
 import { createRouter } from '../pipeline'
 import { buildTree, type TreeNode } from '../referents/tree'
-import { numberedAnswerSections, supply } from '../supply'
+import { MAX_SECTIONS, numberedAnswerSections, supply, type Supplied } from '../supply'
 import { ROUTING_CORPUS } from './examples'
 import { ids } from './scene'
 import type { CorpusExample, CorpusTopic, PartExpectation, PlacementExpectation, ReferenceDecomposition } from './types'
@@ -99,9 +100,15 @@ export function corpusInput(example: CorpusExample, settings: Pick<Settings, 'mo
     forcedComposition: null,
     candidates: example.scene.candidates,
     sessionRequirements: example.scene.sessionRequirements,
+    sessionLogTokens: sceneLogTokens(example),
     settings: { models: settings.models, thresholds: settings.thresholds, routing: settings.routing },
     ids: idFactory ?? createIdFactory(createUlidFactory(() => 0, createSeededRandom(11))),
   }
+}
+
+/** The log of a scene: the request and the answer of every section it holds, and the new message. A scene has no retired attempts. */
+export function sceneLogTokens(example: Pick<CorpusExample, 'scene' | 'text'>): number {
+  return example.scene.candidates.sections.reduce((sum, s) => sum + textTokens(s.request.length) + textTokens(s.answerLength), textTokens(example.text.length))
 }
 
 function spansOf(text: string, part: string | readonly string[]): TextSpan[] {
@@ -323,6 +330,23 @@ function expectedPlacementText(p: PlacementExpectation): string {
 
 // ───────────────────────────── the oracle ─────────────────────────────
 
+/**
+ * The candidates as one of the pipeline's own requests listed them, read
+ * back from its state text: the pipeline lists fewer answer sections when
+ * the routing's token budget is tight, and numbers them from 1 again. Null
+ * for a request that is not the pipeline's own (a strategy's further
+ * request lists only the sections it asks about).
+ */
+export function suppliedIn(input: RoutingInput, given: readonly RoutingInput['explicitTargets'][number][], state: string): Supplied | null {
+  if (!state.startsWith('Answer sections in this conversation, oldest first:')) return null
+  const listed = state.split('\n').filter((line) => /^S\d+\. /.test(line)).length
+  for (let window = MAX_SECTIONS; window >= 1; window--) {
+    const supplied = supply(input, given, window)
+    if (supplied.sections.length === listed) return supplied
+  }
+  return null
+}
+
 const YES = 0.95
 const NO = 0.05
 const UNSURE = 0.5
@@ -335,15 +359,23 @@ const UNSURE = 0.5
  */
 export function oracleDecisionProvider(example: CorpusExample, input: RoutingInput): DecisionProvider {
   const expect = example.expect
-  const supplied = supply(input, input.explicitTargets)
   const parts = expect.parts ?? []
   const partFor = (key: string): PartExpectation | undefined => (key === 'm' ? (parts.length === 1 ? parts[0] : undefined) : parts[Number(key.slice(1))])
-  const answerSections = numberedAnswerSections(input, supplied)
+  // The candidates as the pipeline listed them: read back from each of its requests, whose window the token budget may have cut.
+  let supplied = supply(input, input.explicitTargets)
+  let answerSections = numberedAnswerSections(input, supplied)
+  // The context tree as the referent strategies see it, for the questions about a group as a whole and about what is built on a node.
+  let tree = buildTree({ sections: answerSections, candidates: input.candidates })
+  const follow = (state: string): void => {
+    const listed = suppliedIn(input, input.explicitTargets, state)
+    if (!listed || listed.window === supplied.window) return
+    supplied = listed
+    answerSections = numberedAnswerSections(input, supplied)
+    tree = buildTree({ sections: answerSections, candidates: input.candidates })
+  }
   /** The handle of S<n>: a listed section by its place in the state text, one beyond the window by the number it was given. */
   const sectionHandle = (n: number): string =>
     example.scene.handles.get(supplied.sections[n - 1]?.sectionId ?? answerSections.find((x) => x.n === n)?.section.sectionId ?? '') ?? ''
-  // The context tree as the referent strategies see it, for the questions about a group as a whole and about what is built on a node.
-  const tree = buildTree({ sections: answerSections, candidates: input.candidates })
   const handlesBelow = (node: TreeNode | undefined): string[] => {
     const out: string[] = []
     const visit = (at: TreeNode): void => {
@@ -443,6 +475,7 @@ export function oracleDecisionProvider(example: CorpusExample, input: RoutingInp
 
   return {
     async decide<Q extends DecisionQuestions>(request: DecisionRequest<Q>): Promise<DecisionResult<Q>> {
+      follow(request.state)
       const answers: { [id: string]: unknown } = {}
       for (const [id, q] of Object.entries(request.questions)) {
         answers[id] = answer(id, q.instructions, q.type === 'choice' ? Object.keys(q.options) : [])

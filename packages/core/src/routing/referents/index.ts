@@ -20,6 +20,17 @@ export function referentStrategyFor(name: ReferentStrategyName): ReferentStrateg
 
 export { onePassStrategy } from './one-pass'
 export { treeWalkStrategy } from './tree-walk'
-export { createReferentAsk, decisionAllowance, estimateDecisionTokens, estimateRequestTokens, ANSWERS_TO_GO_BY, type ReferentSpend } from './ask'
+export {
+  createReferentAsk,
+  decisionAllowance,
+  estimateDecisionTokens,
+  estimateRequestTokens,
+  routingTokenBudget,
+  ANSWERS_TO_GO_BY,
+  type ReferentSpend,
+  type RoutedWork,
+  type RoutingLimit,
+  type RoutingTokenBudget,
+} from './ask'
 export { buildTree, branchingDepth, ancestorsOf, segmentFrom, type ReferentTree, type TreeNode } from './tree'
 export { referentsFromScores, questionId as referentQuestionId } from './shared'

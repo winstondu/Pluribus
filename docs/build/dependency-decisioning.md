@@ -255,17 +255,80 @@ The same figures against an answer priced on Haiku. The cheapest measured answer
 | Run searched, one section referred to (≈ 3,300 for the pipeline + 2,365 + 21·L), unguarded | L ≈ 820 older sections | L ≈ 1,900 |
 | Run searched, worst case (≈ 3,300 + 740 + 146·L), unguarded | L ≈ 130 | L ≈ 285 |
 | Trunk base or hops | no earlier than the row they modify: both only remove questions unless a skipped section is referred to, and then add 1,930 tokens once | |
-| Any of them with the guard | never, for an answer of 250 tokens or more: see the grid below | never |
+| Any of them with the guard | never, for an answer of 100 tokens or more: see the grid below | never |
 
 ## The guard
 
-`settings.routing.referentBudget` is the most decision work a strategy may add to one routing beyond the pipeline's own requests. Default: **4 requests, 96 questions, 12,000 estimated input tokens**.
+Three limits bound the decision work of one routing. All are estimated from a request's size before it is sent, so the guard is deterministic.
 
-- Every further request goes through `createReferentAsk` (`routing/referents/ask.ts`). It counts requests, questions and estimated tokens, and **refuses** a request that would pass a limit: nothing is sent. This holds for any strategy, an injected one included; the pipeline, not the strategy, owns the counter. Tokens are estimated from the request's size, so the decision is deterministic and made before sending.
+| Limit | Setting | Default | Covers |
+|---|---|---|---|
+| Token budget | `settings.routing.tokenBudget` | **relative: 2% of the conversation's log, at least 16,000 and at most 40,000 tokens** | Every decision request of the routing: the pipeline's own, the strategy selector's, the referent strategy's |
+| Price guard | `settings.routing.costGuard` | **twice the answer, priced on the cheapest answer model** | The same requests. A routing may use the **smaller** of the two (`routingTokenBudget` in `routing/referents/ask.ts`) |
+| Backstops | `settings.routing.referentBudget` | **4 requests, 96 questions** | The strategy's further requests, whatever the tokens and prices are |
+
+- The pipeline's own request comes first. When it would not fit with its full window of 24 answer sections it lists fewer, the most recent, down to 4 (`fitWindow` in `routing/pipeline.ts`; see "The pipeline's request draws from the budget").
+- Every further request goes through `createReferentAsk` (`routing/referents/ask.ts`). It counts requests, questions and estimated tokens, and **refuses** a request that would pass a limit: nothing is sent. This holds for any strategy, an injected one included; the pipeline, not the strategy, owns the counter. Its token limit is what the routing's budget has left after the pipeline's requests.
 - The tree walk checks before each level that the level **and its fallback** both fit. When a level does not fit, it stops walking and asks the one-pass questions it has not asked yet in one request over the pipeline's state text (bounded by the window). When the fallback is what does not fit and the level does, the walk goes on without the reserve (this arises under the price guard below, where what is left is less than one request over the pipeline's state text). When neither fits, the referents are the relevant nodes it has reached, and the sections of a relevant chunk whose search was cut short are reported below the target-choice threshold, so the user is asked about them. The routing decision's explanation says which happened and which limit was reached.
 - One pass adds no request, and at most one question per listed section and per group.
 
-Ceiling with the defaults: the pipeline's request (≤ 5,400 tokens) plus 12,000 is 17,400 tokens, $0.00073, **3.8% of the cheapest measured answer**, at any tree size. The budget that would allow 10% is 45,700 tokens; the default is a quarter of that. Priced on Haiku the same ceiling is 76% of that answer.
+Ceiling with the defaults: 16,000 tokens ($0.00067, **3.5% of the cheapest measured answer**, 70% of it on Haiku) up to a conversation of 800,000 tokens, rising to 20,000 at a million and never above 40,000 ($0.00168, 8.8%). The budget that would allow 10% is 45,700 tokens. Before this change the ceiling was the pipeline's request (≤ 5,400) plus a fixed 12,000: 17,400.
+
+### The token budget: absolute, or relative to the conversation
+
+The user's request (2026-11-11):
+
+> The guard decision routing token budget should be a configurable setting, with either an absolute or a setting such as some reasonable default (some fraction or multiple of the total tokens of the full session log).
+
+**Built.** One typed setting, a discriminated union (`DecisionTokenBudget` in `packages/protocol/src/settings.ts`):
+
+```ts
+type DecisionTokenBudget =
+  | { mode: 'absolute'; inputTokens: number }
+  | { mode: 'relative'; fraction: number; floor: number; ceiling: number }
+```
+
+- `absolute`: that many decision input tokens per routing.
+- `relative`: `fraction` × the tokens of the conversation's log, never below `floor` and never above `ceiling`. A fraction above 1 is a multiple.
+- **The log** (`RoutingInput.sessionLogTokens`, computed by `sessionLogTokens` in `engine/candidates.ts` from state alone): the text of every user message as typed, and the text of every attempt. **Superseded, failed, stopped and interrupted attempts count**, with whatever partial text they recorded: they are in the log (invariant 3, "Append-only history"), and counting them keeps the figure from falling when work is revised or retried, so a correction never shrinks the budget of the next message. Not counted: routing decision records, the fields of events, and context sent again to a run (an answer that continues a chain re-reads the chain; the log holds it once). Each text is sized at **one token per four characters**, rounded up, the estimate core already uses for an answer's expected length (`textTokens` in protocol); the provider's script-aware estimate lives in `providers` and core cannot import it.
+- The budget covers the **whole routing**. `referentBudget.inputTokens`, which it replaces, covered only the strategy's further requests.
+- Settings → Routing → Decision budget: the mode (two cards) and its value (a slider: 0.5% to 10%, or 2,000 to 40,000 tokens). The floor and ceiling are settable through the settings command and shown, not edited, in the dialog.
+- Stored settings normalise (`normalizeSettings`): a stored `referentBudget.inputTokens` other than 12,000 becomes `{ mode: 'absolute', inputTokens }`. Settings are stored whole, so 12,000 was the earlier default and never a choice; it becomes the relative default. A stored budget with a broken field is repaired field by field.
+
+**Why relative is the default, and why 2% / 16,000 / 40,000.** What a search of a long run costs grows with the run: about 21 tokens per older section (12 to 27 with the length of the requests), on top of the pipeline's request and the listing of the relevant chunk (about 5,700). A fixed budget therefore has a fixed reach, and the document's own open item was that raising it "also triples what the worst message may cost" for every conversation, short ones included. A share of the log raises it only where there is more to search. Measured with decisions as labelled (a reply to the 41st section of one chain of 1,720-token exchanges; total estimated tokens of the routing):
+
+| Sections (log tokens) | Requests ≤ 40 characters: absolute 12,000 / absolute 16,000 / relative default | Requests of 80 characters: the same three |
+|---|---|---|
+| 200 (0.35M) | found 6,914 / found / found | found 8,870 / found / found |
+| 300 (0.53M) | found 8,334 / found / found | found 11,331 / found / found |
+| 500 (0.88M) | found 11,174 / found / found | **falls back** / asks the user 14,469 / **found 16,197** |
+| 700 (1.2M) | **falls back** 2,262 / found 13,794 / found | falls back / **falls back** / **found 20,624** |
+| 900 (1.6M) | falls back / asks the user 15,492 / **found 17,233** | falls back / falls back / found 26,374 |
+| 1,200 (2.1M) | falls back / **falls back** / found 20,947 | falls back / falls back / found 33,004 |
+| 1,600 (2.8M) | falls back / falls back / found 25,943 | falls back / falls back / asks the user 38,708 |
+| 2,000 (3.5M) | falls back / falls back / found 31,281 | falls back / falls back / falls back (the ceiling) |
+
+- **Fraction 2%.** The found rows need 1.55% to 1.83% of the log (16,197 of 885,009; 20,624 of 1,239,009; 33,004 of 2,124,009). 2% is the smallest round share above the need. It is also small against what it routes: an answer that continues a chain of T tokens reads T tokens, which on the cheapest answer model costs T × $0.10 per million; 2% of T in decision tokens costs T × $0.00084 per million, **0.84% of that answer's input alone**.
+- **Floor 16,000.** Below 800,000 tokens of log the share is under 16,000, and a small conversation must not be starved: the largest routing of the corpus is 9,699 tokens. 16,000 is the old ceiling (12,000 for the strategy plus the pipeline's 3,300 to 5,400) rounded down, so no conversation gets materially less than it had, and it meets the share without a gap: at 800,000 tokens (about 455 exchanges of this size) a search with long requests needs about 15,100.
+- **Ceiling 40,000.** Twice a 1,700-token answer on the cheapest answer model buys 40,542 decision tokens, so for answers of ordinary length the price guard binds there anyway; the ceiling keeps the budget bounded when the price guard is off or the answers are long (a conversation of 10,000-token answers has an allowance of 238,000). It is reached at 2,000,000 tokens of log, and the reach ends at about 1,200 to 2,000 older sections.
+- **What it costs.** Up to 800,000 tokens nothing changes against a fixed 16,000. At a million tokens the worst message may cost 20,000 tokens ($0.00084) where it cost 17,400.
+- **Where 2% is not enough.** With exchanges under about 1,400 tokens a section's 21 to 27 tokens are more than 2% of its exchange, so the share never catches up and the floor is the reach (about 380 to 490 older sections). By 1,000-token exchanges the price guard (20,200 tokens for an 850-token answer) is the smaller limit in any case.
+
+**How it composes with the price guard: the minimum.** The user's bound ("we should not cost more than two times haiku") is about price, the budget is about size, and neither implies the other: a relative budget in a long conversation of short answers is far above twice an answer, and the price allowance in a conversation of long answers is far above any sensible budget. So a routing may use `min(token budget, price allowance)`, and the decision's explanation names the one that cut a request. The cost grid asserts both on every cell.
+
+### The pipeline's request draws from the budget
+
+Before this change the pipeline's own request was outside the guard: with a full window it costs 3,300 to 5,400 tokens, more than twice an answer of fewer than about 250 tokens, whatever the strategy. Now (`fitWindow`):
+
+- The request is built with the full window (24 answer sections, 24 lines of work). If its estimate fits what the routing's budget has left, it is sent as before: **with answers of ordinary length nothing changes**.
+- Otherwise the widest window that fits is found by halving between 4 and 23 (a request only grows with its window; at most five more builds) and the request lists that many sections and lines of work, **the most recent**. The sections it leaves out are still candidates, numbered after the listed ones: the tree walk reaches them in a further request when the budget allows, one pass does not, exactly as for sections older than the window before.
+- An open clarification question stays listed however old it is, so its answer is still recognised; explicit reply targets are always listed.
+- **The floor is 4** (`MIN_SECTIONS`): the latest answer, and room for a small sibling group and what it was requested from. A message has to be routed, so a request is always sent: when even 4 do not fit, the request with 4 is sent, the strategy gets nothing further, and the explanation says by how much the limit was missed.
+- A composite's second request (the questions per part) is cut the same way, against the budget of as many answers as it has parts.
+- Two rare requests of the pipeline are counted when they come before the strategy runs but are never cut or refused, because the plan cannot be made without them: the confirmation of a conversation-wide requirement, and the question which consumers a shared-requirement revision affects.
+- The decision's explanation records it: "The routing request listed the 9 most recent answer sections and lines of work, not 24, to stay within the price guard on decision cost."
+
+With the window price-aware, **the bound holds down to answers of 100 tokens** (`SHORTEST_ANSWER_TOKENS`, 250 before): the request with its smallest window is 2,250 to 2,430 tokens in the grid's shapes, and twice a 100-token answer buys about 2,440. Below 100 tokens the median is taken as 100, so routing costs at most what twice a 100-token answer buys, **$0.0001 a message** (3.81 times the answer in a probe with 60-token exchanges, which is not in the grid). The floor is not removed altogether because the allowance would then fall under the smallest request and every conversation of one-line answers would lose the walk as well: the first attempt at this change did remove it, and the C20 acceptance test (five answers of a few words each) lost its join chain.
 
 ### The price guard: at most twice a Haiku answer
 
@@ -276,28 +339,36 @@ The fixed budget bounds decision cost against one measured answer. The user's ru
 **Built** (`settings.routing.costGuard`, `decisionAllowance` in `routing/referents/ask.ts`, applied in `routing/pipeline.ts`):
 
 - The allowance of one routing, in decision input tokens, is `maxAnswerCostRatio` (2) × the price of the answer × the pieces of work routed, ÷ the decision price. The answer is priced at its **least input**, the message itself (a message that starts a new chain reads nothing else; one that continues a chain reads more and costs more, so the bound only gets looser), and its **expected output**.
-- Expected output is the median length of the conversation's completed answers once there are five (`CandidateSection.answerLength` was added for this), never taken below 250 tokens; with fewer than five, `expectedOutputTokens` (1,700, the shortest of the answer runs measured). An answer is not known before it is written, so this is an estimate, and it is deterministic: it is read from the candidates, not from a clock or a provider.
-- The pipeline's own requests are estimated and counted first (`estimateRequestTokens`). What is left, and never more than `referentBudget.inputTokens`, is the strategy's token budget for this routing. The request and question caps stay as backstops that hold whatever the prices.
+- Expected output is the median length of the conversation's completed answers once there are five (`CandidateSection.answerLength` was added for this), never taken below 100 tokens; with fewer than five, `expectedOutputTokens` (1,700, the shortest of the answer runs measured). An answer is not known before it is written, so this is an estimate, and it is deterministic: it is read from the candidates, not from a clock or a provider.
+- The pipeline's own requests are estimated (`estimateRequestTokens`), cut to fit (above) and counted first. What is left of the smaller of the allowance and the token budget is the strategy's token budget for this routing. The request and question caps stay as backstops that hold whatever the prices.
 - The prices are settings and default to Haiku's, the cheapest answer model among the role defaults. On a dearer answer model the bound is looser by that model's price; to hold "twice the answer" on another model, set its prices. Stored settings without the group get the defaults (`normalizeSettings`).
 
-With 1,700 expected output tokens the allowance is 40,500 tokens and the fixed 12,000 binds first. With answers of 250 tokens it is about 6,100, the pipeline's request takes 3,300 to 5,100 of it, and the strategy gets what is left.
+With 1,700 expected output tokens the allowance is 40,500 tokens and the token budget binds first. With answers of 250 tokens it is about 6,100, the pipeline's request takes 3,300 to 5,100 of it, and the strategy gets what is left. With answers of 100 tokens it is about 2,450, and the pipeline's request is cut to fit it.
 
-**The grid** (`routing/referents/cost-grid.ts`; `cost-grid.test.ts` asserts the bound on all 180 cells; `pnpm smoke` prints them). Conversations of 50, 500 and 3,300 sections with exchanges of 300, 2,000 and 10,000 tokens, every cell at most a million tokens, in five shapes: flat (one chain), an early split with two long branches, bushy (two parallel answers joined back, one answer on the join-back, repeated), nested forks (every answer continued twice, one continuation going on), and many roots. Each cell routes the message that costs most: every yes/no is answered 0.5, so every line is walked into and every chunk followed. Tokens are the guard's estimate over every decision request of the routing. The Haiku answer is the conversation's own answer length (85% of the exchange) on a new chain. Worst shape per size, the switches shown where they differ:
+**The grid** (`routing/referents/cost-grid.ts`; `cost-grid.test.ts` asserts the price bound and the token budget on all 270 cells; `pnpm smoke` prints them). Conversations of 50, 500, 3,300 and 8,000 sections with exchanges of 120, 300, 2,000 and 10,000 tokens, every cell at most a million tokens, in five shapes: flat (one chain), an early split with two long branches, bushy (two parallel answers joined back, one answer on the join-back, repeated), nested forks (every answer continued twice, one continuation going on), and many roots. Each cell routes the message that costs most: every yes/no is answered 0.5, so every line is walked into and every chunk followed. Tokens are the guard's estimate over every decision request of the routing. The Haiku answer is the conversation's own answer length (85% of the exchange) on a new chain. Worst shape per size, the switches shown where they differ:
 
 | Sections × tokens per exchange | Strategy | Worst shape | Unguarded: requests / questions / tokens | $ | ÷ Haiku answer | Guarded: requests / questions / tokens | $ | ÷ Haiku answer |
 |---|---|---|---|---|---|---|---|---|
+| 50 × 120 | one pass | bushy | 1 / 41 / 4,523 | $0.00019 | 3.63× | 1 / 23 / 2,468 | $0.00010 | 1.98× |
+| 50 × 120 | tree walk, any setting | nested forks | 26 / 82 / 20,113 | $0.00084 | 16.2× | 1 / 9 / 2,400 | $0.00010 | 1.93× |
+| 500 × 120 | one pass | bushy | 1 / 41 / 4,543 | $0.00019 | 3.65× | 1 / 23 / 2,473 | $0.00010 | **1.99×** |
+| 8,000 × 120 | one pass | bushy | 1 / 41 / 4,558 | $0.00019 | 3.66× | 1 / 23 / 2,481 | $0.00010 | **1.99×** |
+| 8,000 × 120 | default | flat | 5 / 8,912 / 1,502,180 | $0.06309 | 1,206× | 1 / 21 / 2,375 | $0.00010 | 1.91× |
+| 8,000 × 120 | tree walk, any setting | nested forks | 4,001 / 12,007 / 2,867,295 | $0.12043 | 2,303× | 1 / 9 / 2,419 | $0.00010 | 1.94× |
 | 50 × 300 | one pass | bushy | 1 / 41 / 5,041 | $0.00021 | 1.64× | the same | | 1.64× |
 | 50 × 300 | tree walk, any setting | nested forks | 26 / 82 / 21,684 | $0.00091 | 7.07× | 4 / 17 / 5,682 | $0.00024 | 1.85× |
 | 50 × 300 | tree walk, any setting | bushy | 18 / 90 / 19,120 | $0.00080 | 6.23× | 4 / 21 / 6,032 | $0.00025 | 1.97× |
 | 50 × 2,000 | one pass | bushy | 1 / 41 / 5,334 | $0.00022 | 0.26× | the same | | 0.26× |
 | 50 × 2,000 | tree walk, any setting | nested forks | 26 / 82 / 22,585 | $0.00095 | 1.11× | 5 / 41 / 10,421 | $0.00044 | 0.51× |
+| 50 × 2,000 | + trunk base | early split | 4 / 70 / 14,782 | $0.00062 | 0.73× | 4 / 48 / 11,394 | $0.00048 | 0.56× |
 | 50 × 2,000 | default (flat) | flat | 3 / 63 / 10,548 | $0.00044 | 0.52× | the same | | 0.52× |
 | 50 × 2,000 | + trunk base (flat) | flat | 3 / 67 / 14,049 | $0.00059 | 0.69× | 3 / 40 / 9,711 | $0.00041 | 0.48× |
 | 50 × 10,000 | tree walk, any setting | nested forks | 26 / 82 / 22,585 | $0.00095 | 0.22× | 5 / 41 / 10,421 | $0.00044 | 0.10× |
 | 500 × 300 | one pass | bushy | 1 / 41 / 5,066 | $0.00021 | 1.65× | the same | | 1.65× |
 | 500 × 300 | tree walk, any setting | nested forks | 251 / 757 / 191,417 | $0.00804 | 62.4× | 4 / 17 / 5,698 | $0.00024 | 1.86× |
 | 500 × 2,000 | runs listed | flat | 2 / 509 / 83,854 | $0.00352 | 4.14× | 1 / 33 / 4,766 | $0.00020 | 0.24× |
-| 500 × 2,000 | default | flat | 4 / 588 / 110,025 | $0.00462 | 5.43× | 1 / 33 / 4,766 | $0.00020 | 0.24× |
+| 500 × 2,000 | default | flat | 4 / 588 / 110,025 | $0.00462 | 5.43× | 2 / 58 / 17,052 | $0.00072 | 0.84× |
+| 500 × 2,000 | default | many roots | 4 / 588 / 110,314 | $0.00463 | 5.44× | 2 / 58 / 17,341 | $0.00073 | 0.86× |
 | 500 × 2,000 | + trunk base | flat | 4 / 592 / 113,529 | $0.00477 | 5.60× | 2 / 36 / 8,526 | $0.00036 | 0.42× |
 | 500 × 2,000 | tree walk, any setting | bushy | 168 / 840 / 170,486 | $0.00716 | 8.41× | 5 / 53 / 11,146 | $0.00047 | 0.55× |
 | 500 × 2,000 | tree walk, any setting | nested forks | 251 / 757 / 197,741 | $0.00831 | 9.76× | 5 / 41 / 10,447 | $0.00044 | 0.52× |
@@ -306,17 +377,17 @@ With 1,700 expected output tokens the allowance is 40,500 tokens and the fixed 1
 | 3,300 × 300 | tree walk, any setting | bushy | 1,101 / 5,505 / 1,072,469 | $0.04504 | 350× | 4 / 21 / 6,066 | $0.00025 | **1.98×** |
 | 3,300 × 300 | tree walk, any setting | nested forks | 1,651 / 4,957 / 1,254,249 | $0.05268 | 409× | 4 / 17 / 5,712 | $0.00024 | 1.86× |
 
-Guarded, the worst cell of the whole grid is **1.98×** (the tree walk in a bushy conversation of 3,300 sections and 300-token exchanges: the pipeline's request and three small levels, which use the allowance up), and the worst for one pass is 1.66× (the pipeline's own request, which no strategy controls). Unguarded, the worst message in a million-token conversation costs up to 409 Haiku answers.
+Guarded, the worst cell of the whole grid is **1.99×** (one pass in a bushy conversation of 500 or 8,000 sections and 120-token exchanges: the pipeline's request, cut to the 4 most recent sections and their group), and the worst with 300-token exchanges is 1.98× (the tree walk in a bushy conversation of 3,300 sections: the pipeline's request and three small levels, which use the allowance up). The largest guarded routing in tokens is 17,341 (500 unrelated answers of 2,000 tokens: the pipeline's request and one round of chunks; the budget there is 20,000). Unguarded, the worst message in a million-token conversation costs up to 2,303 Haiku answers.
 
 **Where the guard cuts the walk short, and what that costs.**
 
-- *Short answers.* In a conversation whose answers are about 250 tokens the allowance (about 6,100 tokens) is mostly used by the pipeline's request. What is left (1,000 to 2,800 tokens) is less than the walk's fallback request costs, so the walk does not keep room for it: it goes on level by level for as long as each fits (three levels of a branching tree in the grid's worst case; a level with one relevant branch point is about 600 tokens) and then keeps what it has scored. A search of a long run does not fit: its first request alone is 2,800 tokens for 176 sections. Old referents beyond the window are then out of reach, as with one pass: the message is placed as if it referred to nothing old. This is the price of the bound and it is not a guess about a section: nothing is placed on a section that was not asked about.
-- *Below 250 tokens an answer* the pipeline's own request (3,300 to 5,400 tokens with a full window) already costs more than twice the answer, with any strategy, one pass included. The bound cannot hold there without shrinking the pipeline's window of 24 listed sections, which this change does not do. The floor of 250 keeps the guard from then also cutting the strategy to nothing. **Open.**
-- *Long runs.* With answers of normal length the fixed 12,000 tokens bind before the price does. A search's first request names every section of the run: about 21 tokens a section (12 to 27 with the length of the requests). A referent is found up to about 360 to 800 older sections; from there to about 430 to 930 the chunks are asked but the relevant chunk can no longer be listed, so **its sections are put to the user**; beyond that the chunk request itself does not fit and the walk falls back to the one-pass questions, so the old section is not reached (the 500 × 2,000 flat row). Raising `referentBudget.inputTokens` towards the price allowance (40,500 for answers of 1,700 tokens) moves all three points up in proportion, to about 1,200 to 2,700 sections; it is left at 12,000 because that also triples what the worst message may cost.
+- *Short answers.* In a conversation whose answers are about 100 tokens the allowance (about 2,450 tokens) is used up by the pipeline's request, which lists only its most recent sections (9 to 23 questions in the grid's cells, 33 to 41 with the full window); nothing further is sent, with either strategy. In a conversation whose answers are about 250 tokens the allowance (about 6,100 tokens) is mostly used by the pipeline's request. What is left (1,000 to 2,800 tokens) is less than the walk's fallback request costs, so the walk does not keep room for it: it goes on level by level for as long as each fits (three levels of a branching tree in the grid's worst case; a level with one relevant branch point is about 600 tokens) and then keeps what it has scored. A search of a long run does not fit: its first request alone is 2,800 tokens for 176 sections. Old referents beyond the window are then out of reach, as with one pass: the message is placed as if it referred to nothing old. This is the price of the bound and it is not a guess about a section: nothing is placed on a section that was not asked about.
+- *Below 100 tokens an answer* the bound cannot hold: the smallest request that routes a message costs about 2,400 tokens. Routing then costs at most twice a 100-token answer. See "The pipeline's request draws from the budget".
+- *Long runs.* With answers of normal length the token budget binds before the price does. A search's first request names every section of the run: about 21 tokens a section (12 to 27 with the length of the requests). With the default budget a referent is found up to about 1,200 to 2,000 older sections (the table under "The token budget"); just beyond, the chunks are asked but the relevant chunk can no longer be listed, so **its sections are put to the user**; beyond that the chunk request itself does not fit and the walk falls back to the one-pass questions, so the old section is not reached. With a fixed budget of 16,000 a referent is found up to about 300 to 700 older sections and put to the user up to about 500 to 900.
 - *Bushy and nested trees.* The request cap (4) ends a walk at the fourth branching level below the roots, and the walk then asks the one-pass questions, which cover the window. A referent deeper than that and older than the window is not reached.
 - *What it never does:* exceed a cap, send a request it has not counted, or take a section as a referent without having asked about it.
 
-The pipeline's later requests (the question which dependents a revision affects) are not reserved for; a revision also re-runs its dependents, whose answers are not in the allowance either.
+The pipeline's later request (the question which dependents a revision affects) is not reserved for; a revision also re-runs its dependents, whose answers are not in the allowance either.
 
 ## Evidence and the default
 
@@ -348,9 +419,11 @@ Live, `typesafe/jev-1.13`, reference decompositions, 2026-11-11. The corpus grew
 - `routing/referents/referents.test.ts`: the tree; for both strategies C19, C9, C20, ancestor removal and its exception; one pass asks everything once; the walk's levels, state text, pruning, descent below an irrelevant branch point, linear runs; the guard (request, question and token budgets, the partial fallback, a strategy that keeps asking, one pass bounded); the strategy swap and a strategy that names an unsupplied section.
 - `routing/acceptance/referents.test.ts`: the J request end to end on a backend with each strategy: C19 (continues from the join-back on the base chain and reads both), C9 twice (two of three running siblings wait for the third; a weak second sibling with a relevant group), C20 (join chain over leaves).
 - `routing/referents/referents.test.ts`, long runs: a section of a 200-section chain and of 200 unrelated roots found within the budget where listing falls back; a referent at the start, middle and end of a run; two referents in different chunks; no relevant chunk; the most recent answer beside chunk questions; a run split in two rounds; the budget ending a search (the chunk's sections are put to the user) and the guard under five budgets; the trunk base (what is asked, a mid-trunk reply resolved exactly, elicited with no budget, a correction keeping its ancestor, a trunk that never splits); hops (what is asked, a mid-run reply resolved exactly, the end of a hop asked again, the fallback, descent through a relevant chunk); and for each of the four combinations of the two switches C19, C9, C19 after a long trunk and among long branches, a mid-run reply in trunk and branch, a correction keeping its ancestor, and the guard with a deterministic fallback.
-- `routing/referents/cost-grid.test.ts`: the price guard on 180 cells of conversations up to a million tokens.
-- `protocol/src/contracts.test.ts`: the three tree-walk settings and the price guard merge key by key, validate, and are defaulted for stored settings that lack them.
-- `web/src/app/app.test.tsx`: the two switches in Settings → Routing, independent, shown only for the tree walk.
+- `routing/referents/cost-grid.test.ts`: the price guard and the token budget on 270 cells of conversations up to a million tokens, answers down to 102 tokens.
+- `routing/referents/referents.test.ts`, token budget: the smaller of budget and allowance in either mode; every request of a routing counted; a relative budget reaching a section of a 700-exchange chain that a fixed 16,000 does not, and the two the same routing in a short conversation; for each strategy, the pipeline's request cut to its most recent sections under short answers and under a fixed budget, uncut with answers of ordinary length, and sent with its smallest window when nothing fits; a composite cut to the budget of its parts.
+- `routing/acceptance/budget.test.ts`: on a backend, the log is every user message and every attempt's text, a failed attempt's partial text included, and only grows; a request that cannot be made smaller is sent and the decision says so.
+- `protocol/src/contracts.test.ts`: the three tree-walk settings and the price guard merge key by key, validate, and are defaulted for stored settings that lack them; the token budget resolves by mode, is replaced as a whole, validates by mode, and normalises from what earlier versions stored.
+- `web/src/app/app.test.tsx`: the two switches in Settings → Routing, independent, shown only for the tree walk; the decision budget's mode and value.
 - `routing/corpus/corpus.test.ts`: every example with decisions as labelled, once per strategy and once per combination of the two switches.
 - `providers/src/referents.smoke.test.ts` (`pnpm smoke`): the corpus for six configurations (one pass, runs always listed, the default, each switch, both) with its decision cost and the cost of every long example; the J and two-section cases five times per configuration; and the cost grid, printed.
 - `providers/src/j-request.smoke.test.ts` (`pnpm smoke`): the brief, A, B and J through a real backend with the live providers, J sent during and after the siblings' runs.
@@ -358,10 +431,11 @@ Live, `typesafe/jev-1.13`, reference decompositions, 2026-11-11. The corpus grew
 ## Left open
 
 - A referent in a searched run that only its answer text identifies: the chunk question names sections by their requests. Not measured how often this happens.
-- Conversations whose answers are shorter than 250 tokens: the pipeline's own request exceeds twice a Haiku answer. Holding the bound there means a price-aware window in the pipeline.
-- Beyond about 430 to 930 older sections (by request length) the first chunk request exceeds 12,000 tokens and old referents are again out of reach. Asking the newest chunks that fit, or raising the token cap towards the price allowance, would extend it.
-- Whether to raise `referentBudget.inputTokens` now that the price guard exists is the user's call; see "Long runs" under the price guard.
-- The reach figures (360 to 800, 430 to 930) are derived from the formulae and the measured tokens per section, not measured end to end.
+- Conversations whose answers are shorter than 100 tokens: the smallest request that routes a message exceeds twice the answer (250 before the pipeline's window became price-aware). Holding the bound lower means fewer than 4 listed sections, or a cheaper request (its fixed part, about 1,000 tokens, is the pipeline's other questions).
+- Beyond about 1,200 to 2,000 older sections (by request length) the first chunk request exceeds the budget's ceiling and old referents are again out of reach. Asking the newest chunks that fit would extend it.
+- The fraction (2%) fits exchanges of about 1,400 tokens and more; for shorter ones the floor is the reach. A per-section term (so many tokens per recorded exchange) would fit both and is not built: the user asked for a share of the log's tokens.
+- The reach table is measured with decisions as labelled (the oracle) and the guard's token estimates, not live.
+- The two rare pipeline requests that follow the strategy's are not reserved for: see "The pipeline's request draws from the budget".
 - Context summaries for decisioning are designed in `docs/build/context-summaries.md`.
 
 - `split-correction-and-new-work`: see above.
