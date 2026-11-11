@@ -40,6 +40,12 @@ export interface CoreModule {
   readonly outcomeHandlers?: { readonly 'target-ambiguity'?: OutcomeHandler<'target-ambiguity'> }
   /** Decides what follows a failed or interrupted attempt. The last module that has one wins. */
   readonly retryPlanner?: RetryPlanner
+  /**
+   * When a transient routing failure is retried automatically: the time of
+   * the next try, or null to record `routing-failed` now. The last module
+   * that has one wins; the engine's default never retries.
+   */
+  readonly routingRetryPlanner?: RoutingRetryPlanner
   /** Run by `start()` for each conversation after its log is folded, in module order. */
   readonly startupReactions?: readonly StartupReaction[]
   /** Handlers for timers set with `ctx.setTimer(kind, …)`, by kind. */
@@ -111,6 +117,8 @@ export type RetryPlanner = (
   settings: Settings,
 ) => RetryPlan
 
+export type RoutingRetryPlanner = (error: ProviderError, retriesUsed: number, now: number, settings: Settings) => number | null
+
 export type StartupReaction = (state: ConversationState, ctx: StepContext) => readonly ConversationEventBody[] | void
 
 export type TimerHandler = (state: ConversationState, payload: JsonValue, ctx: StepContext) => readonly ConversationEventBody[] | void
@@ -120,6 +128,8 @@ export interface RouteOptions {
   readonly chosenTargets?: readonly SectionId[]
   /** `atomic` after Undo split (Q53, Q85). */
   readonly forcedComposition?: 'atomic'
+  /** Automatic retries of this message's routing already used after transient failures (08, 11 · error mapping). */
+  readonly routingRetry?: number
 }
 
 /**
@@ -145,6 +155,8 @@ export interface StepContext {
   cancelTimer(key: string): void
   /** Asks the retry planner (the last module that has one). */
   retryPlan(directiveId: DirectiveId, cause: RetryCause): RetryPlan
+  /** Asks the routing retry planner (the last module that has one): when to route again after a transient failure, or null. */
+  routingRetryAt(error: ProviderError, retriesUsed: number): number | null
   /** Aborts a live run after this step without recording anything for it; the caller records what happened. */
   abortAttempt(attemptId: AttemptId): void
   /**

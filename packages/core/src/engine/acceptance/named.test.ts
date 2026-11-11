@@ -110,6 +110,92 @@ describe('placement, as the reviews found it', () => {
     const run = s.state().attempts[s.d('luxury').attemptIds[0] ?? '']
     expect(run?.context.nodeIds).not.toContain(s.d('neighborhoods').nodeId)
   })
+
+  const inputsOf = (s: Scenario, label: string): string[] =>
+    (s.state().attempts[s.d(label).attemptIds[0] ?? '']?.context.inputs ?? []).map((i) => s.state().directives[i.directiveId]?.label ?? '?')
+  const chainLabels = (s: Scenario, label: string): string[] =>
+    (s.state().chains[s.d(label).chainId]?.nodeIds ?? []).map((id) => {
+      const n = s.state().nodes[id]
+      return n?.kind === 'join-back' ? 'JB' : (s.state().directives[n?.directiveId ?? '']?.label ?? '?')
+    })
+
+  test('placement · two concurrent replies to a node its chain has moved past fork on a branch; continuing the chain still reads its later nodes', async () => {
+    const s = await scenario()
+    await s.ask('Explain TCP', { label: 'n1' }, answer('TCP is…', 10, 20))
+    await s.t.advance(30)
+    await s.ask('And UDP?', { label: 'n2', placement: s.onHeadOf('n1') }, answer('UDP-ANSWER.', 10, 20))
+    await s.t.advance(30)
+    expect(s.d('n2').chainId).toBe(s.d('n1').chainId)
+    await s.ask('Expand on the handshake', { label: 'X', placement: s.on('n1') }, answer('SYN…', 10, 200))
+    await s.ask('Expand on congestion control', { label: 'Y', placement: s.on('n1') }, answer('AIMD…', 10, 200))
+    const group = Object.values(s.state().groups)[0]
+    expect(group?.startNodeId).toBe(s.d('n1').nodeId)
+    expect(group?.baseChainId).not.toBe(s.d('n1').chainId)
+    expect(s.state().chains[group?.baseChainId ?? '']?.kind).toBe('branch')
+    await s.t.advance(300)
+    expect(chainLabels(s, 'n1')).toEqual(['n1', 'n2'])
+    await s.ask('Which should I use for video calls?', { label: 'K', placement: s.onHeadOf('n1') }, answer('UDP.', 10, 20))
+    await s.t.advance(50)
+    expect(inputsOf(s, 'K')).toEqual(['n1', 'n2'])
+    expect(s.d('K').chainId).toBe(s.d('n1').chainId)
+    // Work on the group continues from its join-back on the branch, reading n1, X and Y.
+    await s.ask('Combine both', { label: 'both', placement: s.onGroupOf('X') }, answer('Both.', 10, 20))
+    await s.t.advance(50)
+    expect(inputsOf(s, 'both')).toEqual(['n1', 'X', 'Y'])
+    expect(s.d('both').chainId).toBe(group?.baseChainId)
+    await expectRebuildable(s)
+  })
+
+  test('placement · a second sibling group at the start node of a closed group does not land on the chain that moved on', async () => {
+    const s = await scenario()
+    await s.ask('Trip brief: Kyoto', { label: 'brief' }, answer('Noted.', 10, 20))
+    await s.t.advance(50)
+    await s.ask('Suggest neighborhoods', { label: 'A', placement: s.on('brief') }, answer('Gion.', 10, 100))
+    await s.ask('Suggest rainy-day activities', { label: 'B', placement: s.onHeadOf('brief') }, answer('Museums.', 10, 100))
+    await s.t.advance(200)
+    await s.ask('Make an itinerary from those', { label: 'J', placement: s.onGroupOf('A') }, answer('ITINERARY-TEXT.', 10, 20))
+    await s.t.advance(50)
+    await s.ask('Suggest day trips', { label: 'X', placement: s.on('brief') }, answer('Nara.', 10, 300))
+    await s.ask('Suggest food', { label: 'Y', placement: s.on('brief') }, answer('Ramen.', 10, 300))
+    await s.t.advance(400)
+    expect(chainLabels(s, 'brief')).toEqual(['brief', 'JB', 'J'])
+    await s.ask('Add a tea ceremony to day 2 of the itinerary', { label: 'K', placement: s.onHeadOf('brief') }, answer('Done.', 10, 20))
+    await s.t.advance(50)
+    expect(s.d('K').chainId).toBe(s.d('brief').chainId)
+    expect(inputsOf(s, 'K')).toEqual(['brief', 'A', 'B', 'J'])
+  })
+
+  test('C11 (engine) · work that consumes a finished member, placed on the start node, is that member\'s descendant and reads its result', async () => {
+    const s = await scenario()
+    await s.ask('Trip brief', { label: 'brief' }, answer('Noted.', 10, 20))
+    await s.t.advance(50)
+    await s.ask('Suggest neighborhoods', { label: 'A', placement: s.on('brief') }, answer('Gion.', 10, 100))
+    await s.ask('Suggest activities', { label: 'B', placement: s.onHeadOf('brief') }, answer('Museums.', 10, 400))
+    await s.ask('Suggest day trips', { label: 'D', placement: s.onHeadOf('brief') }, answer('Nara.', 10, 3_000))
+    await s.t.advance(500)
+    await s.ask('Use the activities for an evening plan', { label: 'C', placement: s.on('brief'), prerequisites: [s.needs('B')] }, answer('Evening.', 10, 20))
+    const group = Object.values(s.state().groups)[0]
+    expect(group?.members.map((m) => m.directiveId)).not.toContain(s.id('C'))
+    expect(s.state().nodes[s.d('C').nodeId]?.plannedParents).toEqual([{ kind: 'node', nodeId: s.d('B').nodeId }])
+    await s.t.advance(50)
+    expect(inputsOf(s, 'C')).toEqual(['brief', 'B'])
+  })
+
+  test('C9 (engine) · work that continues one member and waits for another depends on the whole group', async () => {
+    const s = await scenario()
+    await s.ask('Trip brief', { label: 'brief' }, answer('Noted.', 10, 20))
+    await s.t.advance(50)
+    await s.ask('Suggest neighborhoods', { label: 'A', placement: s.on('brief') }, answer('Gion.', 10, 100))
+    await s.ask('Suggest activities', { label: 'B', placement: s.onHeadOf('brief') }, answer('Museums.', 10, 400))
+    await s.ask('Suggest day trips', { label: 'D', placement: s.onHeadOf('brief') }, answer('Nara.', 10, 3_000))
+    await s.t.advance(150)
+    await s.ask('Compare the neighborhoods with the activities', { label: 'cmp', placement: s.on('A'), prerequisites: [s.needs('B')] }, answer('Compared.', 10, 20))
+    expect(s.d('cmp').prerequisites).toContainEqual(s.needsGroupOf('A'))
+    await s.t.advance(400)
+    expect(s.d('cmp').attemptIds).toHaveLength(0)
+    await s.t.advance(3_000)
+    expect(inputsOf(s, 'cmp')).toEqual(['brief', 'A', 'B', 'D'])
+  })
 })
 
 describe('whole-request barrier, with scripted plans', () => {
@@ -506,6 +592,16 @@ describe('engine lifecycle', () => {
     expect(big.failure?.code).toBe('context-length-exceeded')
     expect(big.failure?.class).toBe('non-retryable')
     expect(s.t.model.requestsFor('Big')).toHaveLength(0)
+  })
+
+  test('context · an estimate over the limit warns and runs; only an exact count fails a run before it starts', async () => {
+    const s = await scenario()
+    s.t.model.setTokenCount(() => ({ inputTokens: 1_100, contextLimit: 1_000, exact: false }))
+    await s.ask('Estimated big', { label: 'estimated' }, answer('fits after all', 10, 20))
+    await s.t.advance(50)
+    expect(s.d('estimated').state).toBe('completed')
+    expect(s.t.model.requestsFor('Estimated big')).toHaveLength(1)
+    expect((await s.section('estimated')).notes.map((n) => n.kind)).toEqual(['context-near-limit'])
   })
 
   test('labels · a provisional label is replaced by the decomposer\'s, without taking a slot', async () => {

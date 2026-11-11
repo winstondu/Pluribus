@@ -131,7 +131,7 @@ export function resolvePlannedParents(state: ConversationState, node: NodeRow): 
 }
 
 /** Nodes that count for a chain's head and tip: no late-retry tail, nothing replaced. */
-function countsAlongChain(state: ConversationState, nodeId: NodeId): boolean {
+export function countsAlongChain(state: ConversationState, nodeId: NodeId): boolean {
   const node = state.nodes[nodeId]
   if (!node) return false
   if (node.replacedByNodeId !== null) return false

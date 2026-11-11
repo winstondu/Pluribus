@@ -63,6 +63,8 @@ export interface UnitSignals {
   readonly needsWork: readonly Scored<DirectiveId>[]
   readonly needsGroups: readonly Scored<SiblingGroupId>[]
   readonly sessionRequirements: readonly Scored<RequirementId>[]
+  /** Probability that, besides changing a session-wide requirement, the unit asks for an answer of its own. */
+  readonly asks: number | null
   readonly clarify: number | null
   readonly clarifyReason: 'missing-information' | 'incompatible-requirements'
   readonly after: readonly Scored<string>[]
@@ -118,6 +120,10 @@ export function askUnit(batch: Batch, supplied: Supplied, input: RoutingInput, s
     input.sessionRequirements.forEach((_r, i) => {
       batch.noul(`${k}_r${i + 1}`, `Does ${it} change or take back the conversation-wide requirement R${i + 1}?`)
     })
+    batch.noul(
+      `${k}_asks`,
+      `Leaving aside any change to a conversation-wide requirement, does ${it} also ask a question or request a task that needs an answer of its own?`,
+    )
   }
   if (scope.clarify) {
     batch.noul(
@@ -160,6 +166,7 @@ export function readUnit(answers: Answers, supplied: Supplied, input: RoutingInp
     needsWork: supplied.inFlight.flatMap((w, i) => scored(w.directiveId, `${k}_w${i + 1}`)),
     needsGroups: supplied.openGroups.flatMap((g, i) => scored(g.groupId, `${k}_g${i + 1}`)),
     sessionRequirements: input.sessionRequirements.flatMap((r, i) => scored(r.id, `${k}_r${i + 1}`)),
+    asks: answers.noul(`${k}_asks`),
     clarify: answers.noul(`${k}_clarify`),
     clarifyReason: answers.choice(`${k}_why`)?.choice === 'conflict' ? 'incompatible-requirements' : 'missing-information',
     after: scope.after.flatMap((o) => scored(o.key, `${k}_after_${o.key}`)),

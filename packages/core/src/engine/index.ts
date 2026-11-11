@@ -18,6 +18,7 @@ export type {
   RetryCause,
   RetryPlanner,
   RouteOptions,
+  RoutingRetryPlanner,
   StartupReaction,
   StepContext,
   TimerHandler,
@@ -50,6 +51,7 @@ export {
   isRetryable,
   liveAttempt,
   defaultRetryPlanner,
+  defaultRoutingRetryPlanner,
   RETRY_TIMER,
   type WaitDecision,
 } from './lifecycle'

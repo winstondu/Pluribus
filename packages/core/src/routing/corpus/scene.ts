@@ -157,6 +157,7 @@ export class SceneBuilder {
         startNodeId: w.on ? this.nodeId(w.on) : null,
         groupId: groupOf ? ids.group(groupOf.handle) : null,
         consumed: (w.consumed ?? []).map(ids.directive),
+        consumedRequirements: [],
       })
     }
     for (const q of this.questions) {

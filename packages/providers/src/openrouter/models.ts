@@ -68,13 +68,14 @@ const PER_MESSAGE_OVERHEAD = 4
 const PER_REQUEST_OVERHEAD = 3
 
 /**
- * Estimates input tokens without a tokenizer. Calibrated to lean high for
- * English: ASCII text is counted at one token per 3.5 characters (real
- * tokenizers average about 4), and every other character, where CJK text is
- * often a token per character, at one token each. Leaning high means the
- * near-limit warning comes early rather than late; a request that is
- * nonetheless over the limit is still caught by the provider's
- * `context_length_exceeded`.
+ * Estimates input tokens without a tokenizer. ASCII text is counted at one
+ * token per 3.5 characters (real tokenizers average about 4 for English);
+ * CJK, kana and hangul at one token per character; other scripts (Cyrillic,
+ * Greek, accented Latin, …) at one token per 2.5 characters. The estimate
+ * leans a little high so the near-limit warning comes early. It is reported
+ * with `exact: false`, and core never fails a run on an estimate: a request
+ * that really is over the limit is caught by the provider's
+ * `context_length_exceeded`, which is non-retryable.
  */
 export function estimateTokens(messages: readonly ModelMessage[]): number {
   let total = PER_REQUEST_OVERHEAD
@@ -86,10 +87,18 @@ export function estimateTokens(messages: readonly ModelMessage[]): number {
 
 export function estimateTextTokens(text: string): number {
   let ascii = 0
+  let wide = 0
   let other = 0
   for (const char of text) {
-    if ((char.codePointAt(0) ?? 0) < 0x80) ascii += 1
+    const code = char.codePointAt(0) ?? 0
+    if (code < 0x80) ascii += 1
+    else if (isWide(code)) wide += 1
     else other += 1
   }
-  return Math.ceil(ascii / 3.5) + other
+  return Math.ceil(ascii / 3.5 + other / 2.5) + wide
+}
+
+/** CJK ideographs and punctuation, kana, hangul, fullwidth forms, and the supplementary ideograph planes. */
+function isWide(code: number): boolean {
+  return (code >= 0x2e80 && code <= 0x9fff) || (code >= 0xac00 && code <= 0xd7af) || (code >= 0xf900 && code <= 0xfaff) || (code >= 0xff00 && code <= 0xffef) || code >= 0x20000
 }

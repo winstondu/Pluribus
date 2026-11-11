@@ -146,7 +146,10 @@ async function routeMessage(deps: Deps, input: RoutingInput, signal: CancelSigna
   const m = readUnit(g, supplied, input, messageScope)
   const composite = g.noul('composite')
   const sessionWide = (g.noul('sessionwide') ?? 0) >= t.clearlyCorrective
-  const changedRequirements = selected(m.sessionRequirements, t.clearlyCorrective)
+  // Replacing or withdrawing a session-wide requirement is a revision, and a revision needs
+  // corrective wording (05 · "Revision requires corrective wording", Q37, Q74). Without it a new
+  // requirement is recorded beside the ones in force.
+  const changedRequirements = (m.corrective ?? 0) >= t.clearlyCorrective ? selected(m.sessionRequirements, t.clearlyCorrective) : []
 
   // An untargeted message recognised as the answer to an open question (Q98).
   if (!given) {
@@ -215,9 +218,14 @@ async function routeMessage(deps: Deps, input: RoutingInput, signal: CancelSigna
   const units: PlannedUnit[] = []
   const decisions: UnitRoutingDecision[] = []
   const clarifications: PlannedClarification[] = []
+  // A correction of a session-wide requirement alone revises no piece of work, and the message may
+  // still ask something ("…from now on keep answers short. What causes tides?"): the request is
+  // planned beside the revision, never dropped (02 · "The original message is always preserved").
+  const requestToo = revision !== null && revision.targetDirectiveIds.length === 0 && (m.asks ?? 0) >= t.composite
   if (revision) {
-    decisions.push(revisionDecision(input, m, 'message', null, revision, resolution.mode))
-  } else {
+    decisions.push(revisionDecision(input, m, requestToo ? 'requirements' : 'message', null, revision, resolution.mode))
+  }
+  if (!revision || requestToo) {
     const directiveId = input.ids.next('directive')
     const placed = derivePlacement(supplied, {
       relation: m.relation,
@@ -299,10 +307,9 @@ async function routeComposite(deps: Deps, input: RoutingInput, signal: CancelSig
   const scopes: UnitScope[] = fragments.map((f, i) => ({
     key: `f${i}`,
     name: `part F${i + 1}`,
-    sections: (given ? supplied.sections.filter((s) => given.sectionIds.includes(s.sectionId)) : supplied.sections).map((section) => ({
-      n: numbers.get(section.sectionId) ?? 0,
-      section,
-    })),
+    // Every part is asked about every section, given ones included: a part that does not refer to
+    // the given sections keeps its own clear target (T1).
+    sections: supplied.sections.map((section) => ({ n: numbers.get(section.sectionId) ?? 0, section })),
     corrective: relate,
     relation: relate,
     chain: relate,
@@ -343,7 +350,7 @@ async function routeComposite(deps: Deps, input: RoutingInput, signal: CancelSig
   const signals = scopes.map((scope) => readUnit(a, supplied, input, scope))
   const ambiguous = new Map<SectionId, number>()
   const plans: (
-    | { readonly kind: 'unit'; readonly directiveId: DirectiveId; readonly targets: SectionId[]; readonly mode: TargetMode }
+    | { readonly kind: 'unit'; readonly directiveId: DirectiveId; readonly targets: SectionId[]; readonly mode: TargetMode; readonly alsoRevision: PlannedRevision | null }
     | { readonly kind: 'revision'; readonly revision: PlannedRevision; readonly mode: TargetMode }
   )[] = []
   const changedByAny: RequirementId[] = []
@@ -356,12 +363,17 @@ async function routeComposite(deps: Deps, input: RoutingInput, signal: CancelSig
       continue
     }
     const targets = answerTargets(supplied, resolution.sectionIds)
-    const changed = selected(s.sessionRequirements, t.clearlyCorrective)
+    const changed = (s.corrective ?? 0) >= t.clearlyCorrective ? selected(s.sessionRequirements, t.clearlyCorrective) : []
     for (const id of changed) if (!changedByAny.includes(id)) changedByAny.push(id)
     const fragment = { fragmentId: input.ids.next('fragment') as FragmentId, sourceSpans: f.sourceSpans, rewrittenText: f.instruction }
     const revision = revisionOf(s, targets, changed, f.instruction, fragment, supplied, t)
-    if (revision) plans.push({ kind: 'revision', revision, mode: resolution.mode })
-    else plans.push({ kind: 'unit', directiveId: input.ids.next('directive'), targets, mode: resolution.mode })
+    if (revision && (revision.targetDirectiveIds.length > 0 || (s.asks ?? 0) < t.composite)) plans.push({ kind: 'revision', revision, mode: resolution.mode })
+    else {
+      // A part that only changes a session-wide requirement is still a request: it is planned as
+      // work, and the requirement revision rides beside it without a fragment of its own.
+      const alsoRevision = revision ? { ...revision, fragment: null } : null
+      plans.push({ kind: 'unit', directiveId: input.ids.next('directive'), targets, mode: resolution.mode, alsoRevision })
+    }
     fragmentIds.set(f.key, fragment.fragmentId)
   }
   // A section the user replied to explicitly, or chose, is never dropped because no part scored it
@@ -407,6 +419,10 @@ async function routeComposite(deps: Deps, input: RoutingInput, signal: CancelSig
       revisions.push(p.revision)
       decisions.push(revisionDecision(input, s, `f${i}`, fragmentId, p.revision, p.mode))
       continue
+    }
+    if (p.alsoRevision) {
+      revisions.push(p.alsoRevision)
+      decisions.push(revisionDecision(input, s, `f${i}-requirements`, null, p.alsoRevision, p.mode))
     }
     const needsUnits = selected(s.after, t.dependency).flatMap((key) => {
       const id = unitOfFragment.get(key)
@@ -570,9 +586,13 @@ async function affectedWork(
 ): Promise<{ readonly ok: true; readonly revisions: PlannedRevision[] } | { readonly ok: false; readonly error: ProviderError }> {
   const batch = new Batch()
   const consumers = revisions.map((r, ri) => {
-    if (r.scope !== 'shared-requirement' || r.targetDirectiveIds.length === 0) return []
+    if (r.scope !== 'shared-requirement') return []
+    // The consumers of the brief: work that read a corrected target's result, or read a session-wide
+    // requirement this message replaces or withdraws (06 · "Revising a shared requirement").
     const list = input.candidates.work.filter(
-      (w) => !r.targetDirectiveIds.includes(w.directiveId) && w.consumed.some((id) => r.targetDirectiveIds.includes(id)),
+      (w) =>
+        !r.targetDirectiveIds.includes(w.directiveId) &&
+        (w.consumed.some((id) => r.targetDirectiveIds.includes(id)) || w.consumedRequirements.some((id) => r.targetRequirementIds.includes(id))),
     )
     list.forEach((w, i) => {
       batch.noul(`a${ri + 1}_${i + 1}`, `Would "${w.label}" (${JSON.stringify(w.instruction.slice(0, 200))}) come out differently because of the correction ${JSON.stringify(r.correction)}?`)

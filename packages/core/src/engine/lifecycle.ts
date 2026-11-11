@@ -3,15 +3,17 @@ import {
   type AttemptId,
   type ConversationEvent,
   type DirectiveId,
+  type MessageId,
   type PlacementCause,
   type PrerequisiteRef,
+  type ProviderError,
   type RetryPlan,
   type SectionId,
   type SiblingGroupId,
   type SupersessionCause,
 } from '@committee/protocol'
 import type { JsonValue } from '../ports'
-import type { CommandHandlers, Reaction, RetryPlanner, StartupReaction, StepContext, TimerHandler } from './module'
+import type { CommandHandlers, Reaction, RetryPlanner, RouteOptions, RoutingRetryPlanner, StartupReaction, StepContext, TimerHandler } from './module'
 import {
   activeMembers,
   barrierOf,
@@ -37,6 +39,46 @@ import type { ConversationState, DirectiveRow } from './state'
  */
 
 export const RETRY_TIMER = 'engine.retry'
+export const ROUTE_RETRY_TIMER = 'engine.route-retry'
+
+// ───────────────────────────── routing retries ─────────────────────────────
+
+/** The engine's routing retry planner until a slice supplies the policies: never retry; Retry is offered. */
+export const defaultRoutingRetryPlanner: RoutingRetryPlanner = () => null
+
+/** Schedules the next try of a message's routing after a transient failure; false when none is due. */
+export function scheduleRoutingRetry(ctx: StepContext, messageId: MessageId, error: ProviderError, options: RouteOptions): boolean {
+  const used = options.routingRetry ?? 0
+  const at = ctx.routingRetryAt(error, used)
+  if (at === null) return false
+  const payload: RouteRetryPayload = {
+    messageId,
+    routingRetry: used + 1,
+    chosenTargets: options.chosenTargets ? [...options.chosenTargets] : null,
+    forcedComposition: options.forcedComposition ?? null,
+  }
+  ctx.setTimer(ROUTE_RETRY_TIMER, `route:${messageId}`, at, payload)
+  return true
+}
+
+interface RouteRetryPayload {
+  readonly messageId: MessageId
+  readonly routingRetry: number
+  readonly chosenTargets: SectionId[] | null
+  readonly forcedComposition: 'atomic' | null
+  readonly [key: string]: JsonValue
+}
+
+/** The next try of a routing that failed transiently is due: route again, if the message still waits. */
+const routeRetryTimer: TimerHandler = (state, payload, ctx) => {
+  const p = payload as unknown as RouteRetryPayload
+  if (state.messages[p.messageId]?.routing !== 'routing') return
+  ctx.route(p.messageId, {
+    routingRetry: p.routingRetry,
+    ...(p.chosenTargets ? { chosenTargets: p.chosenTargets } : {}),
+    ...(p.forcedComposition ? { forcedComposition: p.forcedComposition } : {}),
+  })
+}
 
 // ───────────────────────────── waiting and release ─────────────────────────────
 
@@ -59,16 +101,27 @@ export function computeWait(state: ConversationState, d: DirectiveRow): WaitDeci
   if (!barrier || !barrier.directiveIds.includes(d.id)) return { kind: 'ready' }
   const refs: PrerequisiteRef[] = []
   let blocked = false
+  // A part that waits only on other parts of its own request is not blocked: those parts run, and
+  // holding them for it would make the first part wait for itself (02 · "A fragment that needs
+  // nothing unavailable proceeds at once"). Only a wait outside the request, a pause or a
+  // clarification blocks the whole request.
+  const inRequest = new Set(barrier.directiveIds)
+  const external = (ref: PrerequisiteRef): boolean => !(ref.kind === 'directive' && inRequest.has(ref.directiveId))
   for (const id of barrier.directiveIds) {
     if (id === d.id) continue
     const other = state.directives[id]
     if (!other) continue
     const notStarted = other.attemptIds.length === 0
-    if (other.state === 'paused' || other.state === 'awaiting-elicitation') {
+    if (other.state === 'awaiting-elicitation') {
+      // Held for the user's answer: the queue item names the part it waits on (Q19).
+      blocked = true
+      pushRef(refs, { kind: 'directive', directiveId: other.id })
+      for (const ref of unsatisfiedPrerequisites(state, other).filter(external)) pushRef(refs, ref)
+    } else if (other.state === 'paused') {
       blocked = true
       for (const ref of unsatisfiedPrerequisites(state, other)) pushRef(refs, ref)
     } else if (notStarted && (other.state === 'dependency-queued' || other.state === 'ready')) {
-      const theirs = unsatisfiedPrerequisites(state, other)
+      const theirs = unsatisfiedPrerequisites(state, other).filter(external)
       if (theirs.length > 0) {
         blocked = true
         for (const ref of theirs) pushRef(refs, ref)
@@ -115,6 +168,17 @@ export function settleWait(ctx: StepContext, directiveId: DirectiveId, force = f
 export function notStartedInSection(state: ConversationState, d: DirectiveRow): boolean {
   const section = d.sectionId ? state.sections[d.sectionId] : undefined
   return (section?.attemptIds.length ?? 0) === 0
+}
+
+/**
+ * Started work that has not settled: running, between automatic retries,
+ * waiting for capacity, or ready again for a retry that has not started yet
+ * (its section already holds attempts). Stop marks such work stopped, never
+ * cancelled (08 · "Four ways work ends").
+ */
+export function startedInSection(state: ConversationState, d: DirectiveRow): boolean {
+  if (isStartedUnsettled(d.state)) return true
+  return d.state === 'ready' && d.sectionId !== null && !notStartedInSection(state, d)
 }
 
 /** First states, releases and refreshed waits, for every directive that has not started. */
@@ -317,7 +381,7 @@ export function liveAttempt(state: ConversationState, d: DirectiveRow): AttemptI
  */
 export function stopWork(
   ctx: StepContext,
-  target: { readonly kind: 'section'; readonly sectionId: SectionId } | { readonly kind: 'request'; readonly messageId: import('@committee/protocol').MessageId },
+  target: { readonly kind: 'section'; readonly sectionId: SectionId } | { readonly kind: 'request'; readonly messageId: MessageId },
 ): void {
   const scope = target.kind
   let directives: DirectiveId[] = []
@@ -338,7 +402,7 @@ export function stopWork(
       ctx.flushOutput(live)
       ctx.emit({ type: 'attempt-stopped', attemptId: live, scope })
       ctx.abortAttempt(live)
-    } else if (isStartedUnsettled(d.state)) {
+    } else if (startedInSection(ctx.state, d)) {
       // Started work always has a section; work held for a clarification may not, and is cancelled below.
       if (d.sectionId === null) continue
       ctx.emit({ type: 'directive-stopped', directiveId: id, sectionId: d.sectionId, scope })
@@ -489,7 +553,7 @@ export const defaultRetryPlanner: RetryPlanner = (_state, _directiveId, cause) =
 
 export const engineReactions: readonly Reaction[] = [placementReaction, waitReaction, groupClosingReaction, retryTimerReaction]
 
-export const engineTimers = { [RETRY_TIMER]: retryTimer }
+export const engineTimers = { [RETRY_TIMER]: retryTimer, [ROUTE_RETRY_TIMER]: routeRetryTimer }
 
 /** For tests and slices: is this event one that settles a directive? */
 export function settlesDirective(event: ConversationEvent): boolean {

@@ -52,13 +52,14 @@ import {
 import { resolveTargets, routingCandidates } from './candidates'
 import { assembleContext, sessionRequirementsInForce, type AssembledContext } from './context'
 import { defaultModules } from './engine-module'
-import { defaultRetryPlanner, notStartedInSection, settleWait } from './lifecycle'
+import { defaultRetryPlanner, defaultRoutingRetryPlanner, notStartedInSection, scheduleRoutingRetry, settleWait } from './lifecycle'
 import {
   isCommandError,
   type ConversationCommandType,
   type CoreModule,
   type PlanPart,
   type RetryPlanner,
+  type RoutingRetryPlanner,
   type RouteOptions,
   type StepContext,
 } from './module'
@@ -201,6 +202,8 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
   if (!router) throw new Error('createBackend needs deps.router or a module with createRouter')
   const activeRouter: Router = router
   const retryPlanner: RetryPlanner = [...modules].reverse().find((m) => m.retryPlanner)?.retryPlanner ?? defaultRetryPlanner
+  const routingRetryPlanner: RoutingRetryPlanner =
+    [...modules].reverse().find((m) => m.routingRetryPlanner)?.routingRetryPlanner ?? defaultRoutingRetryPlanner
 
   const runtimes = new Map<ConversationId, Runtime>()
   const live = new Map<AttemptId, LiveRun>()
@@ -339,6 +342,9 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
       },
       retryPlan(directiveId, cause) {
         return retryPlanner(state, directiveId, cause, now, settings)
+      },
+      routingRetryAt(error, retriesUsed) {
+        return routingRetryPlanner(error, retriesUsed, now, settings)
       },
       abortAttempt(attemptId) {
         effects.push({ kind: 'abort', attemptId })
@@ -550,6 +556,9 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
       ctx.emit({ type: 'routing-failed', messageId, error: providerError('malformed-response', text) })
     }
     if (outcome.kind === 'failed') {
+      // A transient failure is retried by the retry setting, like an answer run; the bubble keeps
+      // showing the routing status. Only what is not retried is recorded (08, 11).
+      if (scheduleRoutingRetry(ctx, messageId, outcome.error, routeOptions)) return
       ctx.emit({ type: 'routing-failed', messageId, error: outcome.error })
       return
     }
@@ -666,7 +675,7 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
               starting.delete(key)
               return
             }
-            await step(current, (ctx, effects) => beginAttempt(ctx, effects, prepared, count.inputTokens, count.contextLimit))
+            await step(current, (ctx, effects) => beginAttempt(ctx, effects, prepared, count.inputTokens, count.contextLimit, count.exact))
             schedule()
           }),
         ),
@@ -678,7 +687,14 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
    * (Q29). If anything it would read changed while its tokens were counted,
    * it is prepared again so the record is exact.
    */
-  function beginAttempt(ctx: StepContext, effects: Effect[], prepared: Prepared, inputTokens: number, tokenLimit: number | null): void {
+  function beginAttempt(
+    ctx: StepContext,
+    effects: Effect[],
+    prepared: Prepared,
+    inputTokens: number,
+    tokenLimit: number | null,
+    exact: boolean,
+  ): void {
     const key = startKey(prepared.conversationId, prepared.directiveId)
     const d = ctx.state.directives[prepared.directiveId]
     if (!d || d.state !== 'ready' || d.nodeId !== prepared.nodeId) {
@@ -718,8 +734,10 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
       parents: prepared.parents,
       context: { ...prepared.context, inputTokens, tokenLimit },
     })
-    if (tokenLimit !== null && inputTokens > tokenLimit) {
-      // Over the limit: non-retryable, never truncated (Q67, Q82).
+    if (exact && tokenLimit !== null && inputTokens > tokenLimit) {
+      // Over the limit: non-retryable, never truncated (Q67, Q82). Only an exact count fails a run
+      // before it starts; an estimate may count high, so a run it puts over the limit is sent and
+      // the provider's own `context_length_exceeded` fails it, non-retryable, if it really is over.
       ctx.emit({
         type: 'attempt-failed',
         attemptId,

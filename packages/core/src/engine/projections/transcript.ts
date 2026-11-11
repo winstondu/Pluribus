@@ -29,7 +29,6 @@ import {
 } from '@committee/protocol'
 import {
   isInFlightState,
-  isStartedUnsettled,
   messageVisible,
   prerequisiteLabel,
   responseVisible,
@@ -37,6 +36,7 @@ import {
   sectionState,
   unfinishedOutcome,
 } from '../queries'
+import { startedInSection } from '../lifecycle'
 import type { ConversationState, DirectiveRow, SectionRow } from '../state'
 import { shareRecord, type Memo } from './tracking'
 
@@ -250,6 +250,18 @@ export function undoSplitAvailable(s: ConversationState, originalId: MessageId):
       if (s.sections[sectionId]?.hasText) return false
     }
     nodeIds.add(d.nodeId)
+  }
+  // A revision of a split directive is a reply to it, whether its target was explicit or inferred:
+  // undoing would discard the correction (D4).
+  if (s.revisions.some((r) => r.targets.some((t) => directiveIds.has(t.directiveId)))) return false
+  // The split's clarification questions are sections like any answer (07): a reply to one, explicit
+  // or recognised as its answer (Q98), is a reply to the split.
+  for (const id of s.directiveOrder) {
+    const d = s.directives[id]
+    if (!d || d.kind !== 'clarification-question' || d.originalMessageId !== originalId) continue
+    for (const sectionId of d.sectionIds) sectionIds.add(sectionId)
+    const asked = d.asksElicitationId ? s.elicitations[d.asksElicitationId] : undefined
+    if (asked && asked.status === 'answered') return false
   }
   // A sibling group with a split directive among its members: waiting for, or building on, the
   // whole group is waiting for or building on that directive too (04 · "No subset bypass").
@@ -469,7 +481,7 @@ function sectionView(s: ConversationState, m: Memo, id: SectionId): SectionView 
     operationId: section.operationId,
     actions: {
       reply: section.supersession === null && (d.kind === 'answer' || elicitation?.status === 'open' || elicitation === undefined),
-      stop: current && isStartedUnsettled(d.state),
+      stop: current && startedInSection(s, d),
       retry: current && unfinishedOutcome(d.state) !== null,
       regenerate: current && d.state === 'completed' && (section.supersededInputs?.inputs.length ?? 0) > 0,
     },

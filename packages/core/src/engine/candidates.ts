@@ -69,6 +69,7 @@ export function routingCandidates(state: ConversationState): RoutingCandidates {
       startNodeId,
       groupId: groupOfDirective(state, d.id)?.id ?? null,
       consumed: attempt ? attempt.context.inputs.map((i) => i.directiveId) : [],
+      consumedRequirements: attempt ? attempt.context.sessionRequirementIds : [],
     })
   }
 

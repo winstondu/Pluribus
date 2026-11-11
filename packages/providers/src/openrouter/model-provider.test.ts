@@ -446,4 +446,12 @@ describe('OpenRouter model provider · countTokens', () => {
     expect(tokens).toBeLessThan(1500)
     expect(estimateTokens([{ role: 'user', content: '你好世界' }])).toBeGreaterThanOrEqual(4)
   })
+
+  it('the estimate does not count Cyrillic or accented text at a token per character', () => {
+    // About 1 token per 3 to 4 characters with a real tokenizer.
+    const russian = 'Быстрая коричневая лиса прыгает через ленивую собаку. '.repeat(100)
+    const tokens = estimateTokens([{ role: 'user', content: russian }])
+    expect(tokens).toBeLessThan(russian.length / 2)
+    expect(tokens).toBeGreaterThan(russian.length / 5)
+  })
 })

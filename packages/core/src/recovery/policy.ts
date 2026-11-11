@@ -1,5 +1,5 @@
 import { RETRY_POLICIES, type AttemptId, type RetryPlan } from '@committee/protocol'
-import type { ConversationState, RetryPlanner } from '../engine'
+import type { ConversationState, RetryPlanner, RoutingRetryPlanner } from '../engine'
 
 /**
  * The three retry policies (08 · "Retries", Q47, Q54), with the parameters
@@ -53,4 +53,24 @@ export function automaticRetriesUsed(state: ConversationState, directiveId: stri
     used += 1
   }
   return used
+}
+
+/**
+ * Routing failures follow the same setting (11 · "OpenRouter error
+ * mapping": "Treatment follows the retry setting"): a transient failure of
+ * a Decisions or decomposition call (408, 429, 502, 503, an empty 200, a
+ * network drop) is tried again after the policy's backoff, or after
+ * `Retry-After` for 429 and 503, while the message keeps its routing
+ * status. Non-retryable failures, Manual, a wait longer than the policy
+ * accepts, and retries used up record `routing-failed` with Retry.
+ */
+export const policyRoutingRetryPlanner: RoutingRetryPlanner = (error, used, now, settings) => {
+  if (error.class !== 'transient') return null
+  const policy = RETRY_POLICIES[settings.retryPolicy]
+  if (used >= policy.maxAutomaticRetries) return null
+  if (error.code === 'rate-limited' || error.code === 'service-unavailable') {
+    const wait = error.retryAfterMs ?? policy.defaultRetryAfterMs
+    return wait > policy.maxRetryAfterMs ? null : now + wait
+  }
+  return now + (policy.backoffMs[Math.min(used, policy.backoffMs.length - 1)] ?? 0)
 }

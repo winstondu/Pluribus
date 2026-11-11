@@ -22,6 +22,7 @@ import {
   activeMembers,
   chainTip,
   childrenInFlight,
+  countsAlongChain,
   descendsFrom,
   groupOfDirective,
   nodeInFlight,
@@ -351,6 +352,10 @@ export function placeUnit(unit: PlannedUnit, ctx: StepContext): Placed {
   // Work that waits for a whole group builds on that group, never beside or below one of its members.
   const covering = coveringGroup(ctx.state, unit, start)
   if (covering) return placeOnGroup(unit, covering, ctx)
+  // Work that builds on one member and waits for another needs two members: it depends on the whole
+  // group, never a subset (Q30, C9).
+  const spanned = groupSpannedFrom(ctx.state, unit, start)
+  if (spanned) return placeOnGroup(withPrerequisite(unit, { kind: 'sibling-group', groupId: spanned }), spanned, ctx)
 
   // Repair 0: a node still in flight can be built on only by work that waits for it.
   const startNode = ctx.state.nodes[start]
@@ -378,6 +383,14 @@ function coveringGroup(state: ConversationState, unit: PlannedUnit, start: NodeI
   return null
 }
 
+/** The group of which `start` is a member while the unit waits for another of its members. */
+function groupSpannedFrom(state: ConversationState, unit: PlannedUnit, start: NodeId): SiblingGroupId | null {
+  const group = memberGroupOf(state, start)
+  if (!group) return null
+  const startDirective = state.nodes[start]?.directiveId ?? null
+  return activeMembers(group).some((m) => m.directiveId !== startDirective && waitsForDirective(unit, m.directiveId)) ? group.id : null
+}
+
 /** Continue from a sibling group: the base chain from its join-back (Q78); while open, the unit waits for it (C9, C15). */
 function placeOnGroup(unit: PlannedUnit, groupId: SiblingGroupId, ctx: StepContext): Placed {
   const group = ctx.state.groups[groupId]
@@ -398,12 +411,26 @@ function placeOnGroup(unit: PlannedUnit, groupId: SiblingGroupId, ctx: StepConte
  * on the group it belongs to, instead of beside it.
  */
 function placeConsumer(unit: PlannedUnit, start: NodeId, ctx: StepContext): Placed {
-  const awaited = childrenInFlight(ctx.state, start).filter((c) => waitsForDirective(unit, c.id))
-  if (awaited.length === 1 && awaited[0]) return placeOn(unit, awaited[0].nodeId, ctx)
+  const state = ctx.state
+  const awaited: NodeId[] = []
+  for (const c of childrenInFlight(state, start)) {
+    if (waitsForDirective(unit, c.id) && !awaited.includes(c.nodeId)) awaited.push(c.nodeId)
+  }
+  // A member of a group that started at P, finished or not, is consumed from its own node: the
+  // consumer is its descendant and reads the result it waits for, never a sibling beside it (C11).
+  for (const group of Object.values(state.groups)) {
+    if (group.state === 'dissolved' || group.startNodeId !== start) continue
+    for (const m of activeMembers(group)) {
+      const nodeId = state.directives[m.directiveId]?.nodeId
+      if (nodeId && waitsForDirective(unit, m.directiveId) && !awaited.includes(nodeId)) awaited.push(nodeId)
+    }
+  }
+  const only = awaited[0]
+  if (awaited.length === 1 && only) return placeOn(unit, only, ctx)
   if (awaited.length > 1) {
-    const open = openGroupAt(ctx.state, start)
+    const open = openGroupAt(state, start)
     if (open) return placeOnGroup(unit, open.id, ctx)
-    return placeJoinChain(unit, awaited.map((c) => ({ kind: 'node', nodeId: c.nodeId })), ctx)
+    return placeJoinChain(unit, awaited.map((nodeId) => ({ kind: 'node', nodeId })), ctx)
   }
   return placeOn(unit, start, ctx)
 }
@@ -453,8 +480,9 @@ function memberGroupOf(state: ConversationState, nodeId: NodeId): GroupRow | nul
  * - a parent that is not a leaf becomes its chain's leaf (Q97);
  * - two or more parents from one sibling group become that group's
  *   join-back, never a subset of it (Q30, invariant 4);
- * - a parent still in flight, with no prerequisite on it, becomes its
- *   starting context, so no run reads an unfinished answer (C1, C3);
+ * - a parent still in flight stays the parent (a non-leaf cannot be one,
+ *   Q86, C20) and the join chain waits for it, so no run reads an
+ *   unfinished answer (C3, Q29);
  * - a parent that is an ancestor of another parent is already read through
  *   it and is dropped (Q97).
  * Parents that collapse onto one line are a continuation, not a join (Q3).
@@ -501,16 +529,14 @@ function placeJoinChain(unit: PlannedUnit, parents: readonly PointRef[], ctx: St
       if (state.groups[g]?.state === 'open') current = withPrerequisite(current, { kind: 'sibling-group', groupId: g })
     } else add(merged, p)
   }
-  // Nothing in flight is read without waiting for it.
+  // Its parents are leaves (Q86, C20), and nothing in flight is read without waiting for it (C3,
+  // Q29): a leaf whose work is still in flight stays the parent, and the join chain waits for it.
   points = []
   for (const p of merged) {
     if (p.kind === 'node') {
       const node = state.nodes[p.nodeId]
-      if (node?.directiveId && nodeInFlight(state, p.nodeId) && !waitsForDirective(current, node.directiveId)) {
-        const settled = nearestSettledAncestor(state, p.nodeId)
-        if (settled.kind === 'node') add(points, { kind: 'node', nodeId: settled.nodeId })
-        else if (settled.kind === 'join') for (const q of settled.parents) add(points, q)
-        continue
+      if (node?.directiveId && nodeInFlight(state, p.nodeId)) {
+        current = withPrerequisite(current, { kind: 'directive', directiveId: node.directiveId })
       }
     }
     if (p.kind === 'sibling-group' && state.groups[p.groupId]?.state === 'open') {
@@ -629,21 +655,30 @@ function placeFork(unit: PlannedUnit, start: NodeId, childIds: readonly Directiv
   }
   const startNode = ctx.state.nodes[start]
   if (!startNode) return placeNewChain(unit, ctx)
-  const baseChainId = startNode.chainId
+  // The join-back extends the line the siblings forked from (Q78, Q90). When P's chain has already
+  // moved on past P (later work continued it), the join-back cannot sit on that chain: work
+  // continuing the chain from its head would read the siblings' record in place of the later
+  // exchanges (01 · "Following a node's parents back to the root gives exactly the context").
+  // The group's base is then a new branch chain from P, in its own color, as for any later branch.
+  const ownChainId = startNode.chainId
+  const continuing = childIds.filter((id) => ctx.state.directives[id]?.chainId === ownChainId)
+  const baseChainId = chainMovedOn(ctx.state, start, continuing)
+    ? newChain(ctx, 'branch', ownChainId, ctx.state.directives[startNode.directiveId ?? '']?.label ?? unit.label)
+    : ownChainId
   const members: SiblingMember[] = []
   const rechained: NodeRechaining[] = []
   for (const childId of childIds) {
     const child = ctx.state.directives[childId]
     if (!child) continue
-    if (child.chainId === baseChainId) {
+    if (child.chainId === ownChainId) {
       // It was continuing P's chain: it moves to a fork chain of its own, with what is queued behind it.
       const forkChainId = newChain(ctx, 'fork', baseChainId, child.label)
-      const chain = ctx.state.chains[baseChainId]
+      const chain = ctx.state.chains[ownChainId]
       const index = chain ? chain.nodeIds.indexOf(child.nodeId) : -1
       const behind = chain && index >= 0 ? chain.nodeIds.slice(index + 1) : []
-      rechained.push({ nodeId: child.nodeId, fromChainId: baseChainId, toChainId: forkChainId })
+      rechained.push({ nodeId: child.nodeId, fromChainId: ownChainId, toChainId: forkChainId })
       for (const id of behind) {
-        if (descendsFrom(ctx.state, id, child.nodeId)) rechained.push({ nodeId: id, fromChainId: baseChainId, toChainId: forkChainId })
+        if (descendsFrom(ctx.state, id, child.nodeId)) rechained.push({ nodeId: id, fromChainId: ownChainId, toChainId: forkChainId })
       }
       members.push({ directiveId: child.id, nodeId: child.nodeId, chainId: forkChainId })
     } else {
@@ -669,6 +704,25 @@ function placeFork(unit: PlannedUnit, start: NodeId, childIds: readonly Directiv
     ],
     prerequisites: unit.prerequisites,
   }
+}
+
+/**
+ * True when P's chain holds a node after P that is not one of the children
+ * being forked or queued behind them: the chain has moved on past P.
+ */
+function chainMovedOn(state: ConversationState, start: NodeId, continuing: readonly DirectiveId[]): boolean {
+  const node = state.nodes[start]
+  const chain = node ? state.chains[node.chainId] : undefined
+  if (!chain) return false
+  const index = chain.nodeIds.indexOf(start)
+  if (index < 0) return false
+  const childNodes = continuing.flatMap((id) => {
+    const d = state.directives[id]
+    return d ? [d.nodeId] : []
+  })
+  return chain.nodeIds
+    .slice(index + 1)
+    .some((id) => countsAlongChain(state, id) && !childNodes.some((c) => c === id || descendsFrom(state, id, c)))
 }
 
 /** The point a sibling group's dependents resolve to when they start: its current join-back node. */

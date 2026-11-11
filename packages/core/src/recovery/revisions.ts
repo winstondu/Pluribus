@@ -144,9 +144,13 @@ function raiseChoice(ctx: StepContext, r: PlannedRevision, messageId: MessageId)
     if (!d || d.state === 'superseded' || d.kind !== 'answer') continue
     if (r.targetDirectiveIds.includes(d.id) || options.some((o) => o.directiveId === d.id)) continue
     const state = revisionTargetState(ctx.state, d)
-    if (state === 'not-started') options.push({ directiveId: d.id, label: d.label, state: 'queued', locked: true, preselected: true })
-    else if (state === 'running-status-only' || state === 'running-with-text') {
-      options.push({ directiveId: d.id, label: d.label, state: 'running', locked: true, preselected: true })
+    // Affected running work stops and affected queued work holds; work the router judged unaffected
+    // continues (07 · "Choice with default"). Only finished work is the user's choice (Q44, Q84): an
+    // unaffected run that finishes later gets the superseded-input note through the detection rule.
+    if (state === 'not-started') {
+      if (entry.preselected) options.push({ directiveId: d.id, label: d.label, state: 'queued', locked: true, preselected: true })
+    } else if (state === 'running-status-only' || state === 'running-with-text') {
+      if (entry.preselected) options.push({ directiveId: d.id, label: d.label, state: 'running', locked: true, preselected: true })
     } else options.push({ directiveId: d.id, label: d.label, state: 'finished', locked: false, preselected: entry.preselected })
   }
   if (options.length === 0) return

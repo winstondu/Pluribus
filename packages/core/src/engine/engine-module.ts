@@ -1,5 +1,5 @@
 import type { CoreModule } from './module'
-import { defaultRetryPlanner, engineCommands, engineReactions, engineStartup, engineTimers } from './lifecycle'
+import { defaultRetryPlanner, defaultRoutingRetryPlanner, engineCommands, engineReactions, engineStartup, engineTimers } from './lifecycle'
 import { unitsApplier } from './plan'
 
 /**
@@ -15,6 +15,7 @@ export const engineModule: CoreModule = {
   reactions: engineReactions,
   planAppliers: [unitsApplier],
   retryPlanner: defaultRetryPlanner,
+  routingRetryPlanner: defaultRoutingRetryPlanner,
   startupReactions: [engineStartup],
   timers: engineTimers,
 }

@@ -28,6 +28,8 @@ export interface UnitRules {
   readonly after?: { readonly [part: number]: number }
   /** Session requirement number (1-based) → probability that the unit changes it. */
   readonly requirements?: { readonly [n: number]: number }
+  /** Probability that, besides changing a session-wide requirement, the unit asks for an answer of its own. */
+  readonly asks?: number
 }
 
 export interface MessageRules {
@@ -97,6 +99,7 @@ export function answerFrom(rules: { readonly [text: string]: MessageRules }) {
         else if (question === 'several') answers[id] = noul(u.several)
         else if (question === 'relation') answers[id] = choice(options, u.relation ?? 'new')
         else if (question === 'clarify') answers[id] = noul(u.clarify)
+        else if (question === 'asks') answers[id] = noul(u.asks)
         else if (question === 'why') answers[id] = choice(options, u.why ?? 'missing')
         else if (question === 'chain') {
           const n2 = [...lines].find(([, label]) => label === u.chain)?.[0]

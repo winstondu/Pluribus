@@ -188,7 +188,7 @@ describe('validation', () => {
     expect(outcome.kind === 'plan' && outcome.plan.units).toHaveLength(1)
   })
 
-  test('gate · an untargeted message with a single weak candidate is not a choice between sections and is not elicited', async () => {
+  test('gate · an untargeted reply whose one plausible section is below the target-choice threshold is elicited, never placed by guess', async () => {
     const e = ROUTING_CORPUS.find((x) => x.id === 'target-single-recent')
     if (!e) throw new Error('missing example')
     const i = corpusInput(e)
@@ -205,7 +205,8 @@ describe('validation', () => {
       decomposer: referenceDecomposer(e),
     })
     const outcome = await weak.route(i, NEVER_CANCELLED)
-    expect(outcome.kind).toBe('plan')
-    expect(outcome.kind === 'plan' && outcome.plan.units[0]?.targets).toEqual([])
+    // 11 · "Below the target-choice confidence threshold, Committee elicits the target" (Q20, Q74).
+    expect(outcome.kind).toBe('target-ambiguity')
+    expect(outcome.kind === 'target-ambiguity' && outcome.candidates.map((c) => c.confidence)).toEqual([0.5])
   })
 })

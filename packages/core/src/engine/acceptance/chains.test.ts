@@ -411,7 +411,7 @@ describe('chains, dependencies and context', () => {
 const contents = (run: AttemptStarted | undefined): string[] => (run ? run.context.messages.map((m) => m.content) : [])
 
 describe('chains, dependencies and context: the review cases', () => {
-  test("C3 (engine) · a join chain started over a leaf still running: no view claims it consumed that unfinished answer", async () => {
+  test('C3 (engine) · a join chain over a leaf still running waits for it and never reads its unfinished answer', async () => {
     const s = await scenario()
     await s.ask('Plan a trip to Kyoto in detail', { label: 'plan' }, answer('Day 1 Gion…', 100, 5_000))
     await s.ask('Why is the sky blue?', { label: 'sky' }, answer('Scattering.', 10, 20))
@@ -422,10 +422,18 @@ describe('chains, dependencies and context: the review cases', () => {
     }, answer('Compared.', 10, 20))
     await s.t.advance(50)
     const k = s.d('K')
-    expect(s.state().attempts[k.attemptIds[0] ?? '']?.context.messages.some((m) => m.content.includes('Day 1'))).toBe(false)
+    // Streaming text never releases it (C13): no attempt, so no record of the partial plan anywhere.
+    expect(k.state).toBe('dependency-queued')
+    expect(k.attemptIds).toHaveLength(0)
+    let snap = await s.snap()
+    expect(snap.transcript.chains[k.chainId]?.focus.inherited.sectionIds ?? []).not.toContain(s.d('plan').sectionId)
     await s.t.advance(5_000)
-    const snap = await s.snap()
-    expect(snap.transcript.chains[k.chainId]?.focus.inherited.sectionIds).not.toContain(s.d('plan').sectionId)
+    expect(s.d('K').state).toBe('completed')
+    const run = s.state().attempts[s.d('K').attemptIds[0] ?? '']
+    expect(run?.context.inputs.map((i) => i.directiveId)).toEqual([s.id('plan'), s.id('sky')])
+    expect(run?.context.messages.filter((m) => m.content === 'Day 1 Gion…')).toHaveLength(1)
+    snap = await s.snap()
+    expect(snap.transcript.chains[k.chainId]?.focus.inherited.sectionIds).toContain(s.d('plan').sectionId)
     await expectRebuildable(s)
   })
 
@@ -452,22 +460,26 @@ describe('chains, dependencies and context: the review cases', () => {
     expect(run?.context.inputs.map((i) => i.directiveId)).toEqual([s.id('brief'), s.id('neighborhoods'), s.id('activities'), s.id('day trips')])
   })
 
-  test('C20 (engine) · a join-chain parent still in flight, with no prerequisite on it, is read as its starting context, never as its unfinished answer', async () => {
+  test('C20 (engine) · a join-chain parent is always the leaf: a leaf still in flight stays the parent and is waited for', async () => {
     const s = await scenario()
     await s.ask('Trip brief', { label: 'brief' }, answer('Noted.', 10, 20))
     await s.t.advance(50)
     await s.ask('Plan day one', { label: 'day one', placement: s.on('brief') }, answer('Day 1 Gion…', 100, 5_000))
     await s.ask('Why is the sky blue?', { label: 'sky' }, answer('Scattering.', 10, 20))
     await s.t.advance(200)
+    // The router names the trip's settled head; the leaf of that chain is 'day one', still running.
     await s.ask('Compare the trip with the sky explanation', {
       label: 'K',
-      placement: { kind: 'join-chain', parents: [{ kind: 'node', nodeId: s.d('day one').nodeId }, { kind: 'node', nodeId: s.d('sky').nodeId }] },
+      placement: { kind: 'join-chain', parents: [{ kind: 'node', nodeId: s.d('brief').nodeId }, { kind: 'node', nodeId: s.d('sky').nodeId }] },
     }, answer('Compared.', 10, 20))
     await s.t.advance(50)
     const node = s.state().nodes[s.d('K').nodeId]
-    expect(node?.plannedParents).toEqual([{ kind: 'node', nodeId: s.d('brief').nodeId }, { kind: 'node', nodeId: s.d('sky').nodeId }])
+    expect(node?.plannedParents).toEqual([{ kind: 'node', nodeId: s.d('day one').nodeId }, { kind: 'node', nodeId: s.d('sky').nodeId }])
+    expect(s.d('K').prerequisites).toEqual([s.needs('day one')])
+    expect(s.d('K').attemptIds).toHaveLength(0)
+    await s.t.advance(5_000)
     const run = s.state().attempts[s.d('K').attemptIds[0] ?? '']
-    expect(run?.context.inputs.map((i) => i.directiveId)).toEqual([s.id('brief'), s.id('sky')])
+    expect(run?.context.inputs.map((i) => i.directiveId)).toEqual([s.id('brief'), s.id('day one'), s.id('sky')])
   })
 
   test('acyclic · work that waits for an open group is never admitted to that group', async () => {

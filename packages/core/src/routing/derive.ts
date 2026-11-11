@@ -24,12 +24,13 @@ import type { Supplied } from './supply'
 
 /**
  * Below the target-choice threshold a section is not inferred as a target.
- * When two or more sections reach this floor and none reaches the
- * threshold, the target is genuinely ambiguous and the user is asked (Q20).
- * One weak candidate alone is not a choice between sections: the message is
- * then placed by its handling chain. When the model says the message refers
- * to several sections and one is clear, every section at the floor is a
- * target too. Set from the first live corpus run (PLAN §7, core-routing).
+ * When a reply has one or more sections at this floor and none reaches the
+ * threshold, its target is not clear and the user is asked (11 · "Below the
+ * target-choice confidence threshold, Committee elicits the target", Q20,
+ * Q74): a weak candidate is never silently dropped in favour of the
+ * handling chain. When the model says the message refers to several
+ * sections and one is clear, every section at the floor is a target too.
+ * Set from the first live corpus run (PLAN §7, core-routing).
  */
 export const AMBIGUITY_FLOOR = 0.25
 
@@ -55,8 +56,13 @@ export function resolveUnitTargets(
   const ranked = [...signals.targets].sort((a, b) => b.confidence - a.confidence)
   if (given) {
     if (!options.fragment) return { kind: 'resolved', sectionIds: given.sectionIds, mode: given.mode }
+    // A fragment takes the given sections it refers to, and keeps any other section it clearly
+    // refers to on its own: a choice made for one ambiguous part never strips another part of its
+    // clear target (T1, 07 · target ambiguity is about the ambiguous reply only).
     const mine = given.sectionIds.filter((id) => (signals.targets.find((t) => t.id === id)?.confidence ?? 0) >= AMBIGUITY_FLOOR)
-    return { kind: 'resolved', sectionIds: mine, mode: mine.length > 0 ? given.mode : 'none' }
+    const own = ranked.filter((t) => t.confidence >= thresholds.targetChoice && !given.sectionIds.includes(t.id)).map((t) => t.id)
+    if (mine.length > 0) return { kind: 'resolved', sectionIds: [...mine, ...own], mode: given.mode }
+    return { kind: 'resolved', sectionIds: own, mode: own.length > 0 ? 'inferred' : 'none' }
   }
   const inferred = ranked.filter((t) => t.confidence >= thresholds.targetChoice).map((t) => t.id)
   if (inferred.length > 0) {
@@ -67,7 +73,7 @@ export function resolveUnitTargets(
     return { kind: 'resolved', sectionIds: inferred, mode: 'inferred' }
   }
   const weak = ranked.filter((t) => t.confidence >= AMBIGUITY_FLOOR)
-  if (options.mayBeReply && weak.length >= 2) {
+  if (options.mayBeReply && weak.length >= 1) {
     return { kind: 'ambiguous', candidates: weak.map((t) => ({ sectionId: t.id, confidence: t.confidence })) }
   }
   return { kind: 'resolved', sectionIds: [], mode: 'none' }

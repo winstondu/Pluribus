@@ -161,6 +161,12 @@ export interface CandidateWork {
    * (Q44). Empty until it has started.
    */
   readonly consumed: readonly DirectiveId[]
+  /**
+   * The session-wide requirements its latest attempt read: the candidates
+   * for "affected work" when one of them is replaced or withdrawn (06,
+   * Q44). Empty until it has started.
+   */
+  readonly consumedRequirements: readonly RequirementId[]
 }
 
 export interface CandidateGroup {
