@@ -36,14 +36,16 @@ function failedStore(message: string): BackendStore {
   return store
 }
 
-async function connectFixture(id: string): Promise<Connection> {
+async function connectFixture(id: string, manual: boolean): Promise<Connection> {
   const { createFixtureBackend, getFixture, fixtures } = await import('@/fixtures')
   const fixture = getFixture(id)
   if (!fixture) {
     const known = fixtures.map((candidate) => candidate.id).join(', ')
     return { mode: 'fixture', store: failedStore(`No fixture "${id}". Known fixtures: ${known}`), fixture: null }
   }
-  const backend = createFixtureBackend(fixture, { timers: true })
+  // `manual` leaves the steps to whoever holds the handle (the fixture gallery's stepper, an e2e test).
+  const backend = createFixtureBackend(fixture, { timers: !manual })
+  if (typeof window !== 'undefined') window.__committeeFixture = backend
   return { mode: 'fixture', store: createBackendStore(backend), fixture: backend }
 }
 
@@ -71,10 +73,12 @@ async function connectWorker(): Promise<Connection> {
 
 /**
  * Chooses the backend for this page load: `?fixture=<id>` runs one fixture
- * on the scripted backend; otherwise the Worker backend.
+ * on the scripted backend (add `&manual` to play its steps by hand through
+ * `window.__committeeFixture`); otherwise the Worker backend.
  */
 export function connect(search: string = globalThis.location?.search ?? ''): Promise<Connection> {
-  const fixtureId = new URLSearchParams(search).get('fixture')
-  if (fixtureId !== null && FIXTURES_ENABLED) return connectFixture(fixtureId)
+  const params = new URLSearchParams(search)
+  const fixtureId = params.get('fixture')
+  if (fixtureId !== null && FIXTURES_ENABLED) return connectFixture(fixtureId, params.has('manual'))
   return connectWorker()
 }

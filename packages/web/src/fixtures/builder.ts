@@ -478,9 +478,11 @@ export class ConversationBuilder {
   }
 
   /**
-   * Transcript order by message and response name, only when the default
-   * (items in the order they were fixed, then pending responses) is not
-   * wanted. Prefix with `m:` or `r:` when a message and a response share a name.
+   * The order in which the named messages and responses were fixed, only
+   * when it differs from the order of declaration. Pending responses stay
+   * the tail whatever is given here, and items added later follow the one
+   * rule again. Prefix with `m:` or `r:` when a message and a response share
+   * a name.
    */
   order(...names: string[]): this {
     this.spec.order = names.length === 0 ? null : names
@@ -942,35 +944,32 @@ export class ConversationBuilder {
     }
 
     // ── transcript order ──
-    let order: TranscriptItemRef[]
+    // An explicit order states the order in which the named items were fixed so far. It is folded into
+    // the ordinals once, so that whatever is added later follows the one rule again.
     if (spec.order) {
-      order = spec.order.map((entry): TranscriptItemRef => {
-        const [prefix, rest] = entry.includes(':') ? [entry.slice(0, 1), entry.slice(2)] : [null, entry]
+      for (const entry of spec.order) {
+        const [prefix, rest] = /^[mr]:/.test(entry) ? [entry.slice(0, 1), entry.slice(2)] : [null, entry]
         const isMessage = d.message.has(rest)
         const isResponse = d.response.has(rest)
-        if (prefix === 'm' || (prefix === null && isMessage && !isResponse)) {
-          need('message', rest, 'order')
-          return { kind: 'message', id: id('message', rest) }
+        if (prefix === null && isMessage && isResponse) {
+          fail(`order entry "${entry}" names both a message and a response; prefix it with m: or r:`)
         }
-        if (prefix === 'r' || (prefix === null && isResponse && !isMessage)) {
-          need('response', rest, 'order')
-          return { kind: 'response', id: id('response', rest) }
-        }
-        return fail(
-          isMessage ? `order entry "${entry}" names both a message and a response; prefix it with m: or r:` : `order refers to unknown item "${entry}"`,
-        )
-      })
-    } else {
-      const fixed = items
-        .filter((item) => spec.fixedItems.has(item.key))
-        .sort((a, b) => (spec.fixedItems.get(a.key) ?? 0) - (spec.fixedItems.get(b.key) ?? 0))
-      const pending = items.filter((item) => !spec.fixedItems.has(item.key))
-      order = [...fixed, ...pending].map((item) =>
-        item.kind === 'message'
-          ? { kind: 'message', id: id('message', item.name) }
-          : { kind: 'response', id: id('response', item.name) },
-      )
+        const kind = prefix === 'm' || (prefix === null && isMessage) ? 'message' : 'response'
+        need(kind, rest, 'order')
+        const key = `${kind === 'message' ? 'm' : 'r'}:${rest}`
+        if (spec.fixedItems.has(key)) spec.fixedItems.set(key, spec.nextOrdinal++)
+      }
+      spec.order = null
     }
+    const fixedItems = items
+      .filter((item) => spec.fixedItems.has(item.key))
+      .sort((a, b) => (spec.fixedItems.get(a.key) ?? 0) - (spec.fixedItems.get(b.key) ?? 0))
+    const pendingItems = items.filter((item) => !spec.fixedItems.has(item.key))
+    const order: TranscriptItemRef[] = [...fixedItems, ...pendingItems].map((item) =>
+      item.kind === 'message'
+        ? { kind: 'message', id: id('message', item.name) }
+        : { kind: 'response', id: id('response', item.name) },
+    )
 
     // ── genealogy ──
     const nodeStateFromSection = (directive: string): NodeState => {
