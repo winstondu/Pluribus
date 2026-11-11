@@ -1,0 +1,13 @@
+# OS
+.DS_Store
+
+# Secrets
+.env
+.env.*
+
+# Node / build output
+node_modules/
+dist/
+
+# Office lock files
+~$*
