@@ -65,7 +65,7 @@ import {
 } from './module'
 import { checkPlan, nearestSettledAncestor } from './plan'
 import { Projector, projectSnapshot, runInspection } from './projections'
-import { nodeInFlight, resolvePlannedParents, unsatisfiedPrerequisites } from './queries'
+import { messageVisible, nodeInFlight, resolvePlannedParents, unsatisfiedPrerequisites } from './queries'
 import { fold, reduce } from './reducers'
 import { STATE_VERSION, emptyConversationState, type ConversationState } from './state'
 
@@ -210,6 +210,8 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
   const starting = new Map<string, Prepared | null>()
   const timers = new Map<string, CancelTimer>()
   const routeTokens = new Map<string, number>()
+  /** Routings that wait for an earlier message of their conversation to have a routing outcome (C2). */
+  const deferredRoutes = new Map<string, { readonly conversationId: ConversationId; readonly messageId: MessageId; readonly options: RouteOptions }>()
   const listeners = new Set<{ readonly listener: (frame: StreamFrame) => void; readonly filter: SubscriptionFilter }>()
 
   let settings: Settings = DEFAULT_SETTINGS
@@ -394,6 +396,7 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
       })
     }
     for (const effect of effects) runEffect(runtime, effect)
+    releaseDeferredRoutes(runtime)
     if (runtime.eventsSinceCache >= options.cacheEveryEvents) void saveCache(runtime)
     else if (runtime.dirty && conversationIdle(runtime.id)) void saveCache(runtime)
     return result
@@ -526,14 +529,54 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
     }
   }
 
+  /**
+   * True while a message earlier in the conversation still waits for its
+   * routing outcome. A message is routed only after every earlier one has
+   * an outcome, so that its routing sees their work: a follow-up that needs
+   * a message still being routed waits for that message's result instead of
+   * running at once with no context (C2, 05 · result-dependent work), and a
+   * reply to a section that an earlier message revises resolves to the
+   * replacement (T3). Routing still takes no slot.
+   */
+  function earlierStillRouting(state: ConversationState, messageId: MessageId): boolean {
+    for (const id of state.messageOrder) {
+      if (id === messageId) return false
+      const message = state.messages[id]
+      if (message && message.routing === 'routing' && messageVisible(state, id)) return true
+    }
+    return false
+  }
+
+  function releaseDeferredRoutes(runtime: Runtime): void {
+    if (deferredRoutes.size === 0) return
+    for (const id of runtime.state.messageOrder) {
+      const key = `${runtime.id}|${id}`
+      const deferred = deferredRoutes.get(key)
+      if (!deferred) continue
+      if (runtime.state.messages[id]?.routing !== 'routing') {
+        deferredRoutes.delete(key)
+        continue
+      }
+      if (earlierStillRouting(runtime.state, id)) return
+      startRouting(runtime.id, id, deferred.options)
+      // That message is now the earliest still routing: later ones keep waiting.
+      return
+    }
+  }
+
   function startRouting(conversationId: ConversationId, messageId: MessageId, routeOptions: RouteOptions): void {
     const runtime = runtimes.get(conversationId)
     if (!runtime) return
-    const input = routingInput(runtime.state, messageId, routeOptions)
-    if (!input) return
     const key = `${conversationId}|${messageId}`
     const token = (routeTokens.get(key) ?? 0) + 1
     routeTokens.set(key, token)
+    if (earlierStillRouting(runtime.state, messageId)) {
+      deferredRoutes.set(key, { conversationId, messageId, options: routeOptions })
+      return
+    }
+    deferredRoutes.delete(key)
+    const input = routingInput(runtime.state, messageId, routeOptions)
+    if (!input) return
     const source = createCancelSource()
     const settle = (outcome: RoutingOutcome): Promise<void> =>
       stepLater(conversationId, (ctx) => {

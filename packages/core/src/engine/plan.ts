@@ -17,6 +17,7 @@ import {
   type SplitMessageRecord,
 } from '@committee/protocol'
 import type { PlannedUnit, RoutingPlan } from '../ports'
+import { resolveTargets } from './candidates'
 import type { PlanApplier, PlanTarget, StepContext } from './module'
 import {
   activeMembers,
@@ -49,7 +50,8 @@ export type PlanCheck = { readonly ok: true; readonly plan: RoutingPlan } | { re
  * The repairs that depend on earlier units of the same plan (repair 0, a
  * join-chain parent that is not a leaf) are applied while placing.
  */
-export function checkPlan(state: ConversationState, plan: RoutingPlan): PlanCheck {
+export function checkPlan(state: ConversationState, routed: RoutingPlan): PlanCheck {
+  const plan = redirectSuperseded(state, routed)
   const seen = new Set<DirectiveId>()
   const units: PlannedUnit[] = []
   for (const unit of plan.units) {
@@ -98,6 +100,59 @@ export function checkPlan(state: ConversationState, plan: RoutingPlan): PlanChec
     }
   }
   return { ok: true, plan: { ...plan, units } }
+}
+
+/**
+ * A section or node can be superseded between the moment a message's
+ * routing input was built and the moment its plan is applied (Regenerate, a
+ * default redo). A target on a superseded section resolves to its current
+ * replacement and the redirect is recorded, so the message says "Replying to
+ * the revised version" (Q43, T3); a point on a replaced node moves to the
+ * node that replaced it, so new work never hangs under superseded work.
+ */
+export function redirectSuperseded(state: ConversationState, plan: RoutingPlan): RoutingPlan {
+  let changed = false
+  let decisionUnits = plan.decision.units
+  const current = (nodeId: NodeId): NodeId => {
+    let id = nodeId
+    const seen = new Set<NodeId>()
+    for (;;) {
+      const next = state.nodes[id]?.replacedByNodeId ?? null
+      if (next === null || seen.has(next)) return id
+      seen.add(id)
+      id = next
+    }
+  }
+  const point = (p: PointRef): PointRef => {
+    if (p.kind !== 'node') return p
+    const nodeId = current(p.nodeId)
+    return nodeId === p.nodeId ? p : { kind: 'node', nodeId }
+  }
+  const units = plan.units.map((unit) => {
+    let next = unit
+    const { sectionIds, redirects } = resolveTargets(state, unit.targets)
+    if (redirects.length > 0) {
+      next = { ...next, targets: sectionIds }
+      const fragmentId = unit.fragment?.fragmentId ?? null
+      decisionUnits = decisionUnits.map((d) =>
+        d.fragmentId === fragmentId
+          ? { ...d, targets: { ...d.targets, sectionIds: [...sectionIds], redirected: [...d.targets.redirected, ...redirects] } }
+          : d,
+      )
+    }
+    const placement = next.placement
+    if (placement.kind === 'continue') {
+      const buildsOn = point(placement.buildsOn)
+      if (buildsOn !== placement.buildsOn) next = { ...next, placement: { kind: 'continue', buildsOn } }
+    } else if (placement.kind === 'join-chain') {
+      const parents = placement.parents.map(point)
+      if (parents.some((p, i) => p !== placement.parents[i])) next = { ...next, placement: { kind: 'join-chain', parents } }
+    }
+    if (next !== unit) changed = true
+    return next
+  })
+  if (!changed) return plan
+  return { ...plan, units, decision: { ...plan.decision, units: decisionUnits } }
 }
 
 function distinctPoints(points: readonly PointRef[]): number {
@@ -361,7 +416,11 @@ export function placeUnit(unit: PlannedUnit, ctx: StepContext): Placed {
   const startNode = ctx.state.nodes[start]
   if (startNode?.directiveId && nodeInFlight(ctx.state, start) && !waitsForDirective(unit, startNode.directiveId)) {
     const settled = nearestSettledAncestor(ctx.state, start)
-    if (settled.kind === 'none') return placeNewChain(unit, ctx)
+    // Nothing settled to fork from: the work in flight starts its line, so a fork beside it would read
+    // nothing of what the unit refers to (05 · "A target identifies the context being referred to").
+    // The only context to build on is that work's result: the unit waits for it and continues from it
+    // (PLAN §2, repair 0, the empty-start case).
+    if (settled.kind === 'none') return placeConsumer(withPrerequisite(unit, { kind: 'directive', directiveId: startNode.directiveId }), start, ctx)
     if (settled.kind === 'join') return placeJoinChain(unit, settled.parents, ctx)
     start = settled.nodeId
   }
