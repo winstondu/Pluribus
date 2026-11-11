@@ -323,6 +323,10 @@ async function complete(
   return { ok: true, content, finishReason }
 }
 
+/**
+ * No `temperature`: with `require_parameters` it would exclude models that do
+ * not take it (the default decomposition model does not).
+ */
 const DECOMPOSITION_MAX_TOKENS = 4096
 
 async function decompose(options: ResolvedOptions, request: DecomposeRequest, signal: CancelSignal): Promise<DecomposeResult> {
@@ -337,7 +341,6 @@ async function decompose(options: ResolvedOptions, request: DecomposeRequest, si
       {
         model: request.model,
         messages,
-        temperature: 0,
         max_tokens: DECOMPOSITION_MAX_TOKENS,
         response_format: {
           type: 'json_schema',
@@ -399,7 +402,6 @@ async function label(
         { role: 'system', content: LABEL_PROMPT },
         { role: 'user', content: request.text },
       ],
-      temperature: 0,
       max_tokens: 24,
     },
     signal,
