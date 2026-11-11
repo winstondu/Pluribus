@@ -11,6 +11,7 @@ import type {
   NodeId,
   OperationId,
   QueueItemId,
+  RequirementId,
   ResponseId,
   SectionId,
   SiblingGroupId,
@@ -39,7 +40,7 @@ import type {
   TokenUsage,
   WholeRequestBarrier,
 } from './model'
-import type { SettingsPatch } from './settings'
+import type { Settings } from './settings'
 
 /**
  * Domain events: the append-only source of truth (Q58, ADR-0006). Every view
@@ -95,12 +96,27 @@ export interface MessageSubmitted extends ConversationEnvelope<'message-submitte
   readonly text: string
   /** Sections chosen with "Reply to this". Empty when the reply is untargeted. As sent: redirects are recorded in the routing decision. */
   readonly explicitTargets: readonly SectionId[]
+  /**
+   * The message's initial response, minted with the message. From this
+   * event until routing settles the transcript shows it as a responding
+   * bubble in the pending tail with a routing status, so pending status is
+   * never on the user message (Q81, P7). `response-opened` with this ID
+   * follows when the plan creates work answered in the initial response.
+   * It goes away without a trace when no such work exists: the message was
+   * split, only revises, or only answers a clarification.
+   */
+  readonly responseId: ResponseId
 }
 
 /**
  * The routing pipeline settled what the message refers to, what kind of work
  * it is, where it goes and what it waits for (run inspector item 5). Recorded
- * before any directive of the message is created.
+ * before any directive of the message is created, and appended in the same
+ * step as every event that carries the plan out, so a log never holds a
+ * decided message with half its work.
+ *
+ * A message has a second `routing-decided` after Undo split, when it was
+ * routed again as one atomic request. The latest one is in force.
  */
 export interface RoutingDecided extends ConversationEnvelope<'routing-decided'> {
   readonly messageId: MessageId
@@ -109,8 +125,9 @@ export interface RoutingDecided extends ConversationEnvelope<'routing-decided'> 
 
 /**
  * Routing could not be completed because the decision provider or the
- * decomposer failed. The message stays in the transcript with a failure
- * notice; Retry on the request routes it again. Committee does not guess.
+ * decomposer failed. The message stays in the transcript; its provisional
+ * responding bubble shows the failure, and Retry on the request routes it
+ * again. Committee does not guess.
  */
 export interface RoutingFailed extends ConversationEnvelope<'routing-failed'> {
   readonly messageId: MessageId
@@ -129,12 +146,17 @@ export interface MessageDecomposed extends ConversationEnvelope<'message-decompo
    *   message is shown as separate user messages (Q53).
    */
   readonly presentation: 'reply-group' | 'split-messages'
+  /** Every fragment, in original text order: those that became directives and those that revise earlier work. */
   readonly fragments: readonly FragmentRecord[]
   /** Whole-request barrier, when the message relates its outputs to one another (Q19, Q25). */
   readonly barrier: WholeRequestBarrier | null
   /** Explicit output order requested by the user, which overrides first-output ordering inside the group (Q18). */
   readonly outputOrder: readonly FragmentId[] | null
-  /** Split messages in display order, which is topological with ties in original textual order (Q53). Empty for `reply-group`. */
+  /**
+   * Split messages in display order, which is topological with ties in
+   * original textual order (Q53). Empty for `reply-group`. Their message IDs
+   * are minted by the engine when it carries the plan out.
+   */
   readonly splitMessages: readonly SplitMessageRecord[]
   /** The decomposition model used (Q65). */
   readonly model: string
@@ -142,22 +164,46 @@ export interface MessageDecomposed extends ConversationEnvelope<'message-decompo
 
 /**
  * Undo split restored one atomic request (Q53, Q85). Only valid while no
- * split message shows answer text or has a reply (D4). Running attempts were
- * ended, their status-only bubbles are dropped, and the split messages are
- * replaced in the transcript by the original message.
+ * split message shows answer text or has a reply (D4): no section of the
+ * split shows text, and no later message targets, builds on or waits for
+ * any of its directives.
+ *
+ * In the same step: running attempts are ended by `section-superseded`
+ * (cause `undo-split`), which drops their status-only bubbles;
+ * `siblings-withdrawn` takes the directives out of any sibling group; and
+ * the split messages are replaced in the transcript by the original
+ * message, at the position it was submitted at.
+ *
+ * The original message is then routed again with
+ * `RoutingInput.forcedComposition: 'atomic'`. The directive that answers it
+ * is created by that plan, like any other, after a further `routing-decided`.
  */
 export interface SplitUndone extends ConversationEnvelope<'split-undone'> {
   readonly originalMessageId: MessageId
   readonly splitMessageIds: readonly MessageId[]
   /** Directives of the split, now `superseded`. */
   readonly withdrawnDirectiveIds: readonly DirectiveId[]
-  /** The directive that answers the original message as one atomic request. */
-  readonly restoredDirectiveId: DirectiveId
 }
 
-/** The user explicitly made a requirement session-wide (Q17). It applies to every later run in this conversation. */
+/**
+ * The user explicitly made a requirement session-wide (Q17). It applies to
+ * every run that starts after this event, on every chain of this
+ * conversation, until it is replaced or withdrawn.
+ */
 export interface SessionRequirementRecorded extends ConversationEnvelope<'session-requirement-recorded'> {
   readonly requirement: Requirement
+  /**
+   * The session-wide requirement this one takes the place of ("actually,
+   * make that 200 words"). The replaced one is no longer given to runs.
+   */
+  readonly replacesRequirementId: RequirementId | null
+}
+
+/** The user took a session-wide requirement back without replacing it. Runs that start later do not receive it. */
+export interface SessionRequirementWithdrawn extends ConversationEnvelope<'session-requirement-withdrawn'> {
+  readonly requirementId: RequirementId
+  /** The message that withdrew it. */
+  readonly messageId: MessageId
 }
 
 // ═══════════════════════════ genealogy ═══════════════════════════
@@ -194,7 +240,13 @@ export type NodeReason =
   | 'initial'
   /** Replacement exchange for a revised directive (Q35). */
   | 'revision'
-  /** A retry started after its sibling group closed runs as a descendant of the join-back (Q92). */
+  /** Restart of a dependent whose prerequisite was revised while it ran (Q36, R4). */
+  | 'prerequisite-revised'
+  /**
+   * A retry started after its sibling group closed runs as a descendant of
+   * the join-back (Q92): a child of the join-back node, on the base chain.
+   * These nodes are the group's late-retry tail.
+   */
   | 'retry-after-closure'
   | 'regenerate'
   | 'redo'
@@ -202,8 +254,10 @@ export type NodeReason =
 /**
  * An exchange node was added to the genealogy for a directive. A directive
  * gets a further node whenever its work is placed anew: a revision
- * replacement, a retry after its group closed, a regenerate or a redo.
- * Automatic and user retries otherwise reuse the node.
+ * replacement, a restart after its prerequisite was revised, a retry after
+ * its group closed, a regenerate or a redo. Automatic and user retries
+ * otherwise reuse the node. A clarification question gets no node: it runs
+ * on the node of the first directive it blocks.
  *
  * `plannedParents` is the placement. The exact parents a run consumed are on
  * its `attempt-started` event; the two agree once the attempt has started.
@@ -215,9 +269,11 @@ export interface NodeCreated extends ConversationEnvelope<'node-created'> {
   readonly reason: NodeReason
   /**
    * Empty for a new root. One entry for a continuation. Two or more for the
-   * first node of a join chain, each an exact `node` reference to a leaf of
-   * its chain at this moment (Q86, Q88); a join chain's inheritance never
-   * grows afterwards.
+   * first node of a join chain: each is a `node` reference to a leaf of its
+   * chain at this moment (Q86, Q88), or a `sibling-group` point for a line
+   * whose forks have not joined back, which resolves to that group's
+   * join-back node when the attempt starts. A join chain's inheritance is
+   * exact from then on and never grows.
    */
   readonly plannedParents: readonly PointRef[]
   /** The node this one stands in for in later context (Q39). */
@@ -242,6 +298,9 @@ export interface NodeRechaining {
  * The base chain's head returns to `startNodeId`, and the join-back will
  * continue the base chain (Q78). Chains named in `rechained` have their own
  * `chain-created` events earlier in the same step.
+ *
+ * Work that was already on a chain of its own, a branch from the starting
+ * node, keeps that chain: it is a member, and `rechained` does not list it.
  */
 export interface SiblingGroupOpened extends ConversationEnvelope<'sibling-group-opened'> {
   readonly groupId: SiblingGroupId
@@ -267,6 +326,24 @@ export interface SiblingAdmitted extends ConversationEnvelope<'sibling-admitted'
 }
 
 /**
+ * Members were taken out of a sibling group because Undo split withdrew
+ * their directives (Q53, Q85). From here on they do not count for the
+ * closing rule, are not named in wait labels, and are absent from every
+ * join-back record. Their nodes stay in the genealogy, marked superseded.
+ *
+ * A group that keeps at least one member carries on, even with one member:
+ * it closes by the usual rule and its join-back returns that member's
+ * exchange to the base chain. A group left with none is dissolved: it never
+ * forms a join-back, and the base chain continues from the starting node.
+ */
+export interface SiblingsWithdrawn extends ConversationEnvelope<'siblings-withdrawn'> {
+  readonly groupId: SiblingGroupId
+  readonly directiveIds: readonly DirectiveId[]
+  /** True when no member is left. */
+  readonly dissolved: boolean
+}
+
+/**
  * The group closed and its join-back formed: every member has completed, or
  * has failed, been stopped or been interrupted and is not retrying (Q49,
  * Q92). Bookkeeping only: no model call, no assistant message, nothing added
@@ -277,7 +354,10 @@ export interface SiblingAdmitted extends ConversationEnvelope<'sibling-admitted'
  *
  * When a member's result is replaced by a revision after the group closed, a
  * further `join-back-formed` for the same group records the new content and
- * names the one it replaces. Membership never changes.
+ * names the one it replaces, once the replacement has settled (completed, or
+ * ended without retrying). Members are never added. A retry that completes
+ * after the group closed does not re-form the join-back: the record keeps
+ * the member's marker and the retry's exchange is read after it (Q92).
  */
 export interface JoinBackFormed extends ConversationEnvelope<'join-back-formed'> {
   readonly joinBackId: JoinBackId
@@ -315,7 +395,11 @@ export interface DirectiveCreated extends ConversationEnvelope<'directive-create
   readonly relation: Exclude<ReplyRelation, 'revision'>
   /** Resolved reply targets. A target alone does not make the work a revision, a fork or a join (Q20). */
   readonly targets: readonly SectionId[]
-  /** The node created for it by the preceding `node-created`. */
+  /**
+   * The node created for it by the preceding `node-created`. A clarification
+   * question has no node of its own: this is the node of the first directive
+   * it blocks, and no `node-created` precedes it.
+   */
   readonly nodeId: NodeId
   readonly chainId: ChainId
   /** Results it needs before it can start. Acyclic; no subset of a sibling group (Q30). */
@@ -380,12 +464,28 @@ export interface DirectiveReady extends ConversationEnvelope<'directive-ready'> 
 
 /**
  * The directive was cancelled before it started (Q91): queued work inside a
- * stopped request, or the Cancel recovery choice. A state of its own; there
- * is never a cancelled request (invariant 5).
+ * stopped request, a Stop aimed at one section that had not started, or the
+ * Cancel recovery choice. A state of its own; there is never a cancelled
+ * request (invariant 5).
  */
 export interface DirectiveCancelled extends ConversationEnvelope<'directive-cancelled'> {
   readonly directiveId: DirectiveId
-  readonly cause: 'request-stopped' | 'recovery-cancel'
+  readonly cause: 'request-stopped' | 'section-stopped' | 'recovery-cancel'
+}
+
+/**
+ * The user stopped work that had started but had no attempt in flight at
+ * that moment: it was between automatic retries (`retrying`) or held by a
+ * rate limit (`waiting-for-capacity`). The scheduled retry is cancelled and
+ * the directive is `stopped`, exactly as if its last attempt had been
+ * stopped; that attempt keeps its own terminal state (invariant 3).
+ * Work with a live attempt is stopped by `attempt-stopped` instead, and
+ * work that never started is cancelled (Q22, Q91).
+ */
+export interface DirectiveStopped extends ConversationEnvelope<'directive-stopped'> {
+  readonly directiveId: DirectiveId
+  readonly sectionId: SectionId
+  readonly scope: 'section' | 'request'
 }
 
 /**
@@ -444,7 +544,12 @@ export interface RetryRequested extends ConversationEnvelope<'retry-requested'> 
   readonly placement: 'in-place' | 'after-join-back'
 }
 
-/** The user used Stop. The stops and cancellations it caused follow as their own events. */
+/**
+ * The user used Stop. What it caused follows in the same step, one event
+ * per directive in scope: `attempt-stopped` for a live attempt,
+ * `directive-stopped` for started work with none, `directive-cancelled` for
+ * work that had not started.
+ */
 export interface StopRequested extends ConversationEnvelope<'stop-requested'> {
   readonly target:
     | { readonly kind: 'section'; readonly sectionId: SectionId }
@@ -518,7 +623,7 @@ export interface AttemptFailed extends ConversationEnvelope<'attempt-failed'> {
   readonly retry: RetryPlan
 }
 
-/** The user stopped the run. Visible text stays, marked partial and stopped (Q22). */
+/** The user stopped a run that was in flight. Visible text stays, marked partial and stopped (Q22). */
 export interface AttemptStopped extends ConversationEnvelope<'attempt-stopped'> {
   readonly attemptId: AttemptId
   readonly scope: 'section' | 'request'
@@ -528,7 +633,9 @@ export interface AttemptStopped extends ConversationEnvelope<'attempt-stopped'> 
  * The run was lost with its executor (Q52). Recorded when the backend next
  * starts and finds an attempt with no terminal event. Under Standard and
  * Persistent it retries automatically within the retry limit; under Manual
- * it waits with Retry (Q54).
+ * it waits with Retry (Q54). Only the one executor that holds the backend
+ * lock may record this: a second tab must never mark the first tab's live
+ * attempts interrupted.
  */
 export interface AttemptInterrupted extends ConversationEnvelope<'attempt-interrupted'> {
   readonly attemptId: AttemptId
@@ -555,13 +662,19 @@ export type ResponseReason =
   | 'clarified-answer'
   /** A revision's replacement (P11). */
   | 'revision-replacement'
-  /** Regenerate, or a redo of finished work. */
+  /** Restart of a dependent whose prerequisite was revised while it ran (Q36, R4). */
+  | 'prerequisite-revised'
+  /** Regenerate, or a redo from a choice with default. */
   | 'redo'
 
 /**
  * A reply was opened for a message. It starts as a responding bubble at the
  * pending tail of the transcript and is pushed down as other replies take
  * their places (Q12).
+ *
+ * For a message's initial response, `responseId` is the one minted on
+ * `message-submitted`: the provisional bubble shown during routing becomes
+ * this response and keeps its place in the pending tail.
  */
 export interface ResponseOpened extends ConversationEnvelope<'response-opened'> {
   readonly responseId: ResponseId
@@ -577,12 +690,14 @@ export interface ResponseOpened extends ConversationEnvelope<'response-opened'> 
   readonly sectionOrder: 'first-output' | 'explicit'
 }
 
-/** A note fixed on a section when it opens. */
-export type SectionOriginNote =
-  /** "Redid {label} by default" at the bottom of redone work (Q45, Q95). */
-  { readonly kind: 'redone-by-default'; readonly elicitationId: ElicitationId }
-
-/** An answer section was opened inside a response for a directive. */
+/**
+ * An answer section was opened inside a response for a directive.
+ *
+ * It carries no note. "Redid {label} by default" is not known when a
+ * section opens (running work is replaced when a choice with default is
+ * raised, before the default can run), so the transcript projection adds
+ * that note when `elicitation-defaulted` arrives (Q45, Q95).
+ */
 export interface SectionOpened extends ConversationEnvelope<'section-opened'> {
   readonly sectionId: SectionId
   readonly directiveId: DirectiveId
@@ -591,7 +706,6 @@ export interface SectionOpened extends ConversationEnvelope<'section-opened'> {
   readonly title: string
   /** The section this one replaces. The replacement is always in a new response (P11). */
   readonly replacesSectionId: SectionId | null
-  readonly note: SectionOriginNote | null
   /** The operation-graph node for this section's work. */
   readonly operationId: OperationId
   /** For an explicitly ordered group: 0-based position. Null otherwise. */
@@ -645,7 +759,11 @@ export interface SectionSuperseded extends ConversationEnvelope<'section-superse
   /** Whether the section had completed before it was replaced. */
   readonly wasFinished: boolean
   readonly cause: SupersessionCause
-  /** The section that replaces it. Null only for Undo split, where the restored directive opens its own response. */
+  /**
+   * The section that replaces it, opened in the same step. Null only for
+   * Undo split, where the work is withdrawn and the original message is
+   * routed again.
+   */
   readonly replacementSectionId: SectionId | null
 }
 
@@ -664,8 +782,22 @@ export interface SupersededInputNoted extends ConversationEnvelope<'superseded-i
 
 // ═══════════════════════════ revisions ═══════════════════════════
 
-/** The state of a revision's target when the revision arrived (06 · "Revising one piece of work"). */
-export type RevisionTargetState = 'not-started' | 'running-status-only' | 'running-with-text' | 'finished'
+/**
+ * The state of a revision's target when the revision arrived. The first
+ * four are the rows of 06 · "Revising one piece of work".
+ *
+ * `ended-unfinished` is the build's fifth: the target had failed, been
+ * stopped, been interrupted or been cancelled. It is replaced like running
+ * work: a new section in a new response, with rewound context that never
+ * includes its partial text (R2, invariant 7). What it leaves behind
+ * follows `section-superseded.hadVisibleOutput`.
+ */
+export type RevisionTargetState =
+  | 'not-started'
+  | 'running-status-only'
+  | 'running-with-text'
+  | 'finished'
+  | 'ended-unfinished'
 
 /**
  * Routing concluded that a submitted message revises earlier work (Q37,
@@ -685,11 +817,21 @@ export interface RevisionRecorded extends ConversationEnvelope<'revision-recorde
   readonly scope: 'work' | 'shared-requirement'
   /** The user's correction as given to later context (Q39). */
   readonly correction: string
+  /** Set when the correction is one fragment of a composite message; the rest of the message is other work. */
+  readonly fragmentId: FragmentId | null
+  /** For `shared-requirement`: the directive that established the brief. */
   readonly targets: readonly {
     readonly directiveId: DirectiveId
-    readonly sectionId: SectionId
+    /** The target's current section. Null when it has none yet: a directive still blocked by a clarification. */
+    readonly sectionId: SectionId | null
     readonly state: RevisionTargetState
   }[]
+  /**
+   * Session-wide requirements this message replaces or withdraws; the
+   * `session-requirement-recorded` or `session-requirement-withdrawn`
+   * events follow in the same step. Empty otherwise.
+   */
+  readonly requirementIds: readonly RequirementId[]
 }
 
 /**
@@ -733,6 +875,11 @@ export interface ElicitationAnswered extends ConversationEnvelope<'elicitation-a
  * The default of a choice with default was carried out because the user sent
  * another message without answering, or the wait elapsed (Q45). Only a
  * choice with default can default (Q46).
+ *
+ * This event is what puts "Redid {label} by default" on the redone work:
+ * the replacement of every section superseded with cause `redo` for this
+ * elicitation, and the current section of every directive that was held for
+ * it. Nothing else records that the default ran.
  */
 export interface ElicitationDefaulted extends ConversationEnvelope<'elicitation-defaulted'> {
   readonly elicitationId: ElicitationId
@@ -771,7 +918,8 @@ export interface ConversationDeleted extends AppEnvelope<'conversation-deleted'>
 
 /** App-wide settings changed (Q70). Never carries the key. */
 export interface SettingsChanged extends AppEnvelope<'settings-changed'> {
-  readonly changes: SettingsPatch
+  /** The whole settings after the change, so the stored event has every key and the last one is the truth. */
+  readonly settings: Settings
 }
 
 /** A key was stored in, or removed from, the secrets store. Only its presence is recorded (Q64). */
@@ -788,10 +936,12 @@ export type ConversationEvent =
   | MessageDecomposed
   | SplitUndone
   | SessionRequirementRecorded
+  | SessionRequirementWithdrawn
   | ChainCreated
   | NodeCreated
   | SiblingGroupOpened
   | SiblingAdmitted
+  | SiblingsWithdrawn
   | JoinBackFormed
   | DirectiveCreated
   | DirectiveWaiting
@@ -799,6 +949,7 @@ export type ConversationEvent =
   | DirectiveHeld
   | DirectiveReady
   | DirectiveCancelled
+  | DirectiveStopped
   | DirectiveRevisedInPlace
   | DirectiveLabeled
   | PrerequisitesChanged
@@ -861,10 +1012,12 @@ export const CONVERSATION_EVENT_TYPES = [
   'message-decomposed',
   'split-undone',
   'session-requirement-recorded',
+  'session-requirement-withdrawn',
   'chain-created',
   'node-created',
   'sibling-group-opened',
   'sibling-admitted',
+  'siblings-withdrawn',
   'join-back-formed',
   'directive-created',
   'directive-waiting',
@@ -872,6 +1025,7 @@ export const CONVERSATION_EVENT_TYPES = [
   'directive-held',
   'directive-ready',
   'directive-cancelled',
+  'directive-stopped',
   'directive-revised-in-place',
   'directive-labeled',
   'prerequisites-changed',

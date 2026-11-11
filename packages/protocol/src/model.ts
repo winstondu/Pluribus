@@ -379,10 +379,14 @@ export type PointRef =
   | { readonly kind: 'node'; readonly nodeId: NodeId }
   /**
    * A sibling group as a whole: its join-back, whether already formed or
-   * not. Resolved when the attempt starts, to the group's current join-back
-   * node or to the latest node completed on the base chain after it (the
-   * exchange of a retry that ran after the group closed, Q92). Work that
-   * needs more than one member must use this, never a subset (Q30).
+   * not. Resolved when the attempt starts to the group's current join-back
+   * node, and to nothing else: never to later work on the base chain.
+   * Reading a join-back reads its record and then the exchange of every
+   * retry that completed after the group closed (the group's late-retry
+   * tail, Q92), so work placed here sees those without descending from
+   * them. Work that needs more than one member must use this, never a
+   * subset (Q30). While the group is open the work must also carry the
+   * `sibling-group` prerequisite, because the point does not exist yet.
    */
   | { readonly kind: 'sibling-group'; readonly groupId: SiblingGroupId }
   /** A directive created by the same routing plan (an earlier sequential part). Resolved when that directive's node exists. */
@@ -401,12 +405,21 @@ export type Placement =
    * mechanically whether that is the same chain continuing, a fork beside
    * in-flight work from the same starting context, or a new branch from one
    * sibling (01 · "Where new work goes", Q78, Q89).
+   *
+   * A node whose own directive is still in flight can be built on only by
+   * work that waits for it: the unit must carry a `directive` prerequisite
+   * on that directive. Without one, the placement is repaired to that
+   * node's starting context, so the new work becomes a fork beside it and
+   * never reads an unfinished answer (C1, C3).
    */
   | { readonly kind: 'continue'; readonly buildsOn: PointRef }
   /**
    * Needs lines that have diverged: a new chain whose parents are two or
    * more nodes, each the leaf of its chain when the join chain is created
-   * (Q86, Q88). Never used for siblings of one group (Q30).
+   * (Q86, Q88). Never used for siblings of one group (Q30). A parent may
+   * be a `sibling-group` point, for a line whose forks have not joined
+   * back yet: it stands for the leaf the base chain will have, and is
+   * resolved to the join-back node when the attempt starts.
    */
   | { readonly kind: 'join-chain'; readonly parents: readonly PointRef[] }
 
@@ -538,6 +551,18 @@ export interface FragmentRecord {
   readonly label: string
   /** Requirements that apply to this fragment, shared ones included (Q4). */
   readonly requirements: readonly Requirement[]
+  /**
+   * - `work`: the fragment is the instruction of a directive of its own.
+   * - `revision`: the fragment corrects earlier work (Q37, Q79). It creates
+   *   no directive; its `rewrittenText` is the correction recorded by the
+   *   `revision-recorded` event that names this fragment.
+   */
+  readonly kind: 'work' | 'revision'
+  /**
+   * For `work`, the directive created for the fragment. For `revision`, the
+   * first directive it revises, so the fragment still has a handling chain
+   * and an answer section to point at.
+   */
   readonly directiveId: DirectiveId
 }
 
@@ -563,7 +588,11 @@ export type ContextOrigin =
       readonly nodeId: NodeId
       readonly directiveId: DirectiveId
       readonly messageId: MessageId
-      /** Set when the exchange was read through a join-back record. */
+      /**
+       * Set when the exchange was read through a join-back: as a member in
+       * its record, or as a retry that completed after the group closed and
+       * is read after the record (Q92). `nodeId` tells the two apart.
+       */
       readonly joinBackId: JoinBackId | null
     }
   /** The answer of an ancestor exchange, from the exact attempt that produced it. */
@@ -588,20 +617,49 @@ export type ContextOrigin =
       readonly outcome: UnfinishedOutcome
     }
   /**
-   * The user's correction, standing with the replacement in place of a
-   * superseded body (Q39).
+   * The user's correction to the work of `directiveId`. For a revision of
+   * one piece of work it stands with the replacement in place of the
+   * superseded body (Q39). For a revision of a shared requirement it
+   * follows the exchange that established the brief, which itself stays
+   * ("All future work uses the revised brief", 06).
    */
   | {
       readonly kind: 'correction'
       readonly revisionMessageId: MessageId
       readonly directiveId: DirectiveId
     }
-  /** This run's own instruction: the last message of the input. */
+  /**
+   * This run's own instruction. The last message of the input, unless the
+   * directive was blocked by a clarification: then the question and the
+   * user's answer follow it.
+   */
   | {
       readonly kind: 'request'
       readonly directiveId: DirectiveId
       readonly messageId: MessageId
       readonly fragmentId: FragmentId | null
+    }
+  /**
+   * The clarification question that blocked this directive, as the question
+   * directive's completed attempt wrote it (Q23). Read after the directive's
+   * own request, as an assistant message.
+   */
+  | {
+      readonly kind: 'clarification-question'
+      readonly elicitationId: ElicitationId
+      /** The question directive and the attempt whose text this is. */
+      readonly directiveId: DirectiveId
+      readonly attemptId: AttemptId
+    }
+  /**
+   * The user's answer to that question: the message that resolved the
+   * elicitation (Q98). It creates no directive and no node of its own, so
+   * it is read here and nowhere else.
+   */
+  | {
+      readonly kind: 'clarification-answer'
+      readonly elicitationId: ElicitationId
+      readonly messageId: MessageId
     }
 
 export interface ConsumedMessage {
@@ -627,11 +685,19 @@ export interface ConsumedContext {
   readonly nodeIds: readonly NodeId[]
   /**
    * The result each consumed directive contributed: the attempt read, or a
-   * marker when a join-back member did not complete. Comparing these with
-   * the directives' current results is how a superseded input is detected
-   * (Q40).
+   * marker when an ancestor exchange did not complete. Comparing these,
+   * `corrections` and `sessionRequirementIds` with the conversation's
+   * current state is how a superseded input is detected (Q40).
    */
   readonly inputs: readonly ConsumedInput[]
+  /**
+   * The revision messages whose correction is in `messages` (origin
+   * `correction`). A completed attempt that read a directive's result but
+   * not a later correction to it has a superseded input (Q40, E3).
+   */
+  readonly corrections: readonly MessageId[]
+  /** The session-wide requirements in `messages` (origin `session-requirement`), for the same comparison. */
+  readonly sessionRequirementIds: readonly RequirementId[]
   /** Tokens counted before the run (Q67). */
   readonly inputTokens: number
   /** The model's context limit, when the provider knows it. */
@@ -654,7 +720,11 @@ export interface SiblingMember {
   readonly chainId: ChainId
 }
 
-/** One member in a join-back record, in submission order whatever order the answers arrived in (Q28, C4). */
+/**
+ * One member in a join-back record, in submission order whatever order the
+ * answers arrived in (Q28, C4). A member withdrawn by Undo split is not in
+ * the record at all.
+ */
 export interface JoinBackMember {
   readonly directiveId: DirectiveId
   readonly nodeId: NodeId
@@ -761,16 +831,48 @@ export type SupersessionCause =
   | { readonly kind: 'prerequisite-revised'; readonly revisionMessageId: MessageId }
   /** Regenerate (Q40). */
   | { readonly kind: 'regenerate' }
-  /** Redo from a choice with default; `byDefault` when the wait elapsed or another message was sent (Q45). */
-  | { readonly kind: 'redo'; readonly elicitationId: ElicitationId; readonly byDefault: boolean }
+  /**
+   * Redo from a choice with default (Q44). Running work is superseded with
+   * this cause when the elicitation is raised, before anyone knows whether
+   * the default will run, so the cause does not say. Whether it was redone
+   * by default is read from `elicitation-defaulted` for this elicitation.
+   */
+  | { readonly kind: 'redo'; readonly elicitationId: ElicitationId }
   /** Undo split restarted the work as one atomic request (Q53, Q85). */
   | { readonly kind: 'undo-split' }
 
-/** An input of completed work that has since been replaced (Q40). */
-export interface SupersededInput {
-  readonly directiveId: DirectiveId
-  /** Label of the replaced input, for "Based on superseded {label}". */
-  readonly label: string
-  /** What the work actually read: an attempt, or only a member's marker (Q92). */
-  readonly consumedAttemptId: AttemptId | null
-}
+/**
+ * An input of completed work that has since been replaced (Q40). `label`
+ * names it in "Based on superseded {label}".
+ */
+export type SupersededInput =
+  /**
+   * The result it read is no longer the directive's current one: a revision
+   * replaced it, or a retry completed after the work had read only the
+   * member's marker (Q92).
+   */
+  | {
+      readonly kind: 'result'
+      readonly directiveId: DirectiveId
+      readonly label: string
+      /** What the work actually read: an attempt, or null for a marker. */
+      readonly consumedAttemptId: AttemptId | null
+    }
+  /**
+   * It read the directive's result but not a later correction to it: a
+   * revised shared requirement whose brief was not itself redone (Q42, E3).
+   */
+  | {
+      readonly kind: 'correction'
+      readonly directiveId: DirectiveId
+      readonly label: string
+      readonly revisionMessageId: MessageId
+    }
+  /** It read a session-wide requirement that was later replaced or withdrawn (Q17). */
+  | {
+      readonly kind: 'session-requirement'
+      readonly requirementId: RequirementId
+      readonly label: string
+      /** The message that replaced or withdrew it. */
+      readonly revisionMessageId: MessageId
+    }

@@ -18,7 +18,6 @@ const message: MessageView = {
   text: 'Suggest neighborhoods to stay in.',
   submittedAt: 1,
   routing: 'routed',
-  routingFailure: null,
   chainIds: [chainId],
   replyingTo: null,
   split: null,
@@ -33,6 +32,7 @@ const response: ResponseView = {
   reason: 'answer',
   grouped: false,
   placement: 'pending',
+  routing: null,
   sectionIds: [sectionId],
   header: null,
 }

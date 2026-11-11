@@ -10,6 +10,8 @@
  *   export * from './recovery'   // retry policies, revisions, recovery
  *
  * Fakes for tests are a separate entry, `@committee/core/testing`, so that
- * production bundles never pull them in by accident.
+ * production bundles never pull them in by accident. The ports alone are a
+ * third entry, `@committee/core/ports`: storage and providers import from
+ * it, so they compile and test without loading the engine.
  */
 export * from './ports'

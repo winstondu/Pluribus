@@ -1,6 +1,7 @@
 import type { Command, CommandError, CommandResult } from './commands'
-import type { AppEvent, ConversationEvent } from './events'
+import type { AppEvent, AttemptStarted, ConversationEvent } from './events'
 import type { AttemptId, ConversationId, DirectiveId } from './ids'
+import type { ConsumedContext } from './model'
 import type { ProjectionPatch } from './patches'
 import { applyPatches } from './patches'
 import type { AppSnapshot, ConversationSnapshot, RunInspection } from './projections'
@@ -23,6 +24,27 @@ export const PROTOCOL_VERSION = 1
 // ═══════════════════════════ stream ═══════════════════════════
 
 /**
+ * `attempt-started` as it travels on the stream: everything but the model
+ * input. The input is every message sent to the model and can be large, so
+ * it is not copied to every subscriber on every attempt start. The run
+ * inspector reads it with a `run` snapshot query, and the `events` query
+ * returns the stored event in full.
+ */
+export type StreamedAttemptStarted = Omit<AttemptStarted, 'context'> & {
+  readonly context: Omit<ConsumedContext, 'messages'>
+}
+
+/** A conversation event as a frame carries it. Identical to the stored event except for `attempt-started`. */
+export type StreamedConversationEvent = Exclude<ConversationEvent, AttemptStarted> | StreamedAttemptStarted
+
+/** The streamed form of a stored event. Pure; returns the same object for every event but `attempt-started`. */
+export function toStreamedEvent(event: ConversationEvent): StreamedConversationEvent {
+  if (event.type !== 'attempt-started') return event
+  const { messages: _messages, ...context } = event.context
+  return { ...event, context }
+}
+
+/**
  * One step of one conversation: the events appended in that step and the
  * projection patches they caused, delivered together so the client never
  * sees a half-applied step.
@@ -37,8 +59,12 @@ export interface ConversationFrame {
   readonly fromSeq: number
   /** Sequence number of the last event in `events`: what a snapshot has after applying `patches`. */
   readonly throughSeq: number
-  /** The events of the step, in sequence order. Empty only from a fixture backend, which has no log. */
-  readonly events: readonly ConversationEvent[]
+  /**
+   * The events of the step, in sequence order, in their streamed form
+   * ({@link toStreamedEvent}). Empty only from a fixture backend, which has
+   * no log.
+   */
+  readonly events: readonly StreamedConversationEvent[]
   /** Apply with `applyPatches(snapshot, patches, throughSeq)`. May be empty. */
   readonly patches: readonly ProjectionPatch[]
 }
@@ -84,7 +110,7 @@ export type SnapshotQuery =
       readonly directiveId: DirectiveId
       readonly attemptId: AttemptId | null
     }
-  /** The conversation's events after a sequence number, for tools and tests. */
+  /** The conversation's stored events after a sequence number, in full, for tools and tests. */
   | { readonly kind: 'events'; readonly conversationId: ConversationId; readonly afterSeq: number }
 
 export interface SnapshotValues {

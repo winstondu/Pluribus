@@ -23,7 +23,9 @@ export interface CoreDependencies {
   /**
    * Replaces the routing pipeline. Tests supply a scripted router to state
    * routing outcomes directly; the application leaves it out and gets the
-   * pipeline built from the decision provider and the decomposer.
+   * pipeline that the routing slice's module builds from the decision
+   * provider and the decomposer. With neither a router here nor a module
+   * that supplies one, `createBackend` throws.
    */
   readonly router?: Router
 }
@@ -54,10 +56,22 @@ export const DEFAULT_CORE_OPTIONS: CoreOptions = {
  */
 export interface Backend extends BackendClient {
   /**
-   * Loads the app log and every conversation, and recovers: an attempt with
-   * no terminal event was lost with its executor and is recorded as
-   * interrupted, then retried or left with Retry per the retry setting
-   * (Q52, Q54). Must be awaited before any other call.
+   * Loads the app log and every conversation, and recovers what was lost
+   * with the previous executor (invariant 8):
+   * - an attempt with no terminal event is recorded as interrupted, then
+   *   retried or left with Retry per the retry setting (Q52, Q54);
+   * - a submitted message with neither `routing-decided` nor
+   *   `routing-failed` after it, and no target-ambiguity elicitation
+   *   pending for it, is routed again, under every retry policy: routing
+   *   records nothing before `routing-decided`, so nothing is done twice;
+   * - timers that were pending are set again from the log: scheduled
+   *   retries and the deadlines of choices with default.
+   *
+   * Must be awaited before any other call. The caller guarantees that this
+   * backend is the only executor over its stores: in the browser the Worker
+   * holds the `committee-backend` Web Lock before it calls `start()`.
+   * Starting a second backend over the same stores would record the first
+   * one's live attempts as interrupted.
    */
   start(): Promise<void>
 

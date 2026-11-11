@@ -76,6 +76,11 @@ export type TranscriptItemRef =
  * text or failure notice appears (Q14, Q51). Fixed items never move
  * (invariant 6); pending bubbles are pushed down as replies take their
  * places (Q12).
+ *
+ * A message's initial response is in `order` from the moment the message is
+ * submitted, before routing has settled: a responding bubble with no
+ * sections whose `routing` field carries the status. That is where pending
+ * status lives; nothing is ever drawn on the user message for it (P7).
  */
 export interface TranscriptProjection {
   readonly order: readonly TranscriptItemRef[]
@@ -96,8 +101,21 @@ export type MessageRoutingState =
   /** Not acted on until the user answers a target-ambiguity elicitation (Q10). */
   | 'awaiting-target'
   | 'routed'
-  /** Routing failed; `routingFailure` says why and `actions.retry` is offered. */
+  /** Routing failed; the provisional response says why and `actions.retry` is offered. */
   | 'failed'
+
+/**
+ * The status of a responding bubble whose message is not routed yet. It is
+ * status text, not answer text: it fixes nothing, and the bubble stays in
+ * the pending tail, a routing failure included.
+ */
+export interface RoutingStatusView {
+  readonly state: Exclude<MessageRoutingState, 'routed'>
+  /** Ready-to-show: "Routing…", "Waiting for your answer", or the failure message. */
+  readonly text: string
+  /** Set when `state` is `failed`. Retry is on the request (`MessageView.actions.retry`). */
+  readonly failure: ProviderError | null
+}
 
 export interface MessageView {
   readonly id: MessageId
@@ -106,13 +124,22 @@ export interface MessageView {
   /** For `original`, exactly as typed (Q3). For `split`, the fragment's source text. */
   readonly text: string
   readonly submittedAt: number
+  /**
+   * Where routing stands, for enabling controls. Never rendered as a badge
+   * or status on the user bubble (Q81, P7): what the user sees of it is the
+   * `routing` field of the message's provisional response.
+   */
   readonly routing: MessageRoutingState
-  readonly routingFailure: ProviderError | null
   /**
    * Handling chains of this message's directives, in fragment order without
    * repeats: the margin rail. More than one means a segmented mark with hard
    * boundaries, never a blend that reads as a third chain color (09 §2).
    * Empty until routed.
+   *
+   * A message that created no directive still has a rail: for a revision,
+   * the chains of the directives it revised; for the answer to a
+   * clarification, the chains of the directives it released. A message that
+   * did both kinds of thing lists both, without repeats.
    */
   readonly chainIds: readonly ChainId[]
   /** The reply target shown on the bubble. Null for a message that addresses no section. */
@@ -173,6 +200,8 @@ export interface DecompositionView {
 export interface FragmentView {
   readonly fragmentId: FragmentId
   readonly index: number
+  /** `revision`: the fragment corrects earlier work and created no directive; `directiveId` is the first directive it revised. */
+  readonly kind: 'work' | 'revision'
   readonly label: string
   /** Exact spans in `originalText`. */
   readonly sourceSpans: readonly TextSpan[]
@@ -218,6 +247,13 @@ export interface ResponseView {
   /** `pending`: a responding bubble in the pending tail. `fixed`: placed for good. */
   readonly placement: 'pending' | 'fixed'
   /**
+   * Set while the response is the provisional bubble of a message that is
+   * not routed yet; `sectionIds` is then empty and `placement` is
+   * `pending`. Null once the plan has opened sections in it. A provisional
+   * response whose plan opens none is removed from the projection.
+   */
+  readonly routing: RoutingStatusView | null
+  /**
    * Sections in display order. Superseded sections dropped without a trace
    * are absent. Inside a group, placed sections come first in the order
    * they were placed, then pending ones; an explicit output order overrides
@@ -258,8 +294,13 @@ export interface SectionStatus {
 export type SectionNote =
   /** Quiet note on completed work whose input was replaced, with Regenerate (Q40). Text like "Based on superseded neighborhood recommendations". */
   | { readonly kind: 'superseded-input'; readonly text: string; readonly inputs: readonly SupersededInput[] }
-  /** Small note at the bottom of redone work, like "Redid itinerary by default" (Q45, Q95). */
-  | { readonly kind: 'redone-by-default'; readonly text: string }
+  /**
+   * Small note at the bottom of redone work, like "Redid itinerary by
+   * default" (Q45, Q95). Added when `elicitation-defaulted` arrives, to the
+   * work that elicitation redid: sections that replaced one superseded for
+   * it, and sections of directives it held.
+   */
+  | { readonly kind: 'redone-by-default'; readonly text: string; readonly elicitationId: ElicitationId }
   /** The chain is near the model's context limit (Q67, Q82). */
   | {
       readonly kind: 'context-near-limit'
@@ -324,7 +365,10 @@ export interface SectionView {
    * Which controls to offer. The client shows exactly these.
    * - `reply`: "Reply to this". False for superseded sections, which are
    *   not targets for new work (Q43), and for dropped ones.
-   * - `stop`: the section has work in flight (Q22).
+   * - `stop`: the section's work has started and has not settled: running,
+   *   between automatic retries, or waiting for capacity (10: "each
+   *   running section"). Work that has not started is stopped through its
+   *   request, which cancels it (Q22, Q91).
    * - `retry`: failed, stopped, interrupted or cancelled, and not retrying on its own.
    * - `regenerate`: carries a superseded-input note (Q40).
    */
@@ -561,10 +605,17 @@ export interface JoinBackNodeView {
   readonly chainId: ChainId
   readonly joinBackId: JoinBackId
   readonly groupId: SiblingGroupId
-  /** Every member node (Q28). */
+  /** Every member node in the record (Q28). */
   readonly parents: readonly NodeId[]
   /** The record, in submission order (C4). Bookkeeping, not a model call (C5). */
   readonly members: readonly (JoinBackMember & { readonly label: string })[]
+  /**
+   * The group's late-retry tail: nodes of retries started after the group
+   * closed, in the order they were requested (Q92). Each is a child of
+   * this node. A run that reads this join-back also reads the exchange of
+   * every tail node that had completed when it started, after the record.
+   */
+  readonly lateRetryNodeIds: readonly NodeId[]
   /** Set when a later formation for the same group replaced this one after a member was revised. */
   readonly replacedByNodeId: NodeId | null
 }
@@ -575,9 +626,20 @@ export interface SiblingGroupView {
   readonly id: SiblingGroupId
   readonly startNodeId: NodeId
   readonly baseChainId: ChainId
-  /** In submission order. Never grows after the group closes (C12). */
+  /**
+   * Every node that has been a member, in submission order, so the dotted
+   * oval keeps showing what ran in parallel (Q8). Never grows after the
+   * group closes (C12).
+   */
   readonly memberNodeIds: readonly NodeId[]
-  readonly state: 'open' | 'closed'
+  /**
+   * The subset of `memberNodeIds` withdrawn by Undo split. They stay
+   * visible, marked superseded, but do not count for the closing rule, a
+   * wait label or the join-back record.
+   */
+  readonly withdrawnNodeIds: readonly NodeId[]
+  /** `dissolved`: every member was withdrawn; no join-back will form. */
+  readonly state: 'open' | 'closed' | 'dissolved'
   /** The current join-back node, once formed. */
   readonly joinBackNodeId: NodeId | null
 }
@@ -640,6 +702,19 @@ export interface OperationView {
   readonly dependsOn: readonly OperationId[]
   /** The subset of `dependsOn` not yet satisfied (run inspector item 4). */
   readonly waitingFor: readonly OperationId[]
+  /**
+   * True when the operation waits only because of the whole-request
+   * barrier (Q19, D3): it needs nothing unavailable itself. Its status is
+   * `waiting-for-results`.
+   */
+  readonly heldByBarrier: boolean
+  /**
+   * What the barrier makes it wait for: the unsatisfied prerequisites of
+   * the blocked parts of the same request. Drawn as a different kind of
+   * edge from `dependsOn`, which stays the true result dependencies; the
+   * two are never merged. Empty unless `heldByBarrier`.
+   */
+  readonly barrierWaitingFor: readonly OperationId[]
   /**
    * Dependency depth among active operations: 0 for one that waits on no
    * active operation. Horizontal position means depth, not elapsed time
@@ -707,6 +782,16 @@ export interface RunInspection {
   readonly input: ConsumedContext | null
   /** Item 4: unfinished results it is waiting for. Dependency, shown separately from ancestry. */
   readonly waitingFor: readonly WaitTargetView[]
+  /**
+   * Also item 4. Set when the directive is held by the whole-request
+   * barrier of its message: it waits for results it does not itself need.
+   * Kept apart from `waitingFor`, which is its own dependencies only.
+   */
+  readonly barrier: {
+    readonly barrier: WholeRequestBarrier
+    /** What the blocked parts of the request still wait for. Empty once the barrier no longer holds. */
+    readonly waitingFor: readonly WaitTargetView[]
+  } | null
   /** Context ancestry of the attempt, root first: the nodes in `input.nodeIds`, with labels. */
   readonly ancestry: readonly { readonly nodeId: NodeId; readonly chainId: ChainId; readonly label: string }[]
   /**

@@ -135,6 +135,26 @@ describe('port transport', () => {
     expect(await client.snapshot({ kind: 'app' })).toEqual({ ok: false, error: { code: 'internal', message: 'IndexedDB is unavailable' } })
   })
 
+  test('standby is reported and ready still follows when the backend can serve', async () => {
+    const ports = portPair()
+    const backend = fakeBackend()
+    const reasons: string[] = []
+    const client = createPortClient(ports.client, { onStandby: (reason) => reasons.push(reason) })
+
+    // The Worker serves at once but its backend exists only after it holds the lock.
+    let lockGranted: (value: BackendClient) => void = () => {}
+    servePort(new Promise<BackendClient>((resolve) => (lockGranted = resolve)), ports.backend)
+    ports.backend.postMessage({ kind: 'standby', reason: 'another-tab' })
+    const pending = client.send({ type: 'submit-message', conversationId, text: 'held' })
+    await settle()
+    expect(reasons).toEqual(['another-tab'])
+    expect(backend.received).toEqual([])
+
+    lockGranted(backend)
+    await client.ready
+    expect(await pending).toEqual({ ok: true, output: { messageId: 'msg_1' } })
+  })
+
   test('a protocol version mismatch is refused', async () => {
     const ports = portPair()
     const client = createPortClient(ports.client)

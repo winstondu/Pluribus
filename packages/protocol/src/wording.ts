@@ -22,6 +22,12 @@ export const WORDING = {
   responding: 'Responding…',
   /** Build choice: status of work held by an elicitation. */
   awaitingAnswer: 'Waiting for your answer',
+  /** Build choice: status of a message's responding bubble while routing is working. */
+  routing: 'Routing…',
+  /** Build choice: lead-in of the notice on a responding bubble whose routing failed; the provider's message follows. */
+  routingFailed: 'Could not route this message',
+  /** Build choice: shown instead of the app while another tab runs the backend. */
+  openInAnotherTab: 'Committee is open in another tab',
   /** Mark on collapsed superseded partial text (Q38). */
   supersededPartial: 'Superseded — revised below',
   /** Build choice: mark on finished work that was superseded. */

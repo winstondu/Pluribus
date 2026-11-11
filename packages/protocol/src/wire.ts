@@ -29,8 +29,22 @@ export type BackendMessage =
   | { readonly kind: 'command-result'; readonly requestId: number; readonly result: CommandResult }
   | { readonly kind: 'snapshot-result'; readonly requestId: number; readonly result: SnapshotResult }
   | { readonly kind: 'frame'; readonly subscriptionId: number; readonly frame: StreamFrame }
+  /**
+   * The backend cannot serve yet and says why. Sent before `ready`, which
+   * still follows when the cause goes away. `another-tab`: another tab of
+   * this browser runs the backend over the same local storage, and exactly
+   * one executor may do that; this one takes over when the other closes.
+   */
+  | { readonly kind: 'standby'; readonly reason: StandbyReason }
   /** The backend cannot continue. Every pending request is failed with this message. */
   | { readonly kind: 'fault'; readonly message: string }
+
+export type StandbyReason = 'another-tab'
+
+export interface PortClientOptions {
+  /** Called when the backend announces it is standing by. `ready` stays pending until it can serve. */
+  readonly onStandby?: (reason: StandbyReason) => void
+}
 
 /**
  * The part of a `Worker`, `DedicatedWorkerGlobalScope` or `MessagePort` the
@@ -50,7 +64,10 @@ export interface PortClient extends BackendClient {
 }
 
 /** Client side: a {@link BackendClient} that forwards over a port. */
-export function createPortClient(port: WirePort<BackendMessage, ClientMessage>): PortClient {
+export function createPortClient(
+  port: WirePort<BackendMessage, ClientMessage>,
+  options: PortClientOptions = {},
+): PortClient {
   let nextId = 1
   let fault: string | null = null
   const commands = new Map<number, (result: CommandResult) => void>()
@@ -97,6 +114,9 @@ export function createPortClient(port: WirePort<BackendMessage, ClientMessage>):
       }
       case 'frame':
         listeners.get(message.subscriptionId)?.(message.frame)
+        break
+      case 'standby':
+        options.onStandby?.(message.reason)
         break
       case 'fault':
         failAll(message.message)
