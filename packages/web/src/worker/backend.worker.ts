@@ -42,8 +42,13 @@ servePort(backendReady, port)
 async function build(storage: CommitteeStorage): Promise<Backend> {
   // The only way a provider sees the key: read from the secrets store on each call.
   const getKey = (): Promise<string | null> => storage.secretsStore.get('openrouter-key')
+  const modelProvider = createOpenRouterModelProvider({ getKey })
+  // Every run's tokens are counted before it starts, and the first count reads OpenRouter's model
+  // catalog (context limits). Read it now, so the first run after a load, an interrupted attempt
+  // retried at start included, does not sit at "Waiting for a free slot" while a slot is free.
+  void modelProvider.countTokens({ model: '', messages: [] })
   const backend = createBackend({
-    modelProvider: createOpenRouterModelProvider({ getKey }),
+    modelProvider,
     decisionProvider: createOpenRouterDecisionProvider({ getKey }),
     decomposer: createOpenRouterDecomposer({ getKey }),
     eventStore: storage.eventStore,

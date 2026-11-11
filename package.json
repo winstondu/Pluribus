@@ -12,7 +12,8 @@
     "typecheck": "pnpm -r typecheck",
     "test": "vitest run",
     "test:watch": "vitest",
-    "smoke": "vitest run --config vitest.smoke.config.ts"
+    "smoke": "vitest run --config vitest.smoke.config.ts",
+    "e2e": "node packages/web/e2e/run.mjs"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^7.0.1",
