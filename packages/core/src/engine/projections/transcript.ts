@@ -485,7 +485,12 @@ function sectionView(s: ConversationState, m: Memo, id: SectionId): SectionView 
 function redoneByDefault(s: ConversationState, section: SectionRow): import('@committee/protocol').ElicitationId | null {
   const replaced = section.replacesSectionId ? s.sections[section.replacesSectionId] : undefined
   const cause = replaced?.supersession?.cause
-  if (cause?.kind === 'redo' && s.elicitations[cause.elicitationId]?.status === 'defaulted') return cause.elicitationId
+  // Only work still in flight carries the note; finished work redone by default is a new response (07, Q95).
+  if (cause?.kind === 'redo') {
+    const elicitation = s.elicitations[cause.elicitationId]
+    const option = elicitation?.record.kind === 'choice-with-default' ? elicitation.record.options.find((o) => o.directiveId === section.directiveId) : undefined
+    return elicitation?.status === 'defaulted' && option !== undefined && option.state !== 'finished' ? cause.elicitationId : null
+  }
   for (const id of s.elicitationOrder) {
     const elicitation = s.elicitations[id]
     if (!elicitation || elicitation.status !== 'defaulted' || elicitation.record.kind !== 'choice-with-default') continue

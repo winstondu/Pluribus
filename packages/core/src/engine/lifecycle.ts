@@ -19,6 +19,7 @@ import {
   currentResult,
   groupCanClose,
   groupOfDirective,
+  isLateRetryNode,
   isStartedUnsettled,
   messageVisible,
   routeOptionsFor,
@@ -110,6 +111,12 @@ export function settleWait(ctx: StepContext, directiveId: DirectiveId, force = f
   })
 }
 
+/** True when the directive's current section has no attempt yet: it is queued work, not a pending retry. */
+export function notStartedInSection(state: ConversationState, d: DirectiveRow): boolean {
+  const section = d.sectionId ? state.sections[d.sectionId] : undefined
+  return (section?.attemptIds.length ?? 0) === 0
+}
+
 /** First states, releases and refreshed waits, for every directive that has not started. */
 const waitReaction: Reaction = (_state, event, ctx) => {
   // Streamed text never changes what anything waits for (C13), and it is by far the most frequent event.
@@ -117,8 +124,9 @@ const waitReaction: Reaction = (_state, event, ctx) => {
   for (const id of ctx.state.directiveOrder) {
     const d = ctx.state.directives[id]
     if (!d) continue
-    const unstartedReady = d.state === 'ready' && d.attemptIds.length === 0 && barrierOf(ctx.state, d.originalMessageId) !== null
-    if (d.state === 'dependency-queued' || unstartedReady) settleWait(ctx, id)
+    // Work released but not started yet (held by the concurrency limit, say) is still queued: a
+    // prerequisite that stops being satisfied (its result was replaced) makes it wait again (06, R3).
+    if (d.state === 'dependency-queued' || (d.state === 'ready' && notStartedInSection(ctx.state, d))) settleWait(ctx, id)
   }
 }
 
@@ -137,6 +145,12 @@ export function formJoinBack(ctx: StepContext, groupId: SiblingGroupId, replacin
   if (replacing && !previous) return
   const members = activeMembers(group).map((m) => {
     const d = ctx.state.directives[m.directiveId]
+    // A member whose work now runs on a late-retry node keeps its entry (its marker): the retry's
+    // exchange follows the record as its tail, never inside it (08, Q92).
+    const kept = replacing && d && d.nodeId !== m.nodeId && isLateRetryNode(ctx.state, d.nodeId)
+      ? previous?.members.find((pm) => pm.directiveId === m.directiveId)
+      : undefined
+    if (kept) return kept
     const result = currentResult(ctx.state, m.directiveId)
     const outcome = result ? ('completed' as const) : d ? (unfinishedOutcome(d.state) ?? 'failed') : 'failed'
     return { directiveId: m.directiveId, nodeId: m.nodeId, outcome, attemptId: result }

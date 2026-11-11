@@ -316,6 +316,22 @@ const REDUCERS: ReducerTable = {
     } else {
       next = insertIntoChain(next, e.chainId, e.nodeId, [])
     }
+    // A replacement of a sibling member's work (a revision, a redo) is that member's exchange from now
+    // on: the join-back formed or re-formed after it is a child of the replacement (01, 06). A late
+    // retry is not: it follows the join-back (Q92).
+    if (e.replacesNodeId !== null && e.reason !== 'retry-after-closure') {
+      for (const group of Object.values(next.groups)) {
+        if (group.withdrawn.includes(e.directiveId) || !group.members.some((m) => m.directiveId === e.directiveId)) continue
+        next = {
+          ...next,
+          groups: put(next.groups, group.id, {
+            ...group,
+            members: group.members.map((m) => (m.directiveId === e.directiveId ? { ...m, nodeId: e.nodeId } : m)),
+          }),
+        }
+        next = withNode(next, e.nodeId, (n) => ({ ...n, groupId: group.id }))
+      }
+    }
     // A re-placement of an existing directive: it now runs here.
     next = withDirective(next, e.directiveId, (d) => ({ ...d, nodeId: e.nodeId, chainId: e.chainId }))
     return next

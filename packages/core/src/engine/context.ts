@@ -363,18 +363,14 @@ function readOwnRequest(state: ConversationState, b: Builder, d: DirectiveRow): 
     content: requestText(d.instruction, d.requirements),
     origin: { kind: 'request', directiveId: d.id, messageId: d.messageId, fragmentId: d.fragmentId },
   }
-  const section = d.sectionId ? state.sections[d.sectionId] : undefined
-  const replaced = section?.replacesSectionId ? state.sections[section.replacesSectionId] : undefined
-  const finishedReplacement =
-    replaced?.supersession !== null &&
-    replaced?.supersession !== undefined &&
-    replaced.supersession.wasFinished &&
-    replaced.supersession.cause.kind === 'revision'
-  if (replaced && finishedReplacement) {
+  const replaced = lastFinishedRevised(state, d)
+  if (replaced) {
     const old = [...replaced.attemptIds].reverse().find((id) => state.attempts[id]?.state === 'completed')
     const oldAttempt = old ? state.attempts[old] : undefined
     if (old && oldAttempt) {
+      // Corrections recorded before that answer was produced lead to it; later ones follow it (06, Q39).
       b.messages.push(request)
+      for (const c of d.corrections) if (c.seq < oldAttempt.startedSeq) b.correction(d.id, c)
       b.messages.push({
         role: 'assistant',
         content: state.attemptText[old] ?? '',
@@ -388,10 +384,33 @@ function readOwnRequest(state: ConversationState, b: Builder, d: DirectiveRow): 
         },
       })
       b.node(oldAttempt.nodeId)
-      for (const c of d.corrections) b.correction(d.id, c)
+      for (const c of d.corrections) if (c.seq >= oldAttempt.startedSeq) b.correction(d.id, c)
       return
     }
   }
   b.messages.push(request)
   for (const c of d.corrections) b.correction(d.id, c)
+}
+
+/**
+ * The finished section a revision's replacement rewinds to: walking back
+ * through replaced sections, past replacements that ended or were revised
+ * before they finished (their text is never read, invariant 7), to the last
+ * section that had finished when a revision superseded it. A finished
+ * section redone for any other cause (Regenerate, a redo) ends the walk:
+ * redone work is done again against the new inputs, not as a follow-up.
+ */
+function lastFinishedRevised(state: ConversationState, d: DirectiveRow): ConversationState['sections'][string] | null {
+  const current = d.sectionId ? state.sections[d.sectionId] : undefined
+  let id = current?.replacesSectionId ?? null
+  const seen = new Set<string>()
+  while (id !== null && !seen.has(id)) {
+    seen.add(id)
+    const section = state.sections[id]
+    const supersession = section?.supersession
+    if (!section || !supersession) return null
+    if (supersession.wasFinished) return supersession.cause.kind === 'revision' ? section : null
+    id = section.replacesSectionId
+  }
+  return null
 }

@@ -2,6 +2,7 @@ import type { CoreModule } from '../engine'
 import { notesReaction } from './notes'
 import { pauseCommands, pauseReaction, unpauseOnRetry, withdrawStaleRecovery } from './pause'
 import { policyRetryPlanner } from './policy'
+import { waitForInFlightReads } from './replace'
 import { CHOICE_TIMER, choiceStartup, choiceTimer, defaultOnNextMessage, reformJoinBacks, revisionCommands, revisionsApplier } from './revisions'
 
 /**
@@ -19,7 +20,7 @@ import { CHOICE_TIMER, choiceStartup, choiceTimer, defaultOnNextMessage, reformJ
 export const recoveryModule: CoreModule = {
   name: 'recovery',
   commands: { ...pauseCommands, ...revisionCommands },
-  reactions: [unpauseOnRetry, pauseReaction, withdrawStaleRecovery, defaultOnNextMessage, reformJoinBacks, notesReaction],
+  reactions: [waitForInFlightReads, unpauseOnRetry, pauseReaction, withdrawStaleRecovery, defaultOnNextMessage, reformJoinBacks, notesReaction],
   planAppliers: [revisionsApplier],
   retryPlanner: policyRetryPlanner,
   startupReactions: [choiceStartup],

@@ -10,7 +10,7 @@ import type {
   SupersessionCause,
 } from '@committee/protocol'
 import { NOT_STARTED_STATES } from '@committee/protocol'
-import { queries, supersedeSection, type ConversationState, type DirectiveRow, type StepContext } from '../engine'
+import { assembleContext, notStartedInSection, queries, settleWait, supersedeSection, type ConversationState, type DirectiveRow, type Reaction, type StepContext } from '../engine'
 
 /**
  * Replacing a directive's work (PLAN §2 "Directive, section, attempt"): the
@@ -117,4 +117,42 @@ export function waitForReplacedInputs(ctx: StepContext, directiveId: DirectiveId
     changed = true
   }
   if (changed) ctx.emit({ type: 'prerequisites-changed', directiveId, prerequisites })
+}
+
+/**
+ * Queued work never starts by reading a replacement that is still in flight
+ * (06 · "Context after a revision", R5): when a directive is released, or
+ * when work it would read is replaced, every directive its context would
+ * read as a request without an answer (a revised ancestor, a revised member
+ * of a join-back on its line) becomes a prerequisite, so it reads the
+ * correction plus the replacement once that has finished. A late retry
+ * still running is not read at all and is never waited for (Q92).
+ */
+export const waitForInFlightReads: Reaction = (_state, event, ctx) => {
+  if (event.type === 'directive-ready') {
+    waitForReads(ctx, event.directiveId)
+  } else if (event.type === 'node-created' && event.replacesNodeId !== null) {
+    for (const id of ctx.state.directiveOrder) if (ctx.state.directives[id]?.state === 'ready') waitForReads(ctx, id)
+  }
+}
+
+function waitForReads(ctx: StepContext, directiveId: DirectiveId): void {
+  const d = ctx.state.directives[directiveId]
+  if (!d || d.kind !== 'answer' || d.state !== 'ready' || !notStartedInSection(ctx.state, d)) return
+  const node = ctx.state.nodes[d.nodeId]
+  if (!node) return
+  const context = assembleContext(ctx.state, d.id, d.nodeId, queries.resolvePlannedParents(ctx.state, node))
+  const prerequisites: PrerequisiteRef[] = [...d.prerequisites]
+  let changed = false
+  for (const input of context.inputs) {
+    if (input.attemptId !== null || input.marker !== null || input.directiveId === d.id || d.waived.includes(input.directiveId)) continue
+    const read = ctx.state.directives[input.directiveId]
+    if (!read || !queries.isInFlightState(read.state)) continue
+    if (prerequisites.some((p) => p.kind === 'directive' && p.directiveId === input.directiveId)) continue
+    prerequisites.push({ kind: 'directive', directiveId: input.directiveId })
+    changed = true
+  }
+  if (!changed) return
+  ctx.emit({ type: 'prerequisites-changed', directiveId: d.id, prerequisites })
+  settleWait(ctx, d.id)
 }

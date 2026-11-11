@@ -62,7 +62,8 @@ describe('choice with default', () => {
     snap = await s.snap()
     const redone = sectionOf(snap, s, 'itinerary')
     expect(snap.transcript.responses[redone.responseId]?.reason).toBe('redo')
-    expect(redone.notes.map((n) => n.text)).toEqual(['Redid itinerary by default'])
+    // Finished work redone by default is a new response, without the in-flight note (07, Q95).
+    expect(redone.notes).toEqual([])
     // Unchosen finished work keeps its result, with the note and Regenerate.
     for (const label of ['neighborhoods', 'activities'] as const) {
       expect(s.d(label).sectionId).toBe(before[label].sectionId)

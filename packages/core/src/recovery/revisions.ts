@@ -1,4 +1,4 @@
-import { correctionText, queries, settleWait, formJoinBack, type CommandHandlers, type ConversationState, type DirectiveRow, type PlanApplier, type Reaction, type StartupReaction, type StepContext, type TimerHandler } from '../engine'
+import { correctionText, notStartedInSection, queries, settleWait, formJoinBack, type CommandHandlers, type ConversationState, type DirectiveRow, type PlanApplier, type Reaction, type StartupReaction, type StepContext, type TimerHandler } from '../engine'
 import type { PlannedRevision } from '../ports'
 import type { DirectiveId, ElicitationId, MessageId, RedoOption } from '@committee/protocol'
 import { revisionTargetState, replaceWork, waitForReplacedInputs } from './replace'
@@ -102,7 +102,9 @@ function followDependents(ctx: StepContext, targetId: DirectiveId, messageId: Me
     const latest = d.attemptIds[d.attemptIds.length - 1]
     const attempt = latest ? ctx.state.attempts[latest] : undefined
     const read = attempt !== undefined && attempt.sectionId === d.sectionId && attempt.context.inputs.some((i) => i.directiveId === targetId)
-    if (d.state === 'dependency-queued' && waits) {
+    // Queued work, released or not (work held by the concurrency limit is still queued), keeps waiting,
+    // now for the replacement and the rest of the full join-back (06, R3).
+    if ((d.state === 'dependency-queued' || d.state === 'ready') && notStartedInSection(ctx.state, d) && waits) {
       settleWait(ctx, id, true)
     } else if (d.state === 'paused' && d.pause?.cause.directiveId === targetId) {
       // The prerequisite that did not finish is being replaced: the recovery choice no longer applies.
@@ -180,17 +182,26 @@ function selectedFinished(state: ConversationState, elicitationId: ElicitationId
  */
 function carryOut(ctx: StepContext, elicitationId: ElicitationId, redo: readonly DirectiveId[]): void {
   ctx.cancelTimer(choiceKey(elicitationId))
-  for (const id of ctx.state.directiveOrder) {
-    const d = ctx.state.directives[id]
-    if (d?.state === 'awaiting-elicitation' && d.heldBy?.elicitationId === elicitationId) settleWait(ctx, id, true)
-  }
+  const row = ctx.state.elicitations[elicitationId]
+  const revisionMessageId = row?.record.kind === 'choice-with-default' ? row.record.revisionMessageId : null
+  // The chosen finished work is replaced first, so everything released below waits for the new
+  // version of what it read, never reading a redone request without its answer (06, 04).
+  const redone: DirectiveId[] = []
   for (const id of redo) {
     const d = ctx.state.directives[id]
     if (!d || d.state === 'superseded' || queries.isInFlightState(d.state)) continue
-    replaceWork(ctx, id, { cause: { kind: 'redo', elicitationId }, nodeReason: 'redo', responseReason: 'redo', messageId: d.messageId })
+    if (replaceWork(ctx, id, { cause: { kind: 'redo', elicitationId }, nodeReason: 'redo', responseReason: 'redo', messageId: d.messageId })) redone.push(id)
+  }
+  const held = ctx.state.directiveOrder.filter((id) => {
+    const d = ctx.state.directives[id]
+    return d?.state === 'awaiting-elicitation' && d.heldBy?.elicitationId === elicitationId
+  })
+  for (const id of [...held, ...redone]) {
     waitForReplacedInputs(ctx, id)
     settleWait(ctx, id, true)
   }
+  // Consumers outside the choice follow the redone work as they would a revised target (06 tables).
+  if (revisionMessageId !== null) for (const id of redone) followDependents(ctx, id, revisionMessageId)
 }
 
 function defaultChoice(ctx: StepContext, elicitationId: ElicitationId, trigger: 'wait-elapsed' | 'next-message'): void {

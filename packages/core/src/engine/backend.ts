@@ -52,7 +52,7 @@ import {
 import { resolveTargets, routingCandidates } from './candidates'
 import { assembleContext, sessionRequirementsInForce, type AssembledContext } from './context'
 import { defaultModules } from './engine-module'
-import { defaultRetryPlanner } from './lifecycle'
+import { defaultRetryPlanner, notStartedInSection, settleWait } from './lifecycle'
 import {
   isCommandError,
   type ConversationCommandType,
@@ -64,7 +64,7 @@ import {
 } from './module'
 import { checkPlan, nearestSettledAncestor } from './plan'
 import { Projector, projectSnapshot, runInspection } from './projections'
-import { nodeInFlight, resolvePlannedParents } from './queries'
+import { nodeInFlight, resolvePlannedParents, unsatisfiedPrerequisites } from './queries'
 import { fold, reduce } from './reducers'
 import { STATE_VERSION, emptyConversationState, type ConversationState } from './state'
 
@@ -683,6 +683,13 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
     const d = ctx.state.directives[prepared.directiveId]
     if (!d || d.state !== 'ready' || d.nodeId !== prepared.nodeId) {
       starting.delete(key)
+      return
+    }
+    // Released only by success (invariant 4): a prerequisite whose result was replaced since the
+    // release (a revision) sends queued work back to waiting, never into a run (06, R3).
+    if (notStartedInSection(ctx.state, d) && unsatisfiedPrerequisites(ctx.state, d).length > 0) {
+      starting.delete(key)
+      settleWait(ctx, d.id)
       return
     }
     const runtime = runtimes.get(prepared.conversationId)

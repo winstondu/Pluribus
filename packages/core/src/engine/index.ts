@@ -41,6 +41,7 @@ export { checkPlan, placeUnit, nearestSettledAncestor, unitsApplier, type PlanCh
 export {
   computeWait,
   settleWait,
+  notStartedInSection,
   formJoinBack,
   placeSection,
   supersedeSection,
