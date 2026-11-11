@@ -607,7 +607,9 @@ function chainAssociation(s: ConversationState, chainId: ChainId): ChainAssociat
         const source = s.directives[input.directiveId]
         if (!source) continue
         add(inheritedMessages, source.messageId)
-        const read = input.attemptId ? s.attempts[input.attemptId]?.sectionId : source.sectionId
+        // Only an answer that was read, or the marker of work that ended unfinished, is credited (C3):
+        // a run that read only the request of work still in flight never consumed its answer.
+        const read = input.attemptId ? s.attempts[input.attemptId]?.sectionId : input.marker !== null ? source.sectionId : null
         if (read) add(inheritedSections, read)
       }
     }

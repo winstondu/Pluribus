@@ -67,13 +67,23 @@ export function sessionRequirementsInForce(state: ConversationState): Requiremen
  * The ancestry of a run with these parents, root first. For several parents
  * (a join chain), each parent's ancestry in the order of `parents`, every
  * node once. A join-back's ancestry is its group's starting context; its
- * members are read inside its record, not as nodes of their own.
+ * members and its completed late retries are read inside its record, not as
+ * nodes of their own. So a line that reaches a member some other way (a
+ * branch from one sibling, joined with work on the join-back) reads the
+ * record at that point, once, and never the member's exchange a second time.
  */
 export function ancestryOf(state: ConversationState, parents: readonly NodeId[]): NodeId[] {
+  const recordOf = recordedNodes(state, parents)
   const seen = new Set<NodeId>()
   const ordered: NodeId[] = []
   const visit = (id: NodeId): void => {
     if (seen.has(id)) return
+    const joinBack = recordOf.get(id)
+    if (joinBack !== undefined && joinBack !== id) {
+      seen.add(id)
+      visit(joinBack)
+      return
+    }
     seen.add(id)
     const node = state.nodes[id]
     if (!node) return
@@ -89,6 +99,40 @@ export function ancestryOf(state: ConversationState, parents: readonly NodeId[])
   return ordered
 }
 
+/**
+ * For every join-back reachable from `parents`: its record's member nodes
+ * and its late-retry tail, each mapped to the first join-back node of that
+ * group that was reached.
+ */
+function recordedNodes(state: ConversationState, parents: readonly NodeId[]): Map<NodeId, NodeId> {
+  const out = new Map<NodeId, NodeId>()
+  const groups = new Set<string>()
+  const seen = new Set<NodeId>()
+  const stack = [...parents].reverse()
+  while (stack.length > 0) {
+    const id = stack.pop()
+    if (id === undefined || seen.has(id)) continue
+    seen.add(id)
+    const node = state.nodes[id]
+    if (!node) continue
+    if (node.kind === 'join-back') {
+      const group = node.joinGroupId ? state.groups[node.joinGroupId] : undefined
+      if (!group) continue
+      if (!groups.has(group.id)) {
+        groups.add(group.id)
+        const latest = group.joinBackIds[group.joinBackIds.length - 1]
+        const record = latest ? state.joinBacks[latest] : undefined
+        for (const member of record?.members ?? []) if (!out.has(member.nodeId)) out.set(member.nodeId, id)
+        for (const tail of group.lateRetryNodeIds) if (!out.has(tail)) out.set(tail, id)
+      }
+      stack.push(group.startNodeId)
+    } else {
+      for (const parent of nodeParents(state, node)) stack.push(parent)
+    }
+  }
+  return out
+}
+
 class Builder {
   readonly messages: ConsumedMessage[] = []
   readonly nodeIds: NodeId[] = []
@@ -100,10 +144,11 @@ class Builder {
     if (!this.nodeIds.includes(id)) this.nodeIds.push(id)
   }
 
+  /** Inputs keep the order they were first read in; a directive is listed once. */
   input(input: ConsumedInput): void {
     const existing = this.inputs.findIndex((i) => i.directiveId === input.directiveId)
-    if (existing >= 0) this.inputs.splice(existing, 1)
-    this.inputs.push(input)
+    if (existing >= 0) this.inputs.splice(existing, 1, input)
+    else this.inputs.push(input)
   }
 
   correction(directiveId: DirectiveId, correction: Correction): void {
@@ -142,12 +187,16 @@ export function assembleContext(
     b.sessionRequirementIds.push(requirement.id)
   }
 
-  // 3. The ancestry, root first.
+  // 3. The ancestry, root first. A group's record is read once, whichever of its formations was reached.
+  const groupsRead = new Set<string>()
   for (const id of ancestryOf(state, parents)) {
     const node = state.nodes[id]
     if (!node) continue
-    if (node.kind === 'join-back') readJoinBack(state, b, id, nodeId)
-    else if (node.directiveId !== null) {
+    if (node.kind === 'join-back') {
+      if (node.joinGroupId === null || groupsRead.has(node.joinGroupId)) continue
+      groupsRead.add(node.joinGroupId)
+      readJoinBack(state, b, id, nodeId)
+    } else if (node.directiveId !== null) {
       const d = state.directives[node.directiveId]
       if (d) readExchange(state, b, d, id, null)
     }

@@ -21,6 +21,7 @@ import {
   groupOfDirective,
   isStartedUnsettled,
   messageVisible,
+  routeOptionsFor,
   sectionState,
   unfinishedOutcome,
   unsatisfiedPrerequisites,
@@ -316,7 +317,7 @@ export function stopWork(
   ctx.emit({ type: 'stop-requested', target })
   for (const id of directives) {
     const d = ctx.state.directives[id]
-    if (!d || d.sectionId === null) continue
+    if (!d) continue
     if (d.state === 'running') {
       const live = liveAttempt(ctx.state, d)
       if (!live) continue
@@ -324,6 +325,8 @@ export function stopWork(
       ctx.emit({ type: 'attempt-stopped', attemptId: live, scope })
       ctx.abortAttempt(live)
     } else if (isStartedUnsettled(d.state)) {
+      // Started work always has a section; work held for a clarification may not, and is cancelled below.
+      if (d.sectionId === null) continue
       ctx.emit({ type: 'directive-stopped', directiveId: id, sectionId: d.sectionId, scope })
     } else if (['dependency-queued', 'paused', 'ready', 'awaiting-elicitation'].includes(d.state)) {
       ctx.emit({ type: 'directive-cancelled', directiveId: id, cause: scope === 'request' ? 'request-stopped' : 'section-stopped' })
@@ -408,7 +411,7 @@ export const engineCommands: CommandHandlers = {
       if (!message) return { code: 'unknown-target', message: `Unknown request ${target.messageId}` }
       if (message.routing === 'failed') {
         ctx.emit({ type: 'routing-retried', messageId: message.id })
-        ctx.route(message.id)
+        ctx.route(message.id, routeOptionsFor(ctx.state, message.id))
         return []
       }
       const retryable = message.directiveIds.filter((id) => {
@@ -456,7 +459,7 @@ export const engineStartup: StartupReaction = (state, ctx) => {
   }
   for (const id of state.messageOrder) {
     const message = state.messages[id]
-    if (message && message.routing === 'routing' && messageVisible(state, id)) ctx.route(id)
+    if (message && message.routing === 'routing' && messageVisible(state, id)) ctx.route(id, routeOptionsFor(state, id))
   }
 }
 

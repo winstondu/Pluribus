@@ -389,3 +389,23 @@ export function barrierOf(
     })
   return { directiveIds, decomposition }
 }
+
+/**
+ * What a message is routed again with, from its record: the sections the
+ * user chose in its latest answered target-ambiguity elicitation, and
+ * `atomic` after Undo split (Q53, Q85). Used when a lost routing is redone
+ * on start and when Retry routes a failed one again.
+ */
+export function routeOptionsFor(
+  state: ConversationState,
+  messageId: MessageId,
+): { readonly chosenTargets?: readonly SectionId[]; readonly forcedComposition?: 'atomic' } {
+  let chosenTargets: readonly SectionId[] | undefined
+  for (const id of state.elicitationOrder) {
+    const row = state.elicitations[id]
+    if (row?.record.kind !== 'target-ambiguity' || row.record.messageId !== messageId) continue
+    if (row.status === 'answered' && row.resolution?.kind === 'target-ambiguity') chosenTargets = row.resolution.sectionIds
+  }
+  const undone = state.decompositions[messageId]?.undone === true
+  return { ...(chosenTargets ? { chosenTargets } : {}), ...(undone ? { forcedComposition: 'atomic' as const } : {}) }
+}

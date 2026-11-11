@@ -576,16 +576,33 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
     const limit = Math.max(1, settings.concurrencyLimit)
     let used = live.size + starting.size
     if (used >= limit) return
-    const ready: { runtime: Runtime; directiveId: DirectiveId; createdAt: number; order: number }[] = []
+    // Submission order is the original message's, not the moment routing created the directive:
+    // a message routed faster never jumps the queue (Q60).
+    const ready: { runtime: Runtime; directiveId: DirectiveId; submittedAt: number; position: number; order: number }[] = []
     for (const runtime of runtimes.values()) {
-      for (const id of runtime.state.directiveOrder) {
-        const d = runtime.state.directives[id]
+      const state = runtime.state
+      for (const id of state.directiveOrder) {
+        const d = state.directives[id]
         if (!d || d.state !== 'ready' || starting.has(startKey(runtime.id, id))) continue
         if ([...live.values()].some((r) => r.conversationId === runtime.id && r.directiveId === id)) continue
-        ready.push({ runtime, directiveId: id, createdAt: d.createdAt, order: d.order })
+        const original = state.messages[d.originalMessageId]
+        ready.push({
+          runtime,
+          directiveId: id,
+          submittedAt: original?.submittedAt ?? d.createdAt,
+          position: state.messageOrder.indexOf(d.originalMessageId),
+          order: d.order,
+        })
       }
     }
-    ready.sort((a, b) => a.createdAt - b.createdAt || (a.runtime.id < b.runtime.id ? -1 : a.runtime.id > b.runtime.id ? 1 : 0) || a.order - b.order)
+    const byConversation = (a: Runtime, b: Runtime): number => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+    ready.sort(
+      (a, b) =>
+        a.submittedAt - b.submittedAt ||
+        byConversation(a.runtime, b.runtime) ||
+        a.position - b.position ||
+        a.order - b.order,
+    )
     for (const item of ready) {
       if (used >= limit) break
       used += 1

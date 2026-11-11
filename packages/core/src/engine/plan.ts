@@ -1,4 +1,5 @@
 import {
+  deepEqual,
   provisionalLabel,
   type ChainId,
   type ChainKind,
@@ -11,12 +12,14 @@ import {
   type PointRef,
   type PrerequisiteRef,
   type ResponseId,
+  type SiblingGroupId,
   type SiblingMember,
   type SplitMessageRecord,
 } from '@committee/protocol'
 import type { PlannedUnit, RoutingPlan } from '../ports'
 import type { PlanApplier, PlanTarget, StepContext } from './module'
 import {
+  activeMembers,
   chainTip,
   childrenInFlight,
   descendsFrom,
@@ -26,7 +29,7 @@ import {
   resolvePoint,
   currentJoinBack,
 } from './queries'
-import type { ConversationState } from './state'
+import type { ConversationState, GroupRow } from './state'
 
 /**
  * Carrying out a routing plan's units (PLAN §2 "Genealogy, mechanically";
@@ -251,7 +254,9 @@ function applyUnits(plan: RoutingPlan, target: PlanTarget, ctx: StepContext): vo
     return initialResponse
   }
 
-  for (const unit of plan.units) {
+  for (const planned of plan.units) {
+    // Earlier units of this plan may have formed or joined a sibling group: repair against the state as it is now (Q30).
+    const unit = repairPrerequisites(ctx.state, planned)
     const placed = placeUnit(unit, ctx)
     const messageId = splitIds.get(unit.directiveId) ?? target.messageId
     ctx.emit({
@@ -268,7 +273,7 @@ function applyUnits(plan: RoutingPlan, target: PlanTarget, ctx: StepContext): vo
       targets: unit.targets,
       nodeId: placed.nodeId,
       chainId: placed.chainId,
-      prerequisites: unit.prerequisites,
+      prerequisites: placed.prerequisites,
       asksElicitationId: null,
     })
     for (const body of placed.after) ctx.emit(body)
@@ -299,6 +304,8 @@ interface Placed {
   readonly chainId: ChainId
   /** Events that name the directive and so follow `directive-created`. */
   readonly after: readonly ConversationEventBody[]
+  /** The unit's prerequisites, with any the placement adds (an open group it now builds on). */
+  readonly prerequisites: readonly PrerequisiteRef[]
 }
 
 function newChain(ctx: StepContext, kind: ChainKind, baseChainId: ChainId | null, label: string): ChainId {
@@ -321,6 +328,18 @@ function newNode(ctx: StepContext, unit: PlannedUnit, chainId: ChainId, plannedP
   return nodeId
 }
 
+function withPrerequisite(unit: PlannedUnit, ref: PrerequisiteRef): PlannedUnit {
+  return unit.prerequisites.some((p) => deepEqual(p, ref)) ? unit : { ...unit, prerequisites: [...unit.prerequisites, ref] }
+}
+
+function waitsForDirective(unit: PlannedUnit, directiveId: DirectiveId): boolean {
+  return unit.prerequisites.some((p) => p.kind === 'directive' && p.directiveId === directiveId)
+}
+
+function waitsForGroup(unit: PlannedUnit, groupId: SiblingGroupId): boolean {
+  return unit.prerequisites.some((p) => p.kind === 'sibling-group' && p.groupId === groupId)
+}
+
 /** One of the three placements (Q76), with the repairs and the ordered cases of PLAN §2. */
 export function placeUnit(unit: PlannedUnit, ctx: StepContext): Placed {
   const placement = unit.placement
@@ -328,29 +347,66 @@ export function placeUnit(unit: PlannedUnit, ctx: StepContext): Placed {
   if (placement.kind === 'join-chain') return placeJoinChain(unit, placement.parents, ctx)
 
   const point = placement.buildsOn
-  let start: NodeId | null
-  if (point.kind === 'sibling-group') {
-    const group = ctx.state.groups[point.groupId]
-    if (group && group.state === 'open') {
-      // The join-back does not exist yet: the work continues the base chain from it (Q78).
-      return { nodeId: newNode(ctx, unit, group.baseChainId, [point]), chainId: group.baseChainId, after: [] }
-    }
-    start = resolvePoint(ctx.state, point)
-  } else {
-    start = resolvePoint(ctx.state, point)
-  }
+  if (point.kind === 'sibling-group') return placeOnGroup(unit, point.groupId, ctx)
+  let start = resolvePoint(ctx.state, point)
   if (start === null) return placeNewChain(unit, ctx)
+
+  // Work that waits for a whole group builds on that group, never beside or below one of its members.
+  const covering = coveringGroup(ctx.state, unit, start)
+  if (covering) return placeOnGroup(unit, covering, ctx)
 
   // Repair 0: a node still in flight can be built on only by work that waits for it.
   const startNode = ctx.state.nodes[start]
-  if (startNode && nodeInFlight(ctx.state, start)) {
-    const waitsForIt = unit.prerequisites.some((p) => p.kind === 'directive' && p.directiveId === startNode.directiveId)
-    if (!waitsForIt) {
-      const settled = nearestSettledAncestor(ctx.state, start)
-      if (settled.kind === 'none') return placeNewChain(unit, ctx)
-      if (settled.kind === 'join') return placeJoinChain(unit, settled.parents, ctx)
-      start = settled.nodeId
-    }
+  if (startNode?.directiveId && nodeInFlight(ctx.state, start) && !waitsForDirective(unit, startNode.directiveId)) {
+    const settled = nearestSettledAncestor(ctx.state, start)
+    if (settled.kind === 'none') return placeNewChain(unit, ctx)
+    if (settled.kind === 'join') return placeJoinChain(unit, settled.parents, ctx)
+    start = settled.nodeId
+  }
+  return placeConsumer(unit, start, ctx)
+}
+
+/**
+ * The open group that `unit` waits for as a whole and whose starting node,
+ * or one of whose members, is `start`. Such work continues from the group's
+ * join-back; admitted beside the members it would wait for itself.
+ */
+function coveringGroup(state: ConversationState, unit: PlannedUnit, start: NodeId): SiblingGroupId | null {
+  for (const ref of unit.prerequisites) {
+    if (ref.kind !== 'sibling-group') continue
+    const group = state.groups[ref.groupId]
+    if (!group || group.state === 'dissolved') continue
+    if (group.startNodeId === start || activeMembers(group).some((m) => m.nodeId === start)) return group.id
+  }
+  return null
+}
+
+/** Continue from a sibling group: the base chain from its join-back (Q78); while open, the unit waits for it (C9, C15). */
+function placeOnGroup(unit: PlannedUnit, groupId: SiblingGroupId, ctx: StepContext): Placed {
+  const group = ctx.state.groups[groupId]
+  if (!group) return placeNewChain(unit, ctx)
+  if (group.state === 'open') {
+    const waiting = withPrerequisite(unit, { kind: 'sibling-group', groupId })
+    return { nodeId: newNode(ctx, waiting, group.baseChainId, [{ kind: 'sibling-group', groupId }]), chainId: group.baseChainId, after: [], prerequisites: waiting.prerequisites }
+  }
+  const start = resolvePoint(ctx.state, { kind: 'sibling-group', groupId })
+  if (start === null) return placeNewChain(unit, ctx)
+  return placeConsumer(unit, start, ctx)
+}
+
+/**
+ * A request that consumes one member's result is that member's descendant,
+ * not a member (01 · "Sibling groups"), and dependencies stay acyclic (04):
+ * work that waits for work in flight beneath P is placed on that work, or
+ * on the group it belongs to, instead of beside it.
+ */
+function placeConsumer(unit: PlannedUnit, start: NodeId, ctx: StepContext): Placed {
+  const awaited = childrenInFlight(ctx.state, start).filter((c) => waitsForDirective(unit, c.id))
+  if (awaited.length === 1 && awaited[0]) return placeOn(unit, awaited[0].nodeId, ctx)
+  if (awaited.length > 1) {
+    const open = openGroupAt(ctx.state, start)
+    if (open) return placeOnGroup(unit, open.id, ctx)
+    return placeJoinChain(unit, awaited.map((c) => ({ kind: 'node', nodeId: c.nodeId })), ctx)
   }
   return placeOn(unit, start, ctx)
 }
@@ -383,36 +439,112 @@ export function nearestSettledAncestor(state: ConversationState, nodeId: NodeId)
 
 function placeNewChain(unit: PlannedUnit, ctx: StepContext): Placed {
   const chainId = newChain(ctx, 'root', null, unit.label)
-  return { nodeId: newNode(ctx, unit, chainId, []), chainId, after: [] }
+  return { nodeId: newNode(ctx, unit, chainId, []), chainId, after: [], prerequisites: unit.prerequisites }
 }
 
-/** A join chain: parents are leaves of their chains when it is created (Q86); a non-leaf becomes its chain's leaf (Q97). */
-function placeJoinChain(unit: PlannedUnit, parents: readonly PointRef[], ctx: StepContext): Placed {
-  const resolved: PointRef[] = []
-  const add = (ref: PointRef): void => {
-    if (!resolved.some((r) => JSON.stringify(r) === JSON.stringify(ref))) resolved.push(ref)
+/** The open or closed, not dissolved, group whose member's exchange is this node. */
+function memberGroupOf(state: ConversationState, nodeId: NodeId): GroupRow | null {
+  for (const group of Object.values(state.groups)) {
+    if (group.state === 'dissolved') continue
+    if (activeMembers(group).some((m) => m.nodeId === nodeId)) return group
   }
+  return null
+}
+
+/**
+ * A join chain (Q5, Q86, Q88), after the repairs that have one correct reading:
+ * - a parent that is not a leaf becomes its chain's leaf (Q97);
+ * - two or more parents from one sibling group become that group's
+ *   join-back, never a subset of it (Q30, invariant 4);
+ * - a parent still in flight, with no prerequisite on it, becomes its
+ *   starting context, so no run reads an unfinished answer (C1, C3);
+ * - a parent that is an ancestor of another parent is already read through
+ *   it and is dropped (Q97).
+ * Parents that collapse onto one line are a continuation, not a join (Q3).
+ */
+function placeJoinChain(unit: PlannedUnit, parents: readonly PointRef[], ctx: StepContext): Placed {
+  const state = ctx.state
+  let current = unit
+  let points: PointRef[] = []
+  const add = (list: PointRef[], ref: PointRef): void => {
+    if (!list.some((r) => deepEqual(r, ref))) list.push(ref)
+  }
+  // Leaves. A parent named as a sibling, or whose leaf is one, stands for that member of its group.
+  const memberOf = new Map<string, SiblingGroupId>()
   for (const parent of parents) {
     if (parent.kind === 'sibling-group') {
-      const group = ctx.state.groups[parent.groupId]
-      if (group?.state === 'open') add(parent)
+      const group = state.groups[parent.groupId]
+      if (group?.state === 'open') add(points, parent)
       else {
-        const id = resolvePoint(ctx.state, parent)
-        if (id) add({ kind: 'node', nodeId: leafOf(ctx.state, id) })
+        const id = resolvePoint(state, parent)
+        if (id) add(points, { kind: 'node', nodeId: leafOf(state, id) })
       }
       continue
     }
-    const id = resolvePoint(ctx.state, parent)
-    if (id) add({ kind: 'node', nodeId: leafOf(ctx.state, id) })
+    const id = resolvePoint(state, parent)
+    if (!id) continue
+    const leaf: PointRef = { kind: 'node', nodeId: leafOf(state, id) }
+    const group = memberGroupOf(state, id) ?? memberGroupOf(state, leaf.nodeId)
+    if (group) memberOf.set(JSON.stringify(leaf), group.id)
+    add(points, leaf)
   }
-  if (resolved.length < 2) {
-    // The parents collapsed onto one line: that is a continuation, not a join (Q3).
-    const only = resolved[0]
-    if (only?.kind === 'node') return placeOn(unit, only.nodeId, ctx)
-    return placeNewChain(unit, ctx)
+  // No subset of a sibling group.
+  const byGroup = new Map<SiblingGroupId, number>()
+  const groupOfPoint = (p: PointRef): SiblingGroupId | null =>
+    p.kind === 'sibling-group' ? p.groupId : (memberOf.get(JSON.stringify(p)) ?? null)
+  for (const p of points) {
+    const g = groupOfPoint(p)
+    if (g) byGroup.set(g, (byGroup.get(g) ?? 0) + 1)
   }
-  const chainId = newChain(ctx, 'join', null, unit.label)
-  return { nodeId: newNode(ctx, unit, chainId, resolved), chainId, after: [] }
+  const merged: PointRef[] = []
+  for (const p of points) {
+    const g = groupOfPoint(p)
+    if (g && (byGroup.get(g) ?? 0) >= 2) {
+      add(merged, { kind: 'sibling-group', groupId: g })
+      if (state.groups[g]?.state === 'open') current = withPrerequisite(current, { kind: 'sibling-group', groupId: g })
+    } else add(merged, p)
+  }
+  // Nothing in flight is read without waiting for it.
+  points = []
+  for (const p of merged) {
+    if (p.kind === 'node') {
+      const node = state.nodes[p.nodeId]
+      if (node?.directiveId && nodeInFlight(state, p.nodeId) && !waitsForDirective(current, node.directiveId)) {
+        const settled = nearestSettledAncestor(state, p.nodeId)
+        if (settled.kind === 'node') add(points, { kind: 'node', nodeId: settled.nodeId })
+        else if (settled.kind === 'join') for (const q of settled.parents) add(points, q)
+        continue
+      }
+    }
+    if (p.kind === 'sibling-group' && state.groups[p.groupId]?.state === 'open') {
+      current = withPrerequisite(current, { kind: 'sibling-group', groupId: p.groupId })
+    }
+    add(points, p)
+  }
+  // A parent already in another parent's ancestry is read through it.
+  const nodeOf = (p: PointRef): NodeId | null => (p.kind === 'node' ? p.nodeId : p.kind === 'sibling-group' ? startOfGroup(state, p.groupId) : null)
+  points = points.filter((p) => {
+    const id = p.kind === 'node' ? p.nodeId : null
+    if (id === null) return true
+    return !points.some((q) => q !== p && (() => {
+      const other = q.kind === 'node' ? q.nodeId : null
+      if (other !== null) return descendsFrom(state, other, id)
+      const start = nodeOf(q)
+      return start !== null && (start === id || descendsFrom(state, start, id))
+    })())
+  })
+  if (points.length < 2) {
+    const only = points[0]
+    if (only?.kind === 'sibling-group') return placeOnGroup(current, only.groupId, ctx)
+    if (only?.kind === 'node') return placeConsumer(current, only.nodeId, ctx)
+    return placeNewChain(current, ctx)
+  }
+  const chainId = newChain(ctx, 'join', null, current.label)
+  return { nodeId: newNode(ctx, current, chainId, points), chainId, after: [], prerequisites: current.prerequisites }
+}
+
+function startOfGroup(state: ConversationState, groupId: SiblingGroupId): NodeId | null {
+  return state.groups[groupId]?.startNodeId ?? null
 }
 
 function leafOf(state: ConversationState, nodeId: NodeId): NodeId {
@@ -430,16 +562,17 @@ function placeOn(unit: PlannedUnit, start: NodeId, ctx: StepContext): Placed {
   // Case 1: P has a child in flight. A fork.
   const children = childrenInFlight(state, start)
   if (children.length > 0) return placeFork(unit, start, children.map((c) => c.id), ctx)
+  const prerequisites = unit.prerequisites
 
   // Case 2: P is a member of a sibling group, or not its chain's last node. A branch.
   const isMember = node.groupId !== null
   if (isMember || chainTip(state, node.chainId) !== start) {
     const chainId = newChain(ctx, 'branch', node.chainId, unit.label)
-    return { nodeId: newNode(ctx, unit, chainId, [{ kind: 'node', nodeId: start }]), chainId, after: [] }
+    return { nodeId: newNode(ctx, unit, chainId, [{ kind: 'node', nodeId: start }]), chainId, after: [], prerequisites }
   }
 
   // Case 3: the same chain continues.
-  return { nodeId: newNode(ctx, unit, node.chainId, [{ kind: 'node', nodeId: start }]), chainId: node.chainId, after: [] }
+  return { nodeId: newNode(ctx, unit, node.chainId, [{ kind: 'node', nodeId: start }]), chainId: node.chainId, after: [], prerequisites }
 }
 
 function placeFork(unit: PlannedUnit, start: NodeId, childIds: readonly DirectiveId[], ctx: StepContext): Placed {
@@ -451,6 +584,7 @@ function placeFork(unit: PlannedUnit, start: NodeId, childIds: readonly Directiv
       nodeId,
       chainId,
       after: [{ type: 'sibling-admitted', groupId: open.id, member: { directiveId: unit.directiveId, nodeId, chainId } }],
+      prerequisites: unit.prerequisites,
     }
   }
   const startNode = ctx.state.nodes[start]
@@ -493,6 +627,7 @@ function placeFork(unit: PlannedUnit, start: NodeId, childIds: readonly Directiv
         joinBackOperationId: ctx.ids.next('operation'),
       },
     ],
+    prerequisites: unit.prerequisites,
   }
 }
 
