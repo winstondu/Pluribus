@@ -78,7 +78,7 @@ export async function waitReady(page, timeout = 30_000) {
  * build (vite preview) does not offer it; then the key is typed into the
  * prompt's field like a user would paste it, and never printed.
  */
-export async function useEnvironmentKey(page) {
+export async function applyEnvironmentKey(page) {
   const button = page.getByRole('button', { name: /Use the key from this environment/ })
   const field = page.getByLabel('API key')
   await field.waitFor({ timeout: 30_000 })
@@ -96,7 +96,7 @@ export async function useEnvironmentKey(page) {
 }
 
 /** Settings → Models: every generative role on the cheap model. The decision model stays pinned. */
-export async function useCheapModels(page) {
+export async function applyCheapModels(page) {
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await page.getByRole('tab', { name: 'Models' }).click()
   for (const label of ['Answers', 'Synthesis', 'Decomposition']) {

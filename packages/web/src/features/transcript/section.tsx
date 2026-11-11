@@ -1,4 +1,5 @@
 import type { AttemptId, AttemptView, SectionId, SectionNote, SectionView } from '@committee/protocol'
+import { WORDING } from '@committee/protocol'
 import {
   ArrowDownIcon,
   ArrowUpIcon,
@@ -149,7 +150,7 @@ function SupersededRow(props: { section: SectionView; markText: string; hasText:
           onClick={() => revealSection(replacement)}
           className="pressable inline-flex items-center gap-1 rounded-md text-xs text-primary underline-offset-4 hover:underline"
         >
-          See the revision
+          {props.section.superseded?.linkText ?? WORDING.seeRevision}
           <ArrowDownIcon aria-hidden className="size-3" />
         </button>
       ) : null}

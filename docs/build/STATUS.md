@@ -1,116 +1,278 @@
 # Committee MVP status
 
-What runs, what was checked, and what is still open. Written by integration; later fixers append under a heading for their pass (PLAN §8).
+What runs, what was checked, what each review found and what was done about it, and what is still open. Final gate: 2026-11-11, branch `claude/charming-rubin-ty8nfp`.
 
-## What runs
+## What works end to end
 
-The app at `/` runs the real product: the client store over a `PortClient`, and in a Web Worker core (engine, routing, recovery), the three OpenRouter providers and IndexedDB storage.
+The app at `/` is the real product. The page holds the client store over a `PortClient`. A Web Worker holds core (engine, routing, recovery), the three OpenRouter providers (answers, Decisions, decomposition) and IndexedDB storage. All of the following were seen working in Chromium against live OpenRouter by `packages/web/e2e/run.mjs`:
 
-| Piece | Where | Notes |
-|---|---|---|
-| Worker entry | `packages/web/src/worker/backend.worker.ts` | Listens at once (`servePort` over a pending backend), takes the `committee-backend` Web Lock (`ifAvailable` first; otherwise posts `standby` and waits), opens `committee-events` and `committee-secrets`, builds the providers with `getKey` reading the secrets store, `createBackend`, `start()` |
-| Page client | `packages/web/src/worker/client.ts` | `connectWorker({ onStandby })`, one Worker and one client per page (StrictMode mounts twice in development) |
-| System ports | `packages/web/src/worker/system.ts` | `Date.now` clock, `setTimeout` timers, ULID IDs |
-| Fixture gallery | `/?fixtures`, `/?fixture=<id>` | Unchanged; the fixture backend still serves tests and the gallery |
+- First-run key prompt, with "Use the key from this environment" on the dev server. Models per role are set in Settings.
+- Parallel answers with overtaking. A quick answer is placed above a slow request's pending bubble and never moves.
+- A two-intent message becomes one reply group with two sections.
+- "Reply to this" on a story still being written queues the follow-up ("Waiting for …"). The follow-up runs after the story and reads it.
+- Stopping a prerequisite pauses its dependent with the recovery choice (Retry, Continue without, Cancel). Retry reruns the prerequisite, then the dependent.
+- A corrective follow-up ("Sorry, I meant …") supersedes the list and answers in a revision.
+- Stop while streaming keeps the partial text. Retry streams a second attempt in the same section.
+- Reload mid-answer: the attempt is recorded as interrupted. Standard retries it at once; Manual waits for Retry.
+- After a reload, conversations, key status and models are kept. The run inspector shows the recorded input. The key is absent from every store of `committee-events`.
+- Conversations can be created and deleted, and the deletion survives a reload.
+- Markdown answers render: code blocks, tables, light and dark.
+- An invalid key fails routing visibly with Retry. Replacing the key and pressing Retry answers.
+- A second tab stands by ("Committee is open in another tab") and takes over when the first tab closes, with nothing recorded as interrupted.
 
-The key goes from the key prompt in a `change-settings` command to the Worker, where the engine writes it to the secrets store; the providers read it from there on each call. It is in no event, projection, log line or screenshot: the e2e run reads every store of `committee-events` and finds it nowhere, and a production build does not contain it.
+The key reaches the Worker in a `change-settings` command and is written to the `committee-secrets` store; the providers read it on each call. It is in no event, projection, log line, screenshot, committed file or built bundle (checked below).
 
-## Verification (2026-11-11, run from the repository root)
+These are covered only by core and component tests, never end to end: clarification questions, target-ambiguity and choice-with-default panels, Undo split and join chains.
+
+## Verification (final gate, run from the repository root)
 
 | Command | Result |
 |---|---|
+| `pnpm install --frozen-lockfile` | Lockfile up to date |
 | `pnpm typecheck` | 5 packages, no errors |
-| `pnpm test` | 43 files, 571 tests passed, 0 failed |
-| `pnpm build` | Succeeds. Worker bundle 289 kB; main chunk 1.9 MB (Streamdown's code, math and Mermaid plugins), with Vite's chunk-size warning |
-| `pnpm smoke` | 2 files, 6 tests passed: the four provider smoke tests and the live routing corpus (decision model alone 42/44; with the live decomposer 39/44) |
-| `pnpm e2e` (dev server, live OpenRouter, `anthropic/claude-haiku-5.5` for answers, synthesis and decomposition) | Final full run: 12 of 13 passed; `markdown` failed because the model wrote the requested table as plain text. Its assertion now requires the code block only, and it passes on its own rerun. Screenshots in `docs/build/screenshots/e2e/` |
-
-Every acceptance condition (D1–D4, P1–P13, C1–C20, T1–T3, R1–R8, E1–E4, F1–F9) has its canonical test, titled with its ID, and all pass.
+| `pnpm test` | 50 files, 631 tests passed, 0 failed (unit 543, of which core 288; web 88) |
+| `pnpm --filter @committee/web lint` | Exit 0, warnings only. It exited 1 before this gate; see "Final gate" below |
+| `pnpm build` | Succeeds. Worker bundle 298 kB; main chunk 1.9 MB (Streamdown's code, math and Mermaid plugins), with Vite's chunk-size warning |
+| `pnpm smoke` | 2 files, 6 tests passed: four provider smoke tests and the live routing corpus |
+| `COMMITTEE_URL=http://localhost:5199/ pnpm e2e` (dev server with `OPENROUTER_KEY`, cheap model for every generative role) | 13 of 13 flows passed; `overtaking` observed the overtaken case. Screenshots in `docs/build/screenshots/e2e/` |
+| Secret scan | The key's value was searched for, without printing it, in the working tree, every commit's tree and patch, and `packages/web/dist`: 0 matches. The only `sk-or-v1-` strings in the repository are placeholder keys in `e2e/run.mjs` and `app.test.tsx` |
 
 ### End-to-end flows (`packages/web/e2e/run.mjs`)
 
 | Flow | What it shows | Screenshots |
 |---|---|---|
-| setup | Key prompt on first run, "Use the key from this environment", every generative role set to the cheap model in Settings | `00-*` |
+| setup | Key prompt on first run, "Use the key from this environment", every generative role set to the cheap model | `00-*` |
 | overtaking | A long essay, then a one-word question: the quick answer is placed above the essay's pending bubble and never moves | `01-*` |
 | replyGroup | A two-intent message gives one reply group with two completed sections | `02-*` |
-| dependentFollowUp | "Reply to this" on a story still being written: a queue item "Waiting for …", then the title runs after the story | `03-*` |
-| pausedDependent | Stop a story that a follow-up waits for: the follow-up is paused with the recovery choice (Retry, Continue without, Cancel); Retry runs the story again in its own section and then the follow-up | `12-*` |
+| dependentFollowUp | "Reply to this" on a story still being written: queue item "Waiting for …", then the title runs after the story | `03-*` |
+| pausedDependent | Stop a story a follow-up waits for: the follow-up is paused with the recovery choice; Retry runs the story again, then the follow-up | `12-*` |
 | corrective | "Sorry, I meant yellow" on a finished list: the list is superseded and a revision answers | `04-*` |
-| stopAndRetry | Stop while streaming (partial text kept, "Stopped · partial"), Retry: a second attempt completes in the same section | `05-*` |
-| reloadMidAnswer | Reload while streaming: the attempt is recorded interrupted and Standard retries it at once to completion | `06-*` |
+| stopAndRetry | Stop while streaming ("Stopped · partial"), Retry: a second attempt completes in the same section | `05-*` |
+| reloadMidAnswer | Reload while streaming: interrupted, and Standard retries it to completion | `06-*` |
 | reloadUnderManual | The same under Manual: interrupted, no automatic retry; Retry completes it | `06b-*` |
-| persistence | After a reload: conversations, key status and models are kept; the run inspector shows the recorded input and model; the key is absent from `committee-events` | `09-*` |
-| conversations | Create, delete through the sidebar; the deletion survives a reload | `10-*` |
-| markdown | A fenced code block renders with Streamdown's chrome, and a table when the model writes one, light and dark | `11-*` |
-| invalidKey | An invalid key is rejected by the prompt; a key saved unverified that OpenRouter rejects fails routing visibly ("Not routed … User not found", Retry); replacing the key and Retry answers | `07-*` |
-| secondTab | A second tab of the same profile shows "Committee is open in another tab" while the first streams; the first tab's answer completes in one attempt; the second takes over when the first closes, with nothing recorded as interrupted | `08-*` |
+| persistence | After a reload: conversations, key status and models kept; run inspector shows the recorded input; key absent from `committee-events` | `09-*` |
+| conversations | Create and delete through the sidebar; the deletion survives a reload | `10-*` |
+| markdown | A fenced code block with Streamdown's chrome, and a table when the model writes one, light and dark | `11-*` |
+| invalidKey | An invalid key is rejected by the prompt. A key saved unverified that OpenRouter rejects fails routing visibly ("Could not route this message: User not found", Retry). Replacing the key and Retry answers | `07-*` |
+| secondTab | A second tab stands by while the first streams; it takes over when the first closes | `08-*` |
 
-The same flows were also run against `vite preview` of the production build (overtaking, reply group, reload, second tab: all pass); there the key is typed into the prompt because the environment offer does not exist in production.
+## Acceptance conditions
 
-## Recovery review
+Every condition has its canonical test, titled with its ID. All 61 pass in the final run. Where reviews added more tests under the same ID, they are listed too. Paths are relative to `packages/`.
 
-All seven findings of the recovery review were confirmed and fixed in `86fb27c`, each with its test in `packages/core/src/recovery/acceptance/review.test.ts`: released-but-unstarted work waits again for a revised prerequisite (R3); a redo chain releases held work only after the chosen redos and waits for redone inputs; later work waits for a replacement still in flight (R5); a re-formed join-back keeps a late-retried member's marker; join-backs descend from the replacement node; a second revision rewinds to the last finished answer; "Redid … by default" only on in-flight work (E3).
+| ID | Canonical test file | Further tests under the ID | Result |
+|---|---|---|---|
+| D1–D4 | `core/src/routing/acceptance/decomposition.test.ts` | `D3 (review)`, `D4 (review)` in `core/src/routing/acceptance/review-2.test.ts` | pass |
+| P1–P4, P8 | `core/src/engine/acceptance/placement.test.ts` | `(web)` renderings in `web/src/features/transcript/transcript.test.tsx` | pass |
+| P5, P7 | `web/src/features/transcript/acceptance.test.tsx` | — | pass |
+| P6 | `core/src/engine/acceptance/placement.test.ts` | `core/src/recovery/acceptance/review-3.test.ts` | pass |
+| P9 | `core/src/routing/acceptance/placement.test.ts` | — | pass |
+| P10–P13 | `core/src/recovery/acceptance/placement.test.ts` | — | pass |
+| C1–C20 | `core/src/engine/acceptance/chains.test.ts` | C2 in `core/src/routing/acceptance/review-3.test.ts`; C10 in `core/src/recovery/acceptance/review-4.test.ts`; C19 in `core/src/routing/acceptance/review-4.test.ts`; `C3/C9/C11/C20 (engine)` in `core/src/engine/acceptance/named.test.ts` | pass |
+| T1 | `core/src/routing/acceptance/targets.test.ts` | `core/src/routing/acceptance/review-2.test.ts`, `review-3.test.ts` | pass |
+| T2, T3 | `core/src/recovery/acceptance/targets.test.ts` | T3 in `core/src/recovery/acceptance/review-4.test.ts` and `core/src/routing/acceptance/review-3.test.ts` | pass |
+| R1–R8 | `core/src/recovery/acceptance/revisions.test.ts` | R3, R8 in `core/src/recovery/acceptance/review-3.test.ts` | pass |
+| E1, E2 | `core/src/routing/acceptance/elicitation.test.ts` | `E1 (review)` in `core/src/routing/acceptance/review-2.test.ts` | pass |
+| E3, E4 | `core/src/recovery/acceptance/elicitation.test.ts` | `E3/E4 (…)` in `core/src/recovery/acceptance/review-2.test.ts` | pass |
+| F1–F9 | `core/src/recovery/acceptance/failure.test.ts` | `F2 (engine)` in `named.test.ts`; `F3 (routing)` in `core/src/routing/acceptance/review-2.test.ts`; `F3 (web)` in `web/src/features/transcript/transcript.test.tsx` | pass |
 
-## Second review: core, providers and routing (fixer, round 1)
+The architecture invariants I1–I10 also pass. They are in `core/src/{engine,routing,recovery}/acceptance/invariants.test.ts`.
 
-Every finding was checked against the spec and the code; each reviewer probe was run and failed as reported before its fix. The probes are in the suite under the titles below (`packages/core/src/engine/acceptance/named.test.ts`, `packages/core/src/routing/acceptance/review-2.test.ts`, `packages/core/src/recovery/acceptance/review-2.test.ts`).
+## Decisions for "Left to the build" (12 · Build plan)
 
-| Finding | Severity | What was done |
-|---|---|---|
-| Join-back of a second group at a non-tip node lands on the chain that moved on | blocker | Fixed in `engine/plan.ts` (`placeFork`, `chainMovedOn`): when P's chain has moved past P, the group's base is a new branch chain from P. Tests: `placement · two concurrent replies to a node its chain has moved past …`, `placement · a second sibling group at the start node of a closed group …`. PLAN §2 row 1 updated |
-| C20 engine test asserted a non-leaf join-chain parent | major | Settled for the leaf rule (Q86, C20): a join-chain parent is always the current leaf, and a leaf in flight is waited for (`placeJoinChain`). `C20 (engine)` and `C3 (engine)` rewritten to assert it; PLAN §2 records the rule |
-| Work consuming a finished member, placed on the start node, admitted as a sibling | minor | Fixed (`placeConsumer`): placed on the member's node, finished or not. Also: work that builds on one member and waits for another depends on the whole group (`groupSpannedFrom`). Tests `C11 (engine) · …`, `C9 (engine) · work that continues one member and waits for another …` |
-| Barrier on a sequential composite deadlocks | blocker | Fixed (`computeWait`): waits on other parts of the same request do not block the request. Test `D3 (review) · …` |
-| Requirement change plus a question loses the question | blocker | Fixed: a new unit question `asks` ("does it also ask a question or request a task?"); when yes, the request is planned beside the requirement revision. Test `requirement · a message that changes a session-wide requirement and asks a question keeps the question` |
-| Inferred revision of a split message leaves Undo split available | major | Fixed (`undoSplitAvailable`): any `revision-recorded` that targets a split directive ends Undo split. Test `D4 (review) · an inferred revision …` |
-| Shared-requirement revision stops running work judged unaffected | major | Fixed (`recovery/revisions.ts`): only pre-selected running or queued work is locked and stopped or held; unaffected work continues and later gets the note. Test `E4 (unaffected) · …` (recovery and routing) |
-| Revising a session-wide requirement raises no choice | major | Fixed: `CandidateWork.consumedRequirements` (port change), and the affected list includes every reader of a replaced or withdrawn requirement. Test `E3 (requirement) · …` |
-| Requirement replaced without corrective wording | major | Fixed: a requirement change needs `corrective >= clearlyCorrective`; otherwise the new requirement is added beside. Test `T2 (requirement) · …` |
-| One weak target below `targetChoice` placed on a new chain | major | Fixed, narrowed: a single weak candidate is elicited unless the unit is placed with confidence without it (handling chain at `targetChoice`, a selected dependency, a requirement change). Eliciting every lone weak candidate cost three live corpus labels (40/44); the narrowed rule keeps 42/44 and never sends the reply to a new chain silently. Test `T1 (review) · a reply whose one plausible section …`; the earlier test of the opposite rule was rewritten |
-| Composite ambiguity choice strips other parts' targets | major | Fixed: every part is asked about every section; a part keeps the chosen sections it refers to and its own clear targets. Test `T1 (review) · after a composite's target-ambiguity choice …` |
-| Barrier-held queue item reads "Waiting for " | major | Fixed: a part held behind a clarification names that part ("Waiting for yesterday"). Test `E1 (review) · …` |
-| Undo split after answering a split's clarification | minor | Fixed: the split's question sections count for replies, and an answered clarification ends Undo split. Test `D4 (review) · answering a split message's clarification question …` |
-| Stop on started work waiting for a slot recorded as cancelled | major | Fixed (`startedInSection`): `ready` work whose section already has attempts is stopped (`directive-stopped`), and its section offers Stop. Tests `F2 (engine) · …` (section and request scope) |
-| Transient routing failures never retried | major | Fixed: `CoreModule.routingRetryPlanner`; recovery's `policyRoutingRetryPlanner` applies the retry setting (backoff, `Retry-After`, Manual = none); the bubble keeps "Routing…" meanwhile. Tests `F3 (routing) · …` (three) |
-| Context limit decided on a high estimate | major | Fixed: a run fails before starting only on an exact count; an estimate warns and runs, and OpenRouter's `context_length_exceeded` is non-retryable. The estimate now counts CJK at one token per character and other non-ASCII at one per 2.5 characters. Tests `context · an estimate over the limit warns and runs …`, providers `the estimate does not count Cyrillic …` |
-| Thresholds untuned | minor | Swept live on the corpus with `typesafe/jev-1.13` (PLAN §7, "Threshold tuning"): every default sits on its best plateau and is kept; 42/44 at the chosen values |
-| Operation graph drawer leaves 34 px of transcript on a phone | minor | Not mine (UI, `src/features/debug/**`); left to the UI fixer |
+PLAN §7 has the full reasoning for each.
 
-## Requests and open issues from the tracks
+| Choice | Decision |
+|---|---|
+| Candidates for the decision model | Every current section; every chain with its settled head and tip; every directive not superseded or cancelled; every sibling group not dissolved. Result-dependency candidates are work still in flight (at most 16) and open groups. Trimmed to the 24 most recent sections if over the per-question limit |
+| Trivial messages skip the decision call? | No. The first message of an empty conversation asks only the gate and clarification questions |
+| Do decision and decomposition calls count against concurrency? "Per provider"? | Only answer, clarification-question and synthesis runs take a slot. Routing, label calls and join-backs take none. One pool, keyed `openrouter`. A conversation's messages are routed in submission order (C2) |
+| Backoff | Standard: 3 retries at 1 s, 2 s, 4 s, accepting `Retry-After` up to 60 s. Persistent: 8 retries up to 30 s apart, accepting `Retry-After` up to 10 min. No jitter. Routing failures (408, 429, 502, 503, an empty 200, a dropped connection) retry under the same setting |
+| Pinned decision model, tuned thresholds | `typesafe/jev-1.13`. Thresholds were swept on the 44-example corpus: `targetChoice` 0.7, `clearlyCorrective` 0.8, `composite` 0.65, `dependency` 0.6, `clarification` 0.75, ambiguity floor 0.25. Each is on its best plateau, 42/44 |
+| Context warning | At 80 % of the model's limit, shown as a note on the section. A run fails before it starts only when the token count is exact. When the count is an estimate, a run over the limit warns and runs |
+| Chunk size for stored output | First text at once. After that, 96 characters or 80 ms, whichever comes first. Always flushed before the terminal event |
+| Embedded secrets store | A separate IndexedDB database, `committee-secrets`, opened only in the Worker |
+| Wording for the concurrency hold | "Waiting for a free slot". It is shown only after the scheduler records `directive-slot-held`, which happens when the limit actually holds ready work. Until then the status reads "Responding…" |
+| Stage that assigns fragments their chain and target | Atomic message: the gate. Composite: one further batched decision call after decomposition, with one question set per fragment |
+| Superseded-input detection | Three kinds of replaced input: a replaced result, an unread correction to a brief the run read, and a replaced session-wide requirement. Each is detected by comparing the run's recorded context with current state. There is no estimate of whether the result would change |
 
-| From | Item | Done |
-|---|---|---|
-| architect | Worker entry with the lock and `standby`; `client.ts`; `system.ts`; `core-fakes.test.ts`; second-tab e2e; this file | Yes |
-| providers | Re-export the scripted fakes from `@committee/providers` | Yes (`export * from '@committee/core/testing'`); the production Worker bundle contains none of them |
-| providers | Worker builds providers with `getKey` over the secrets store and the default `fetch` | Yes |
-| storage | `core-fakes.test.ts` imports from `./conformance` | Yes: 26 tests pass on core's fakes |
-| storage | Open storage after taking the lock | Yes |
-| storage, architect | Record the `@committee/storage/conformance` sub-entry in PLAN | Yes (PLAN §3) |
-| storage | Web Worker safety only checked indirectly | Now checked: IndexedDB runs in a real Chromium Worker in every e2e flow |
-| core-routing | Live corpus smoke test in providers, with the real decomposer as a second run | Yes: `packages/providers/src/routing-corpus.smoke.test.ts`, floors 0.85 and 0.75 |
-| core-engine, core-recovery | Record their decisions in PLAN | Yes (PLAN §7, "Decisions made by core-engine and core-recovery") |
-| core-recovery | Note the seven findings here | Yes (above) |
-| ui-debug | Add `genealogy-marks` to PLAN §4; list the new cases and `fixture-support` in the web README | Yes |
-| ui-debug | Confirm a started node's `parents` are the nodes read | Yes: the genealogy projection uses the attempt's recorded parents (`startedParents`) once a node has started |
-| ui-debug | Confirm `OperationView.statusText` follows `status` | Yes: projections are pure functions of state, recomputed on every step |
-| ui-debug | Confirm the split link calls `openCompare(originalMessageId)` | Yes (`message-row.tsx`) |
-| ui-transcript | `@source` for Streamdown in `index.css` | Yes; code blocks and tables now render with Streamdown's chrome (`11-markdown-*`) |
-| ui-foundation | Remove `next-themes` | Yes |
-| ui-foundation | Live key validator, environment key and the shell on the Worker never exercised | Now exercised by `invalidKey`, setup and every flow |
-| ui-transcript | Remove `src/app/stand-ins.tsx` | Not done: the shell imports it as the fallback when a feature is missing; it costs nothing while the features exist |
-| ui-transcript | `font-synthesis` and an italic face | Not done: a type decision for ui-foundation, not a defect |
-| ui-foundation | Fixture builder: one ID for a shared requirement across fragments | Not done: a fixture-builder feature, not needed by the running app |
-| all UI agents | Run `review-animations` | Not done: the skill cannot be invoked from an agent session. Needs a person to run `/review-animations` on `src/app/key-prompt.tsx`, `src/features/transcript`, `composer`, `association` and `src/features/debug` |
+## Review rounds
 
-## Open issues
+There were three review rounds after the contract and recovery reviews. Each review was read-only. One core fixer and one web fixer applied the fixes.
 
-- **"Waiting for a free slot" while counting tokens.** A directive is `ready` between its release and `attempt-started` while its tokens are counted, and the transcript says "Waiting for a free slot" then even when a slot is free. The Worker now reads OpenRouter's model catalog at start, so the count is immediate in practice (the reload screenshot shows "Responding…"), but on a slow network the first run after a load can still show it briefly. A proper fix needs a state or event the protocol does not have.
-- **`Retry-After` in the browser.** OpenRouter's CORS headers do not expose `Retry-After`, so in the Worker a 429 or 503 falls back to the policy's backoff.
-- **Live routing quality.** 42/44 with the reference decompositions, 39/44 with the live decomposer: it misses explicit session-wide wording once, puts a fragment on a new chain twice where the label continues an existing one, and once does not ask a shared clarification. The thresholds were swept on the corpus in the second review and kept (PLAN §7).
-- **Plain text or Markdown.** Core's preamble asks the model to "Reply in plain text" while the transcript renders Markdown; models still often write Markdown, and sometimes do not when asked to.
-- **Order inside a reply group** follows first output unless routing finds an explicit order; "a function, then a table" came back table first (`11-markdown-*`).
-- **Bundle size.** The main chunk is 1.9 MB because Streamdown's plugins are bundled; nothing besides the gallery is code-split.
-- **The e2e flows are live** and so not deterministic in timing: `overtaking` reports which of the two allowed outcomes it saw (overtaken in every run so far), and each wait has a generous timeout. There is no scripted-provider mode for the Worker.
-- **Not checked end to end:** clarification questions, target-ambiguity and choice-with-default panels, Undo split, join chains. They are covered by core and component tests only.
-- Motion has not had the `review-animations` pass (above).
+### Recovery review (before round 1)
+
+All seven findings were confirmed and fixed in `86fb27c`, with tests in `core/src/recovery/acceptance/review.test.ts`:
+
+- Released but unstarted work waits again for a revised prerequisite.
+- A redo chain releases held work only after the chosen redos.
+- Later work waits for a replacement still in flight.
+- A re-formed join-back keeps a late-retried member's marker.
+- Join-backs descend from the replacement node.
+- A second revision rewinds to the last finished answer.
+- "Redid … by default" appears only on work that was in flight.
+
+### Round 1: 36 findings. Fixed in `75053ff`, `71eb23e` (core) and `7dada48` (web)
+
+**Core and routing: 17 fixed.**
+
+- **Second sibling group at a non-tip node (blocker).** Its join-back landed on a chain that had moved on. It now forks onto a branch chain.
+- **Join-chain parents.** They are always the current leaves (C20). A parent still in flight is waited for.
+- **Work on a group member.** Work that consumes a member is placed under that member. Work that builds on one member and waits for another depends on the whole group.
+- **Barrier deadlock (blocker).** The barrier deadlocked a sequential composite; that is fixed.
+- **Requirement change plus a question (blocker).** The question was lost. It is now kept, through a new unit question `asks`.
+- **Undo split.**
+  - It ends after an inferred revision.
+  - It ends after a split's clarification is answered.
+- **Requirement revisions.**
+  - Unaffected running work is no longer stopped.
+  - Every reader of the old requirement is offered in the choice with default (`CandidateWork.consumedRequirements`).
+  - Replacing a requirement needs corrective wording.
+- **Weak targets.** A lone weak target is elicited unless something else places the unit with confidence.
+- **Composite target choice.** Parts keep their own clear targets.
+- **Barrier queue item.** A barrier-held queue item names the part it waits for.
+- **Stop.** Stop on started work waiting for a slot records it as stopped.
+- **Routing retries.** Transient routing errors retry, through `routingRetryPlanner`.
+- **Context limit.** It is decided only on an exact count.
+- **Thresholds.** Swept live; the defaults are kept as the tuned values.
+
+**Web: 15 fixed.**
+
+- Answer line breaks are kept.
+- A retry after partial output no longer jumps.
+- Request Stop/Retry moved into the header and take no height.
+- A routing failure is a status line, not a failed mark.
+- Key prompt: it animates out; its first-run wording is stable; it scrolls on short viewports.
+- The elicitation modal has a height cap.
+- Queue items animate their height.
+- The countdown bar moves continuously.
+- Escape clears Focus while a modal is shown.
+- "Reply to this" moves focus to the message box.
+- Mini-map: edges no longer cross labels, and an overflow fade marks where it scrolls.
+- Dark chain colors are kept apart from the state colors.
+- Faint text contrast and touch hit areas are fixed.
+
+**Passed on:**
+
+- The phone-height operation graph drawer went to the web fixer and was fixed in round 2.
+- Focus on a fork and the prerequisite label were passed to core. Focus was fixed in round 3; the label is still open.
+
+### Round 2: 16 findings, 3 of them duplicates. Fixed in `05d08ce`, `24d8a5e` (core) and `dd2fecb` (web)
+
+**Core: 6 fixed.**
+
+- **C2 (blocker).** A follow-up ran with no context while its prerequisite was still being routed. Messages are now routed in submission order.
+- **T3.** A reply's target superseded during routing is redirected when the plan is applied, and the transcript shows "Replying to the revised version".
+- **"Also give me luxury options".** Sent as a reply to running work that starts its chain, it now waits for that work and continues from it. This is a deviation from 05's table, which says such work runs at once. PLAN §2, repair 0, records it.
+- **Regenerate after "Continue without".** The new run waits for the rerun of the waived work.
+- **Choice-with-default holds.** Held work keeps its queue item and its recovery choice.
+- **R3/R4 (blocker).** Work waiting for a slot before a retry now follows a revised prerequisite.
+
+**Web: 5 fixed.**
+
+- Focus preview no longer changes layout.
+- The phone drawer height is capped, with a 144 px minimum for the transcript.
+- A single answer is named in its header, and a queue item's prerequisite links to its section.
+- A group with only one outcome has no header count.
+- The collapsed excerpt is plain text.
+
+**Left for round 3:**
+
+- **Focus on a fork.** Fixed in round 3.
+- **Stale choice-with-default option.** Fixed by the final gate.
+- **Label mismatch.** Still open.
+
+### Round 3: 26 findings. Fixed in `9cdb30b` (core) and `41ebb27` (web), then the final gate
+
+**Core: 11 fixed.**
+
+- **T3.** "Reply to this" stays on superseded sections.
+- **C10.** Restarted work descends from the current join-back.
+- **C19.** A weak referent that would change placement is elicited, not added silently.
+- **Free-slot status.** "Waiting for a free slot" appears only when the limit really holds the work (`directive-slot-held`).
+- **`plannedGroupIds`.** It is projected for not-started dependents of open groups.
+- **Superseded link text.** It names the cause of the supersession.
+- **Operation graph.** Edges go to the members a closed group still waits for, and to cancelled prerequisites.
+- **Focus.**
+  - It credits the marker section that was actually read.
+  - It highlights consumed corrections.
+  - It keeps superseded sections as the chain's own.
+  - It counts a run on its node's current chain.
+- **"New conversation".** It reopens an existing empty conversation instead of storing another.
+
+**Web: 4 fixed.**
+
+- The empty-state "New conversation" button opens what it creates.
+- There is no Failed mark while a retry or a rate-limit wait is pending.
+- Candidate excerpts are plain text.
+- 32 distinct chain colors.
+
+`playwright` is declared as a dev dependency.
+
+**Fixed by the final gate:**
+
+- **Superseded link text (web).** The superseded row now renders the projection's `linkText` ("See the regenerated version", and so on) instead of the fixed "See the revision".
+- **Stale choice-with-default option.** This was a round-2 finding that was still present. Work the user stops or cancels during the wait is dropped from the options. Cancelled work never gets "Redid … by default". The test is `choice with default · work stopped by the user during the wait leaves the choice and is never "Redid … by default"`.
+- **Root README.** It is added.
+
+**Left open:** see "Known gaps" below.
+
+### Final gate
+
+- `pnpm --filter @committee/web lint` exited 1. The e2e helpers `useCheapModels` and `useEnvironmentKey` tripped `rules-of-hooks`. They are renamed `applyCheapModels` and `applyEnvironmentKey`; the affected flows were rerun and pass.
+- The e2e screenshots were regenerated by this run.
+
+## How to run
+
+```sh
+pnpm install
+pnpm dev                                          # http://localhost:5173; key prompt on first open
+pnpm typecheck
+pnpm test                                         # unit (node) and web (jsdom) projects
+pnpm vitest run --project unit packages/core      # one package
+pnpm vitest run --project web packages/web
+pnpm --filter @committee/web lint
+pnpm build
+OPENROUTER_KEY=… pnpm smoke                       # live provider tests and the routing corpus
+OPENROUTER_KEY=… pnpm dev                         # then, in another shell:
+COMMITTEE_URL=http://localhost:5173/ pnpm e2e     # all flows; or name some: pnpm e2e corrective reload
+```
+
+On the dev server, `/?fixtures` opens the fixture gallery.
+
+## Known gaps
+
+**Routing (live model)**
+
+- **J request on one sibling (round 3, blocker; open).** Placing the spec's J request ("an itinerary from the neighborhoods and the activities") depends on Jev scoring both siblings. When the second referent scores below the 0.25 ambiguity floor, or "refers to several" is answered no, J is placed on one sibling and reads only that one.
+  - The round-3 coverage rule (`referentCovered`) admits a second sibling only when it is above the floor and the several-sections answer is yes.
+  - The corpus has no example with live-style titles for this case.
+  - A fix needs routing work and a corpus run, not a small change.
+- **Follow-up naming two sections (round 3, major; open).** It is not inferred as multi-target and raises the target-ambiguity modal instead. Same cause and same remedy as the J request.
+- **Corpus scores.** 42/44 with reference decompositions and 39/44 with the live decomposer. The corpus is too small to separate threshold values within each plateau. The round-3 C19 change was not re-run against the live corpus beyond `pnpm smoke`'s floor, which passes.
+- **No "none of these" for a single candidate.** The single-candidate target-ambiguity modal has no "Not about an earlier answer" option. The protocol's answer needs at least one section.
+- **Routing order.** A message waiting on a routing retry, for example after a 429 under Persistent, holds back routing of every later message in its conversation. The bubble shows the earlier message's routing status, but there is no indicator on the later ones.
+- **Undo split while a later message routes.** When an earlier message is re-routed by Undo split while a later one is already being routed, the later one is not routed again.
+
+**Projections and UI**
+
+- **Two names for one piece of work (open since round 1).** The generated label never reaches the section title or the chain label. A queue item or recovery button may say "backwards clock repair" while the section heading shows the provisional "Write a 350-word short story about…". The queue item's link still leads to the right section.
+- **Late-retry rail color (round 3, minor).** After a late retry, the member's section and rail may move to the base chain's color. This was not re-verified after round 3's change, which attributes each run to its node's chain.
+- **Run inspector ancestry order (round 3, minor; open).** "Context ancestry, root first" lists the join-back before the member nodes it is a child of (`ConsumedContext.nodeIds` order).
+- **Planned edges in the mini-map.** The mini-map does not draw `plannedGroupIds` edges yet. A not-started dependent of an open group still appears as a root, although core projects the field.
+- **Two Retry buttons on a routing failure.** One is in the message header, one under the failure text, and both send the same command.
+- **Motion review.** Motion has not had the `review-animations` pass; the skill cannot be invoked from an agent session. Queue items animate `height`, which is a deliberate exception.
+- **Light-theme colors.** Chain 1 is 0.050 OKLab from `--warning`. Faint and muted ink are close together.
+- **Chain colors past the eighth** use CSS relative color syntax, which needs a current browser.
+- **Bundle size.** The main chunk is 1.9 MB. Nothing besides the gallery is code-split.
+- **Plain text or Markdown.** Core's preamble asks for plain text while the transcript renders Markdown. Models mix the two.
+
+**Providers and runtime**
+
+- **`Retry-After` is ignored in the browser.** OpenRouter's CORS headers do not expose it, so a 429 or 503 in the Worker falls back to the policy's backoff.
+- **Routing retry count resets on restart.** It is held in memory, so after a restart a message still routing starts again with a fresh count.
+
+**Tests**
+
+- **The e2e flows are live.** They are therefore not deterministic in timing. There is no scripted-provider mode for the Worker (round 3, minor; open).
+- **Not exercised in a browser:** clarifications, the target-ambiguity and choice-with-default panels, Undo split and join chains.

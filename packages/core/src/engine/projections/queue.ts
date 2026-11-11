@@ -93,7 +93,10 @@ export function queueProjection(s: ConversationState, m: Memo): QueueProjection 
           id,
           revisionMessageId: record.revisionMessageId,
           correction: revision?.correction ?? '',
-          options: record.options.map((o) => ({ ...o, selected: o.locked || row.selected.includes(o.directiveId) })),
+          // Work the user stopped or cancelled during the wait is no longer part of the choice: it is not redone by default.
+          options: record.options
+            .filter((o) => !endedByUser(s.directives[o.directiveId]?.state))
+            .map((o) => ({ ...o, selected: o.locked || row.selected.includes(o.directiveId) })),
           deadlineAt: record.deadlineAt,
           waitMs: Math.max(0, record.deadlineAt - row.raisedAt),
         })
@@ -117,4 +120,9 @@ export function queueProjection(s: ConversationState, m: Memo): QueueProjection 
     }
   }
   return { items, elicitations }
+}
+
+/** Ended deliberately by the user (Stop or Cancel): such work is never redone by a default. */
+export function endedByUser(state: DirectiveRow['state'] | undefined): boolean {
+  return state === 'cancelled' || state === 'stopped'
 }

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import type { ElicitationId, ElicitationView } from '@committee/protocol'
+import type { ElicitationId, ElicitationView, SectionId } from '@committee/protocol'
 import { answer, say } from '../../testing'
 import { expectRebuildable, type Scenario } from '../../engine/acceptance/helpers'
 import { BRIEF, inputOf, recoveryScenario, revise, sectionOf } from './helpers'
@@ -153,6 +153,22 @@ describe('choice with default', () => {
     redone = sectionOf(await s.snap(), s, 'itinerary')
     expect(redone.state).toBe('completed')
     expect(redone.notes).toEqual([{ kind: 'redone-by-default', text: 'Redid itinerary by default', elicitationId: expect.any(String) }])
+  })
+
+  test('choice with default · work stopped by the user during the wait leaves the choice and is never "Redid … by default"', async () => {
+    const s = await briefAndConsumers([say(10, 'Day 1'), say(60_000, ' …')])
+    await revise(s, FOUR_DAYS, SHARED)
+    expect(choiceOf((await s.snap()).queue.elicitations).options.map((o) => o.label)).toContain('itinerary')
+    await s.t.send({ type: 'stop', conversationId: s.c, target: { kind: 'section', sectionId: s.d('itinerary').sectionId as SectionId } })
+    const state = s.d('itinerary').state
+    expect(state === 'cancelled' || state === 'stopped').toBe(true)
+    const views = (await s.snap()).queue.elicitations
+    const choice = views.find((v) => v.kind === 'choice-with-default')
+    if (choice?.kind === 'choice-with-default') expect(choice.options.map((o) => o.label)).not.toContain('itinerary')
+    await s.t.advance(30_100)
+    expect(s.d('itinerary').state).toBe(state)
+    const notes = sectionOf(await s.snap(), s, 'itinerary').notes
+    expect(notes.filter((n) => n.kind === 'redone-by-default')).toEqual([])
   })
 
   test('choice with default · a wait that elapsed while nothing ran is carried out on start', async () => {

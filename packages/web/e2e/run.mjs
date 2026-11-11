@@ -24,8 +24,8 @@ import {
   shot,
   sleep,
   until,
-  useCheapModels,
-  useEnvironmentKey,
+  applyCheapModels,
+  applyEnvironmentKey,
   waitReady,
 } from './lib.mjs'
 
@@ -276,7 +276,7 @@ async function invalidKey({ browser }) {
     await save.click()
     await save.waitFor({ state: 'detached', timeout: 15_000 })
     await context.unroute('https://openrouter.ai/api/v1/key')
-    await useCheapModels(page)
+    await applyCheapModels(page)
     await newConversation(page)
     await send(page, 'Hello, what is 3 + 4?')
     await until(page, () => /401|User not found|No auth|invalid|not valid|Unauthorized/i.test(document.querySelector('[data-response-id]')?.textContent ?? ''), undefined, {
@@ -291,7 +291,7 @@ async function invalidKey({ browser }) {
     await page.getByRole('button', { name: 'Settings', exact: true }).click()
     await page.getByRole('tab', { name: 'Key' }).click()
     await page.getByRole('button', { name: /Replace/ }).click()
-    await useEnvironmentKey(page)
+    await applyEnvironmentKey(page)
     if (await page.getByRole('tab', { name: 'Key' }).isVisible()) await page.keyboard.press('Escape')
     const retry = page.getByRole('button', { name: /Retry/ }).first()
     await retry.click()
@@ -309,8 +309,8 @@ async function secondTab({ browser }) {
   try {
     const first = await open(context, 'first-tab')
     await waitReady(first.page)
-    await useEnvironmentKey(first.page)
-    await useCheapModels(first.page)
+    await applyEnvironmentKey(first.page)
+    await applyCheapModels(first.page)
     await newConversation(first.page)
     await send(first.page, 'Write a 400-word description of a thunderstorm over the sea, in four paragraphs.')
     await until(first.page, () => document.querySelector('[data-section-id][data-state="streaming"]') !== null, undefined, {
@@ -456,8 +456,8 @@ async function main() {
       const context = await freshContext(browser)
       const { page } = await open(context, 'main')
       await waitReady(page)
-      await useEnvironmentKey(page)
-      await useCheapModels(page)
+      await applyEnvironmentKey(page)
+      await applyCheapModels(page)
       await shot(page, '00-key-and-models-set')
       for (const name of sharedNames) {
         console.log(`▶ ${name}`)
