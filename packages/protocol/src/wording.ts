@@ -32,6 +32,11 @@ export const WORDING = {
   supersededPartial: 'Superseded — revised below',
   /** Build choice: mark on finished work that was superseded. */
   supersededFinished: 'Superseded',
+  /** Build choice: link from superseded work to what replaced it, by what replaced it (glossary: Regenerate is not a revision). */
+  seeRevision: 'See the revision',
+  seeRegenerated: 'See the regenerated version',
+  seeRedone: 'See the redone version',
+  seeRestarted: 'See the restarted version',
   /** Note on a reply aimed at a superseded section (Q43). */
   replyingToRevised: 'Replying to the revised version',
   /** Failure message for exhausted credits (HTTP 402). */

@@ -24,6 +24,7 @@ import {
   type SectionStatus,
   type SectionView,
   type SplitView,
+  type SupersessionCause,
   type TranscriptItemRef,
   type TranscriptProjection,
 } from '@committee/protocol'
@@ -36,6 +37,7 @@ import {
   sectionState,
   unfinishedOutcome,
 } from '../queries'
+import { resolveTargets } from '../candidates'
 import { startedInSection } from '../lifecycle'
 import type { ConversationState, DirectiveRow, SectionRow } from '../state'
 import { shareRecord, type Memo } from './tracking'
@@ -401,7 +403,9 @@ function sectionStatus(s: ConversationState, d: DirectiveRow): SectionStatus | n
     case 'paused':
       return { kind: 'paused', text: d.pause ? pausedText(d.pause.cause) : WORDING.awaitingAnswer }
     case 'ready':
-      return { kind: 'waiting-for-slot', text: WORDING.waitingForSlot }
+      // Ready work is only "waiting for a free slot" once the scheduler found every slot taken; until
+      // then it is about to start (its tokens are being counted).
+      return d.slotHeld ? { kind: 'waiting-for-slot', text: WORDING.waitingForSlot } : { kind: 'responding', text: WORDING.responding }
     case 'awaiting-elicitation':
       return { kind: 'awaiting-answer', text: WORDING.awaitingAnswer }
     default:
@@ -453,6 +457,7 @@ function sectionView(s: ConversationState, m: Memo, id: SectionId): SectionView 
       markText: section.supersession.wasFinished ? WORDING.supersededFinished : WORDING.supersededPartial,
       replacementSectionId: replacementId,
       replacementResponseId: replacementId ? (s.sections[replacementId]?.responseId ?? null) : null,
+      linkText: supersededLinkText(section.supersession.cause),
     }
   }
 
@@ -471,7 +476,7 @@ function sectionView(s: ConversationState, m: Memo, id: SectionId): SectionView 
     directiveState: d.state,
     placement,
     status,
-    chainId: current ? d.chainId : (latest?.chainId ?? section.openedOnChainId),
+    chainId: current ? d.chainId : ((latestId ? attemptChain(s, latestId) : null) ?? section.openedOnChainId),
     attemptIds,
     failure: state === 'failed' ? (latest?.failure ?? null) : null,
     superseded,
@@ -480,13 +485,32 @@ function sectionView(s: ConversationState, m: Memo, id: SectionId): SectionView 
     asksElicitationId: d.asksElicitationId,
     operationId: section.operationId,
     actions: {
-      reply: section.supersession === null && (d.kind === 'answer' || elicitation?.status === 'open' || elicitation === undefined),
+      // A superseded section keeps "Reply to this" while it has a current version: the reply targets
+      // the replacement and says so (Q43, T3, 06 · "The user replies to the superseded A afterwards").
+      reply:
+        (section.supersession === null || resolveTargets(s, [id]).sectionIds.length > 0) &&
+        (d.kind === 'answer' || elicitation?.status === 'open' || elicitation === undefined),
       stop: current && startedInSection(s, d),
       retry: current && unfinishedOutcome(d.state) !== null,
       regenerate: current && d.state === 'completed' && (section.supersededInputs?.inputs.length ?? 0) > 0,
     },
   }
   void m
+}
+
+/** The link from superseded work to its replacement names what replaced it: Regenerate is not a revision (glossary). */
+function supersededLinkText(cause: SupersessionCause): string {
+  switch (cause.kind) {
+    case 'revision':
+    case 'prerequisite-revised':
+      return WORDING.seeRevision
+    case 'regenerate':
+      return WORDING.seeRegenerated
+    case 'redo':
+      return WORDING.seeRedone
+    case 'undo-split':
+      return WORDING.seeRestarted
+  }
 }
 
 /**
@@ -607,10 +631,15 @@ function chainsMap(s: ConversationState, m: Memo): TranscriptProjection['chains'
 }
 
 /**
- * Inheritance-aware Focus (09 §2): `own` is what the chain handled;
- * `inherited` is every message and section in the exact ancestry its runs
- * consumed, read from the attempts' consumed-context records. Work added to
- * a source chain later is in neither list.
+ * Inheritance-aware Focus (09 §2): `own` is what the chain handled — the
+ * current sections of its directives, every section (superseded ones too,
+ * kept as history, 01 principle 1) whose attempts ran on it, and the
+ * corrections aimed at its work; `inherited` is every message and section
+ * in the exact ancestry its runs consumed, read from the attempts'
+ * consumed-context records: the answer read, the section that held a
+ * marker when the run started (never the directive's later section), and
+ * every correction the run read. Work added to a source chain later is in
+ * neither list.
  */
 function chainAssociation(s: ConversationState, chainId: ChainId): ChainAssociation {
   const chain = s.chains[chainId]
@@ -622,26 +651,43 @@ function chainAssociation(s: ConversationState, chainId: ChainId): ChainAssociat
   const add = <T>(list: T[], item: T): void => {
     if (!list.includes(item)) list.push(item)
   }
+  const shown = (sectionId: SectionId): boolean => {
+    const section = s.sections[sectionId]
+    return section !== undefined && !sectionDropped(section)
+  }
   for (const id of s.directiveOrder) {
     const d = s.directives[id]
-    if (!d || d.state === 'superseded') continue
-    if (d.chainId === chainId && d.sectionId) {
+    if (!d) continue
+    if (d.state !== 'superseded' && d.chainId === chainId && d.sectionId) {
       add(ownMessages, d.messageId)
-      const section = s.sections[d.sectionId]
-      if (section && !sectionDropped(section)) add(ownSections, d.sectionId)
+      if (shown(d.sectionId)) add(ownSections, d.sectionId)
     }
     for (const attemptId of d.attemptIds) {
       const attempt = s.attempts[attemptId]
-      if (!attempt || attempt.chainId !== chainId) continue
+      if (!attempt || attemptChain(s, attemptId) !== chainId) continue
+      add(ownMessages, d.messageId)
+      if (shown(attempt.sectionId)) add(ownSections, attempt.sectionId)
       for (const input of attempt.context.inputs) {
         const source = s.directives[input.directiveId]
         if (!source) continue
         add(inheritedMessages, source.messageId)
         // Only an answer that was read, or the marker of work that ended unfinished, is credited (C3):
         // a run that read only the request of work still in flight never consumed its answer.
-        const read = input.attemptId ? s.attempts[input.attemptId]?.sectionId : input.marker !== null ? source.sectionId : null
+        const read = input.attemptId ? s.attempts[input.attemptId]?.sectionId : input.marker !== null ? markerSection(s, attemptId, source) : null
         if (read) add(inheritedSections, read)
       }
+      for (const messageId of attempt.context.corrections) add(inheritedMessages, messageId)
+    }
+  }
+  // A correction is part of the work it corrects (04 · item 3).
+  for (const messageId of s.messageOrder) {
+    const message = s.messages[messageId]
+    if (!message) continue
+    for (const directiveId of message.revisedDirectiveIds) {
+      const d = s.directives[directiveId]
+      if (!d) continue
+      const ranHere = d.chainId === chainId || d.attemptIds.some((a) => attemptChain(s, a) === chainId)
+      if (ranHere) add(ownMessages, messageId)
     }
   }
   return {
@@ -650,13 +696,55 @@ function chainAssociation(s: ConversationState, chainId: ChainId): ChainAssociat
     colorIndex: chain.colorIndex,
     label: chain.label,
     focus: {
-      own: { messageIds: ownMessages, sectionIds: ownSections },
+      own: { messageIds: ownMessages.filter((id) => messageVisible(s, id)), sectionIds: ownSections },
       inherited: {
         messageIds: inheritedMessages.filter((id) => !ownMessages.includes(id) && messageVisible(s, id)),
         sectionIds: inheritedSections.filter((id) => !ownSections.includes(id) && s.sections[id] !== undefined),
       },
     },
   }
+}
+
+/**
+ * The chain a run belongs to: its node's chain. A member that started on the
+ * base chain and became a fork when a sibling arrived (Q89) ran as that fork.
+ */
+function attemptChain(s: ConversationState, attemptId: AttemptId): ChainId | null {
+  const attempt = s.attempts[attemptId]
+  if (!attempt) return null
+  return s.nodes[attempt.nodeId]?.chainId ?? attempt.chainId
+}
+
+/**
+ * The section that held the marker a run read: the section of the source's
+ * last attempt started before the run, on the node the run read; for work
+ * that never started, the section the source had while that node was its
+ * current one. Never the source's section of today, which may be a
+ * replacement the run never saw (C10).
+ */
+function markerSection(s: ConversationState, readerAttemptId: AttemptId, source: DirectiveRow): SectionId | null {
+  const reader = s.attempts[readerAttemptId]
+  if (!reader) return null
+  let nodeId: string | null = null
+  for (const message of reader.context.messages) {
+    if (message.origin.kind === 'unfinished-exchange' && message.origin.directiveId === source.id) nodeId = message.origin.nodeId
+  }
+  let best: SectionId | null = null
+  for (const attemptId of source.attemptIds) {
+    const attempt = s.attempts[attemptId]
+    if (!attempt || attempt.startedSeq >= reader.startedSeq) continue
+    if (nodeId !== null && attempt.nodeId !== nodeId) continue
+    best = attempt.sectionId
+  }
+  if (best !== null) return best
+  // Never started (cancelled before it ran): the node read is still current, so is its section;
+  // otherwise the node was replaced since, and the section read is the one superseded with it.
+  if (nodeId === null || source.nodeId === nodeId) return source.sectionId
+  for (const sectionId of source.sectionIds) {
+    const section = s.sections[sectionId]
+    if (section?.supersession) return sectionId
+  }
+  return source.sectionId
 }
 
 export { shareRecord }

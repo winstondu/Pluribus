@@ -63,6 +63,11 @@ export function resolveUnitTargets(
      * Otherwise it would start a new chain and silently lose what the reply may refer to.
      */
     readonly placedWithoutTarget: boolean
+    /**
+     * Whether a section below `targetChoice` may join the clear targets without asking: it changes
+     * neither the handling chain nor the placement they give (see `referentCovered`).
+     */
+    readonly covered: (accepted: readonly SectionId[], weak: SectionId) => boolean
   },
 ): TargetResolution {
   const ranked = [...signals.targets].sort((a, b) => b.confidence - a.confidence)
@@ -78,9 +83,27 @@ export function resolveUnitTargets(
   }
   const inferred = ranked.filter((t) => t.confidence >= thresholds.targetChoice).map((t) => t.id)
   if (inferred.length > 0) {
-    // A message that plainly refers to several sections names a clear one and further ones the model scores lower (Q20).
+    // A message that plainly refers to several sections names a clear one and further ones the model
+    // scores lower (Q20). A further one below `targetChoice` is taken without asking only when it
+    // changes nothing about where the work runs (a second sibling read through the same join-back);
+    // one that would add a parent or make a join chain is a guess, and Committee never guesses
+    // silently: the user is asked (05, 11 · "Below the target-choice confidence threshold, Committee
+    // elicits the target").
     if ((signals.several ?? 0) >= thresholds.targetChoice) {
-      for (const t of ranked) if (t.confidence >= AMBIGUITY_FLOOR && !inferred.includes(t.id)) inferred.push(t.id)
+      const accepted = [...inferred]
+      let uncovered = false
+      for (const t of ranked) {
+        if (t.confidence < AMBIGUITY_FLOOR || accepted.includes(t.id)) continue
+        if (options.covered(accepted, t.id)) accepted.push(t.id)
+        else uncovered = true
+      }
+      if (uncovered && options.mayBeReply) {
+        return {
+          kind: 'ambiguous',
+          candidates: ranked.filter((t) => t.confidence >= AMBIGUITY_FLOOR).map((t) => ({ sectionId: t.id, confidence: t.confidence })),
+        }
+      }
+      return { kind: 'resolved', sectionIds: accepted, mode: 'inferred' }
     }
     return { kind: 'resolved', sectionIds: inferred, mode: 'inferred' }
   }
@@ -89,6 +112,28 @@ export function resolveUnitTargets(
     return { kind: 'ambiguous', candidates: weak.map((t) => ({ sectionId: t.id, confidence: t.confidence })) }
   }
   return { kind: 'resolved', sectionIds: [], mode: 'none' }
+}
+
+/**
+ * Whether a weakly scored referent is already covered by the accepted
+ * targets, so adding it changes neither the handling chain nor the
+ * placement: it is the same node, a member of the same sibling group as an
+ * accepted target (both are read through that group's join-back, on its
+ * base chain), or already in an accepted target's ancestry. A referent on
+ * another line — a branch from a sibling, an unrelated answer — is not.
+ */
+export function referentCovered(supplied: Supplied, accepted: readonly SectionId[], weak: SectionId): boolean {
+  const w = supplied.sectionById.get(weak)
+  if (!w || w.asksElicitationId) return false
+  const weakGroup = supplied.workById.get(w.directiveId)?.groupId ?? null
+  for (const id of accepted) {
+    const a = supplied.sectionById.get(id)
+    if (!a) continue
+    if (a.nodeId === w.nodeId) return true
+    if (weakGroup !== null && supplied.workById.get(a.directiveId)?.groupId === weakGroup) return true
+    if (isAncestorPoint(supplied, { kind: 'node', nodeId: w.nodeId }, { kind: 'node', nodeId: a.nodeId })) return true
+  }
+  return false
 }
 
 /**

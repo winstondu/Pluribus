@@ -6,7 +6,7 @@ import {
   type NodeView,
   type SiblingGroupView,
 } from '@committee/protocol'
-import { currentJoinBack, nodeParents } from '../queries'
+import { currentJoinBack, nodeParents, resolvePoint } from '../queries'
 import type { ConversationState, NodeRow } from '../state'
 import type { Memo } from './tracking'
 
@@ -107,6 +107,11 @@ function nodeView(s: ConversationState, id: NodeId): NodeView {
     label: d?.label ?? '',
     parents: nodeParents(s, node),
     parentsExact: node.startedParents !== null,
+    // Planned on a group with no join-back yet: drawn as a planned edge from the group, never a root.
+    plannedGroupIds:
+      node.startedParents !== null
+        ? []
+        : node.plannedParents.flatMap((p) => (p.kind === 'sibling-group' && resolvePoint(s, p) === null ? [p.groupId] : [])),
     state: exchangeState(s, node),
     reason: node.reason ?? 'initial',
     groupId: node.groupId,

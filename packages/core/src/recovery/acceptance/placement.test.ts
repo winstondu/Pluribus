@@ -42,9 +42,11 @@ describe('placement after supersession, failure and retry', () => {
       markText: WORDING.supersededPartial,
       replacementSectionId: t.d('neighborhoods').sectionId,
       replacementResponseId: sectionOf(snap, t, 'neighborhoods').responseId,
+      linkText: WORDING.seeRevision,
     })
     expect(snap.transcript.attempts[old?.attemptIds[0] ?? '']).toMatchObject({ text: 'Gion is', collapsed: true, markText: WORDING.supersededPartial })
-    expect(old?.actions.reply).toBe(false)
+    // "Reply to this" stays: a reply to it targets the replacement (T3, 06 · edge cases).
+    expect(old?.actions.reply).toBe(true)
     expect(snap.transcript.order[position]).toEqual(before.transcript.order[position])
 
     // Finished: stays, marked superseded, linked.

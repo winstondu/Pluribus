@@ -353,6 +353,16 @@ export interface SectionView {
     readonly markText: string
     readonly replacementSectionId: SectionId | null
     readonly replacementResponseId: ResponseId | null
+    /**
+     * Text of the link to the replacement, by what superseded the section:
+     * "See the revision" for a revision (of this work or of an input it was
+     * running on), "See the regenerated version" for Regenerate, "See the
+     * redone version" for a redo, "See the restarted version" after Undo
+     * split. Regenerate is never called a revision (glossary). Always set by
+     * the backend; optional only so hand-written fixtures may leave it out
+     * (the client then falls back to "See the revision").
+     */
+    readonly linkText?: string
   } | null
   /** The section this one replaces, for the back link. */
   readonly replacesSectionId: SectionId | null
@@ -363,8 +373,12 @@ export interface SectionView {
   readonly operationId: OperationId
   /**
    * Which controls to offer. The client shows exactly these.
-   * - `reply`: "Reply to this". False for superseded sections, which are
-   *   not targets for new work (Q43), and for dropped ones.
+   * - `reply`: "Reply to this". Offered on superseded sections too while
+   *   they have a current version: the reply targets the replacement and
+   *   says "Replying to the revised version" (Q43, T3; 06 · "The user
+   *   replies to the superseded A afterwards"). False for a section with no
+   *   current version (Undo split) and for a clarification question that is
+   *   no longer open.
    * - `stop`: the section's work has started and has not settled: running,
    *   between automatic retries, or waiting for capacity (10: "each
    *   running section"). Work that has not started is stopped through its
@@ -584,6 +598,14 @@ export interface ExchangeNodeView {
    */
   readonly parents: readonly NodeId[]
   readonly parentsExact: boolean
+  /**
+   * Sibling groups the node is planned on that have no join-back yet (the
+   * group is still open), so `parents` cannot name a node. The mini-map
+   * draws a dashed "planned" edge from the group's oval, never a new root
+   * (09 §1). Always set by the backend; optional only for hand-written
+   * fixtures.
+   */
+  readonly plannedGroupIds?: readonly SiblingGroupId[]
   readonly state: NodeState
   readonly reason: NodeReason
   /** The sibling group it is a member of, for the dotted oval (Q8). */

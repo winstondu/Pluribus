@@ -32,7 +32,7 @@ import type {
   RoutingPlan,
 } from '../ports'
 import { Batch, ask, type Answers } from './batch'
-import { AMBIGUITY_FLOOR, derivePlacement, neededWork, placedWithoutTarget, resolveUnitTargets, selected, validatePlan, type TargetMode } from './derive'
+import { AMBIGUITY_FLOOR, derivePlacement, neededWork, placedWithoutTarget, referentCovered, resolveUnitTargets, selected, validatePlan, type TargetMode } from './derive'
 import { askUnit, readUnit, sectionNumbers, type UnitScope, type UnitSignals } from './questions'
 import { describeState, supply, type Supplied } from './supply'
 
@@ -215,6 +215,7 @@ async function routeMessage(deps: Deps, input: RoutingInput, signal: CancelSigna
     fragment: false,
     mayBeReply: m.relation?.value !== 'new' || (m.corrective ?? 0) >= t.clearlyCorrective,
     placedWithoutTarget: placedWithoutTarget(m, t),
+    covered: (accepted, weak) => referentCovered(supplied, accepted, weak),
   })
   if (resolution.kind === 'ambiguous') return { kind: 'target-ambiguity', candidates: resolution.candidates }
   const targets = answerTargets(supplied, resolution.sectionIds)
@@ -365,6 +366,7 @@ async function routeComposite(deps: Deps, input: RoutingInput, signal: CancelSig
       fragment: true,
       mayBeReply: s.relation?.value !== 'new' || (s.corrective ?? 0) >= t.clearlyCorrective,
       placedWithoutTarget: placedWithoutTarget(s, t),
+      covered: (accepted, weak) => referentCovered(supplied, accepted, weak),
     })
     if (resolution.kind === 'ambiguous') {
       for (const cand of resolution.candidates) ambiguous.set(cand.sectionId, Math.max(ambiguous.get(cand.sectionId) ?? 0, cand.confidence))

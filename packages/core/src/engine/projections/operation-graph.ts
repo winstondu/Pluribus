@@ -2,13 +2,16 @@ import {
   WORDING,
   pausedText,
   waitingText,
+  type AttemptId,
+  type ChainId,
+  type DirectiveId,
   type OperationGraphProjection,
   type OperationId,
   type OperationStatus,
   type OperationView,
   type PrerequisiteRef,
 } from '@committee/protocol'
-import { activeMembers, groupLabel, prerequisiteLabel, prerequisiteSatisfied, sectionState } from '../queries'
+import { activeMembers, groupLabel, prerequisiteLabel, prerequisiteSatisfied, sectionState, unfinishedBehind } from '../queries'
 import type { ConversationState, DirectiveRow } from '../state'
 import type { Memo } from './tracking'
 
@@ -54,11 +57,56 @@ export function operationGraphProjection(s: ConversationState, m: Memo): Operati
   return { operations: withDepth, active, retired }
 }
 
-function prerequisiteOperation(s: ConversationState, ref: PrerequisiteRef): OperationId | null {
-  if (ref.kind === 'sibling-group') return s.groups[ref.groupId]?.joinBackOperationId ?? null
-  const d = s.directives[ref.directiveId]
+/** The chain of a section's latest run: its node's chain, which follows a member that became a fork (Q89). */
+function latestChain(s: ConversationState, attemptId: AttemptId | null): ChainId | null {
+  const attempt = attemptId ? s.attempts[attemptId] : undefined
+  if (!attempt) return null
+  return s.nodes[attempt.nodeId]?.chainId ?? attempt.chainId
+}
+
+function directiveOperation(s: ConversationState, directiveId: DirectiveId): OperationId | null {
+  const d = s.directives[directiveId]
   const section = d?.sectionId ? s.sections[d.sectionId] : undefined
   return section?.operationId ?? null
+}
+
+/**
+ * The operations a prerequisite points at. An open group is its join-back
+ * operation. A closed group the dependent still waits for is the operations
+ * of its unfinished members — a failed member, or its late retry running in
+ * the member's section — because the join-back has formed and is retired:
+ * the edge goes to the work actually waited for (09 §4).
+ */
+function prerequisiteOperations(s: ConversationState, dependent: DirectiveRow, ref: PrerequisiteRef): OperationId[] {
+  if (ref.kind === 'directive') {
+    const op = directiveOperation(s, ref.directiveId)
+    return op ? [op] : []
+  }
+  const group = s.groups[ref.groupId]
+  if (!group) return []
+  if (group.state === 'closed' && !prerequisiteSatisfied(s, dependent, ref)) {
+    const ops = unfinishedBehind(s, dependent, ref).flatMap((id) => {
+      const op = directiveOperation(s, id)
+      return op ? [op] : []
+    })
+    if (ops.length > 0) return ops
+  }
+  return [group.joinBackOperationId]
+}
+
+/**
+ * True while current work waits on this directive's result, paused or
+ * queued: its operation stays on the graph so the edge to it is drawn.
+ */
+function awaitedByDependent(s: ConversationState, directiveId: DirectiveId): boolean {
+  for (const id of s.directiveOrder) {
+    const other = s.directives[id]
+    if (!other || (other.state !== 'paused' && other.state !== 'dependency-queued')) continue
+    for (const ref of other.prerequisites) {
+      if (unfinishedBehind(s, other, ref).includes(directiveId)) return true
+    }
+  }
+  return false
 }
 
 function sectionStatus(s: ConversationState, d: DirectiveRow, sectionId: string, current: boolean): { status: OperationStatus; text: string } {
@@ -72,7 +120,7 @@ function sectionStatus(s: ConversationState, d: DirectiveRow, sectionId: string,
     case 'awaiting-elicitation':
       return { status: 'awaiting-answer', text: WORDING.awaitingAnswer }
     case 'ready':
-      return { status: 'waiting-for-slot', text: WORDING.waitingForSlot }
+      return d.slotHeld ? { status: 'waiting-for-slot', text: WORDING.waitingForSlot } : { status: 'running', text: WORDING.responding }
     case 'waiting-for-capacity':
       return { status: 'waiting-for-capacity', text: WORDING.waitingForCapacity }
     case 'retrying':
@@ -142,26 +190,28 @@ function operationView(s: ConversationState, id: OperationId): OperationView {
   const dependsOn: OperationId[] = []
   const waitingFor: OperationId[] = []
   for (const ref of d.prerequisites) {
-    const op = prerequisiteOperation(s, ref)
-    if (!op || dependsOn.includes(op)) continue
-    dependsOn.push(op)
-    if (!prerequisiteSatisfied(s, d, ref) && current && ['dependency-queued', 'paused'].includes(d.state)) waitingFor.push(op)
+    const waiting = !prerequisiteSatisfied(s, d, ref) && current && ['dependency-queued', 'paused'].includes(d.state)
+    for (const op of prerequisiteOperations(s, d, ref)) {
+      if (!dependsOn.includes(op)) dependsOn.push(op)
+      if (waiting && !waitingFor.includes(op)) waitingFor.push(op)
+    }
   }
   const barrierWaitingFor: OperationId[] = []
   if (current && d.heldByBarrier) {
     for (const ref of d.waitingFor) {
-      const op = prerequisiteOperation(s, ref)
-      if (op && !barrierWaitingFor.includes(op)) barrierWaitingFor.push(op)
+      for (const op of prerequisiteOperations(s, d, ref)) if (!barrierWaitingFor.includes(op)) barrierWaitingFor.push(op)
     }
   }
   const chain = s.chains[d.chainId]
   const latest = section.attemptIds[section.attemptIds.length - 1] ?? null
-  const retired = !current || d.state === 'completed' || d.state === 'cancelled' || d.state === 'superseded'
+  // Cancelled work leaves the graph like completed work, unless a dependent is paused or queued on
+  // it: then the prerequisite of that recovery choice stays drawn, as a failed one does (09 §4).
+  const retired = !current || d.state === 'completed' || d.state === 'superseded' || (d.state === 'cancelled' && !awaitedByDependent(s, d.id))
   return {
     id,
     kind: chain?.kind === 'join' ? 'synthesis' : 'answer',
     label: d.label,
-    chainId: current ? d.chainId : (latest ? (s.attempts[latest]?.chainId ?? d.chainId) : section.openedOnChainId),
+    chainId: current ? d.chainId : latestChain(s, latest) ?? section.openedOnChainId,
     status,
     statusText: text,
     dependsOn,

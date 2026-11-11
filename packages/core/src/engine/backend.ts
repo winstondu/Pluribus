@@ -208,6 +208,8 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
   const runtimes = new Map<ConversationId, Runtime>()
   const live = new Map<AttemptId, LiveRun>()
   const starting = new Map<string, Prepared | null>()
+  /** Ready directives whose `directive-slot-held` step is queued but has not run yet. */
+  const slotHeldPending = new Set<string>()
   const timers = new Map<string, CancelTimer>()
   const routeTokens = new Map<string, number>()
   /** Routings that wait for an earlier message of their conversation to have a routing outcome (C2). */
@@ -651,7 +653,6 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
     if (disposed || !started) return
     const limit = Math.max(1, settings.concurrencyLimit)
     let used = live.size + starting.size
-    if (used >= limit) return
     // Submission order is the original message's, not the moment routing created the directive:
     // a message routed faster never jumps the queue (Q60).
     const ready: { runtime: Runtime; directiveId: DirectiveId; submittedAt: number; position: number; order: number }[] = []
@@ -679,11 +680,37 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
         a.position - b.position ||
         a.order - b.order,
     )
+    const held: (typeof ready)[number][] = []
     for (const item of ready) {
-      if (used >= limit) break
+      if (used >= limit) {
+        held.push(item)
+        continue
+      }
       used += 1
       prepareStart(item.runtime, item.directiveId)
     }
+    for (const item of held) markSlotHeld(item.runtime.id, item.directiveId)
+  }
+
+  /**
+   * Records that ready work is held only by the concurrency limit, once per
+   * time it becomes ready, so that "Waiting for a free slot" is shown only
+   * while every slot really is taken (Q60), never while the work is merely
+   * about to start.
+   */
+  function markSlotHeld(conversationId: ConversationId, directiveId: DirectiveId): void {
+    const key = startKey(conversationId, directiveId)
+    const d = runtimes.get(conversationId)?.state.directives[directiveId]
+    if (!d || d.state !== 'ready' || d.slotHeld || slotHeldPending.has(key)) return
+    slotHeldPending.add(key)
+    void stepLater(conversationId, (ctx) => {
+      slotHeldPending.delete(key)
+      const current = ctx.state.directives[directiveId]
+      if (!current || current.state !== 'ready' || current.slotHeld || starting.has(key)) return
+      if ([...live.values()].some((r) => r.conversationId === conversationId && r.directiveId === directiveId)) return
+      if (live.size + starting.size < Math.max(1, settings.concurrencyLimit)) return
+      ctx.emit({ type: 'directive-slot-held', directiveId })
+    })
   }
 
   function prepare(runtime: Runtime, directiveId: DirectiveId): Prepared | null {
@@ -929,6 +956,14 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
   async function handleAppCommand(command: Command): Promise<CommandResult> {
     switch (command.type) {
       case 'create-conversation': {
+        // A conversation with no message yet is opened instead of storing another empty one (10 ·
+        // "Conversation list"): the newest such conversation, whichever button asked.
+        for (const summary of conversations) {
+          const runtime = runtimes.get(summary.id)
+          if (runtime && runtime.state.throughSeq === 0 && runtime.state.messageOrder.length === 0) {
+            return { ok: true, output: { conversation: summary } }
+          }
+        }
         const conversationId = deps.ids.next('conversation')
         await appendApp([{ type: 'conversation-created', conversationId, title: 'New conversation' }])
         const state = emptyConversationState(conversationId)

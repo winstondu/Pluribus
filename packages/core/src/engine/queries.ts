@@ -92,7 +92,7 @@ export function currentJoinBack(state: ConversationState, groupId: SiblingGroupI
 export function resolvePoint(state: ConversationState, point: PointRef): NodeId | null {
   switch (point.kind) {
     case 'node':
-      return state.nodes[point.nodeId] ? point.nodeId : null
+      return currentJoinBackNode(state, point.nodeId)
     case 'directive':
       return state.directives[point.directiveId]?.nodeId ?? null
     case 'sibling-group': {
@@ -103,6 +103,26 @@ export function resolvePoint(state: ConversationState, point: PointRef): NodeId 
       return currentJoinBack(state, point.groupId)?.nodeId ?? null
     }
   }
+}
+
+/**
+ * A node point as it stands now. A join-back node replaced by a later
+ * formation of its group (a member was revised) resolves to the current
+ * formation: work that has not started yet reads the group's current record,
+ * so it descends from that record, never from the one holding the superseded
+ * member (09 §1, C10). Any other node is itself.
+ */
+export function currentJoinBackNode(state: ConversationState, nodeId: NodeId): NodeId | null {
+  let node = state.nodes[nodeId]
+  if (!node) return null
+  const seen = new Set<NodeId>()
+  while (node.kind === 'join-back' && node.replacedByNodeId !== null && !seen.has(node.id)) {
+    seen.add(node.id)
+    const next: NodeRow | undefined = state.nodes[node.replacedByNodeId]
+    if (!next) break
+    node = next
+  }
+  return node.id
 }
 
 /** A node's parents: exact once an attempt ran on it, otherwise its placement resolved as far as it can be. */
@@ -191,7 +211,7 @@ export function childrenInFlight(state: ConversationState, nodeId: NodeId): Dire
     // A join chain's node is not a continuation of any one source: its sources stay independently continuable (04).
     if (node.plannedParents.length !== 1) continue
     const named =
-      node.plannedParents.some((p) => p.kind === 'node' && p.nodeId === nodeId) ||
+      node.plannedParents.some((p) => p.kind === 'node' && resolvePoint(state, p) === nodeId) ||
       (node.startedParents?.length === 1 && node.startedParents[0] === nodeId)
     if (named) out.push(d)
   }

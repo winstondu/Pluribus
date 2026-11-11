@@ -502,6 +502,7 @@ const REDUCERS: ReducerTable = {
       nextOrigin: 'initial',
       retry: null,
       clarification: null,
+      slotHeld: false,
     }
     const next: ConversationState = {
       ...state,
@@ -557,7 +558,11 @@ const REDUCERS: ReducerTable = {
       pause: null,
       heldBy: null,
       retry: null,
+      slotHeld: false,
     })),
+
+  'directive-slot-held': (state, e) =>
+    withDirective(state, e.directiveId, (d) => (d.state === 'ready' && !d.slotHeld ? { ...d, slotHeld: true } : d)),
 
   'directive-cancelled': (state, e) => {
     const directive = state.directives[e.directiveId]

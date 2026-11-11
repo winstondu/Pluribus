@@ -317,6 +317,7 @@ describe('supersession, stop, routing, start and stream', () => {
       markText: WORDING.supersededPartial,
       replacementSectionId: replacement.indexes?.section,
       replacementResponseId: replacement.indexes?.response,
+      linkText: WORDING.seeRevision,
     })
     const partial = snap.transcript.attempts[indexes?.attemptIds[0] ?? '']
     expect(partial).toMatchObject({ state: 'superseded', collapsed: true, markText: WORDING.supersededPartial, text: 'Indexes are' })
@@ -324,7 +325,8 @@ describe('supersession, stop, routing, start and stream', () => {
     const joins = snap.transcript.sections[old('joins')]
     expect(joins?.superseded?.markText).toBe(WORDING.supersededFinished)
     expect(snap.transcript.attempts[joins?.attemptIds[0] ?? '']?.resultStatus).toBe('superseded')
-    expect(joins?.actions.reply).toBe(false)
+    // A superseded section keeps "Reply to this"; the reply resolves to the replacement (T3).
+    expect(joins?.actions.reply).toBe(true)
     // Replacements are new responses (P11), and A′ after a finished A sees A and the correction (06).
     expect(snap.transcript.responses[replacement.joins?.response ?? '']?.reason).toBe('revision-replacement')
     const joinsAgain = assembleContext(folded, s.id('joins'), replacement.joins?.node as NodeId, [])

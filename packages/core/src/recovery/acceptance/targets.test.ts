@@ -58,7 +58,9 @@ describe('reply targets after revisions', () => {
     expect(s.d('Make it shorter').targets).toEqual([replacement])
     const snap = await s.t.snapshot(s.c)
     expect(snap.transcript.messages[messageId]?.replyingTo).toMatchObject({ note: WORDING.replyingToRevised, targets: [{ sectionId: replacement }] })
-    // The superseded attempt stays visible but is not a target for new work.
-    expect(snap.transcript.sections[old]?.actions.reply).toBe(false)
+    // The superseded attempt stays visible but is not a target for new work: its "Reply to this"
+    // stays (10 · Controls, 06 · "The user replies to the superseded A afterwards") and a reply
+    // through it targets the replacement, as above.
+    expect(snap.transcript.sections[old]?.actions.reply).toBe(true)
   })
 })

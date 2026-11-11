@@ -478,6 +478,17 @@ export interface DirectiveReady extends ConversationEnvelope<'directive-ready'> 
 }
 
 /**
+ * Ready work the scheduler could not start because every slot of the
+ * concurrency limit is taken (Q60). Until this event a ready directive is
+ * only about to start (its input tokens are being counted), so its bubble
+ * never claims "Waiting for a free slot" while nothing else is running. The
+ * next `directive-ready` or `attempt-started` clears it.
+ */
+export interface DirectiveSlotHeld extends ConversationEnvelope<'directive-slot-held'> {
+  readonly directiveId: DirectiveId
+}
+
+/**
  * The directive was cancelled before it started (Q91): queued work inside a
  * stopped request, a Stop aimed at one section that had not started, or the
  * Cancel recovery choice. A state of its own; there is never a cancelled
@@ -964,6 +975,7 @@ export type ConversationEvent =
   | DirectivePaused
   | DirectiveHeld
   | DirectiveReady
+  | DirectiveSlotHeld
   | DirectiveCancelled
   | DirectiveStopped
   | DirectiveRevisedInPlace
@@ -1041,6 +1053,7 @@ export const CONVERSATION_EVENT_TYPES = [
   'directive-paused',
   'directive-held',
   'directive-ready',
+  'directive-slot-held',
   'directive-cancelled',
   'directive-stopped',
   'directive-revised-in-place',

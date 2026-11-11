@@ -104,7 +104,7 @@ export interface ConversationState {
   readonly operationOrder: readonly OperationId[]
 }
 
-export const STATE_VERSION = 1
+export const STATE_VERSION = 2
 
 export type Table<T> = { readonly [id: string]: T }
 
@@ -239,6 +239,11 @@ export interface DirectiveRow {
   readonly retry: { readonly at: number; readonly wait: 'backoff' | 'rate-limit'; readonly retryNumber: number } | null
   /** Set by the clarification that blocked it, once answered: read after the request (Q23). */
   readonly clarification: { readonly elicitationId: ElicitationId; readonly answerMessageId: MessageId } | null
+  /**
+   * While `ready`: the scheduler found every slot taken (`directive-slot-held`).
+   * False while it is only about to start. Reset by `directive-ready`.
+   */
+  readonly slotHeld: boolean
 }
 
 export interface AttemptRow {
