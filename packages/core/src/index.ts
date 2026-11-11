@@ -15,3 +15,4 @@
  * it, so they compile and test without loading the engine.
  */
 export * from './ports'
+export * from './engine'
