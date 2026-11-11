@@ -39,11 +39,15 @@ type AnyAnswer = NoulAnswer | ChoiceAnswer | ScoreAnswer
 
 /** The answers of one call, read back by question ID. Absent questions read as null. */
 export class Answers {
-  constructor(
-    readonly model: string,
-    private readonly batch: Batch,
-    private readonly answers: { readonly [id: string]: AnyAnswer },
-  ) {}
+  readonly model: string
+  private readonly batch: Batch
+  private readonly answers: { readonly [id: string]: AnyAnswer }
+
+  constructor(model: string, batch: Batch, answers: { readonly [id: string]: AnyAnswer }) {
+    this.model = model
+    this.batch = batch
+    this.answers = answers
+  }
 
   /** Probability of yes, or null when the question was not asked. */
   noul(id: string): number | null {

@@ -7,7 +7,8 @@ The deterministic core: event log, reducers, projections, context assembly, plac
 | `src/ports/` | architect | The port interfaces (`@committee/core/ports`) |
 | `src/engine/` | core-engine | State, a reducer for every event, the four projections and the run inspection, context assembly, plan application and placement, the lifecycle reactions, the coordinator (`createBackend`) |
 | `src/testing/` | core-engine | Fakes for every port and `createTestBackend` (`@committee/core/testing`) |
-| `src/routing/`, `src/recovery/` | core-routing, core-recovery | Added by adding a module, not by editing `engine/` |
+| `src/routing/` | core-routing | The routing pipeline, validation, clarification and target elicitation, Undo split, the routing corpus |
+| `src/recovery/` | core-recovery | Added by adding a module, not by editing `engine/` |
 
 ## A step
 
@@ -50,5 +51,13 @@ and appends its line to `src/index.ts` (`export * from './recovery'`). `createBa
 ## Tests
 
 `createTestBackend()` gives a started backend over every fake (`FakeClock`, `ScriptedModelProvider`, `ScriptedRouter`, the scripted decision provider and decomposer, the memory stores) with a seeded ID factory. `advance(ms)` fires timers one at a time and settles between them; `restart()` is a simulated interruption. Plan builders: `atomic`, `independent`, `sequential`, `noUnits`, `spanOf`. Model scripts: `answer`, `say`, `fail`, `done`; a script without a terminal step hangs until cancelled.
+
+## The routing slice (`src/routing/`)
+
+`routingModule` (registered by `src/routing/index.ts`) supplies the default router (`createRouter`, used when `deps.router` is absent): the decision gate over `DecisionProvider`, generative decomposition over `Decomposer`, deterministic validation (`validatePlan`). It carries out the `clarifications` and `answersElicitationId` parts of a plan, raises the target-ambiguity elicitation and handles its `answer-elicitation`, and handles `undo-split`. Its decisions are in `docs/build/PLAN.md` §7, "Decisions made by core-routing".
+
+The routing corpus is `src/routing/corpus/`: labelled examples over hand-written scenes (`scene()`), `evaluateCorpus({ decisionProvider, decomposer?, settings? })` and `formatCorpusReport`. A live smoke test runs it with the OpenRouter decision provider.
+
+Routing tests: `src/routing/acceptance/` (D1–D4, T1, E1, E2, P9, I9, the named routing cases of PLAN §6, T2 and T3 on the routing side), `src/routing/validation.test.ts`, and the corpus under a provider that answers as labelled (`src/routing/corpus/corpus.test.ts`). `routingScenario()` in `src/routing/acceptance/helpers.ts` runs the real router over scripted decisions stated by name.
 
 Engine acceptance tests are in `src/engine/acceptance/` (C1–C20, P1–P4, P6, P8, I1, I2, I4, I6, I10, the named cases of PLAN §6, and reducers folded from hand-written logs); the rebuild property tests are in `src/engine/projections/rebuild.test.ts`.

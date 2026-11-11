@@ -598,6 +598,42 @@ Supplementary, without being the canonical test: ui-transcript renders P1–P4, 
 
 Also decided here: IDs are `<prefix>_<ULID>`; events of all conversations plus one app log (`APP_LOG`) for the conversation list and settings, where `settings-changed` stores the whole settings; `Backend.start()` loads every conversation so interrupted work resumes without the user opening it; the Worker's real ports are in `packages/web/src/worker/system.ts`, written by integration: a `Clock` over `Date.now`, `Timers` over `setTimeout`, and `createIdFactory(createUlidFactory(Date.now, Math.random))`.
 
+### Decisions made by core-routing
+
+Recorded by core-routing when milestone 4 landed. The code is `packages/core/src/routing/`.
+
+**Which candidates the decision model is asked about** (`routing/supply.ts`). Everything comes from `RoutingInput.candidates`, so nothing outside it can be selected (invariant 9):
+
+| Question | Candidates |
+|---|---|
+| Reply targets | The most recent 24 current sections (`MAX_SECTIONS`), explicit targets always included; open clarification questions are sections like any other and are asked "does it answer this question?" |
+| Result dependencies | Work still in flight (at most 16, `MAX_DEPENDENCIES`) and open sibling groups. Finished work is never a dependency candidate: only an unavailable result can be waited for (Q2) |
+| Handling chain | Every chain (at most 24), offered as a `choice`; used only when no target and no dependency places the unit |
+| Corrections of conversation-wide requirements | The session-wide requirements in force |
+| Affected work of a shared-requirement revision | Every directive whose latest attempt consumed the corrected brief (`CandidateWork.consumed`), in one further call |
+
+**The question set** is the same for the whole message and for each fragment (`routing/questions.ts`): corrective wording, shared scope, relation (`new` / `addition` / `dependent`), one yes/no per target candidate, the handling chain, one yes/no per dependency candidate, one per session-wide requirement, needs-clarification and its reason; a fragment also gets one yes/no per earlier fragment the decomposer proposed as a dependency. The gate adds `composite` and `sessionwide`. Every question is `noul` or `choice` over supplied numbers or fixed enums; the decision model never writes text. The first message of an empty conversation asks only `composite`, `sessionwide` and the clarification questions: there is nothing to relate it to.
+
+**Thresholds** (Q74), by question: `composite` for the gate; `clearlyCorrective` for corrective wording, shared scope, explicit conversation-wide wording and a change to a session-wide requirement; `targetChoice` for inferring a target, with the ambiguity rule below; `dependency` for result dependencies, dependencies between fragments, the whole-request barrier and the pre-selection of affected work; `clarification` for clarifications. The thresholds in force, and `ambiguityFloor`, are recorded on every `RoutingDecision`.
+
+**Target ambiguity.** A section at or above `targetChoice` is inferred; several may be. When none reaches it, two or more sections at or above 0.3 (`AMBIGUITY_FLOOR`) make the target ambiguous and the user is asked; one weak candidate alone is not a choice between sections, so the unit is placed by its handling chain. A message whose relation is `new` and is not corrective is never ambiguous.
+
+**Which stage assigns each fragment its chain and target.** For an atomic message, the gate. For a composite, the second batched call after decomposition, with a question set per fragment over the same candidates; the gate's message-level answers stay in the decision record's `questions`. Explicit and chosen targets go to the fragments that refer to them (score at or above the floor).
+
+**Placement follows from the selections** (`derivePlacement`): the points a unit builds on are its target sections' nodes, the nodes of the work it needs, the groups it needs, and earlier units it needs. None and relation `new`: a new chain. None otherwise: the chosen chain's settled head (its tip when nothing has settled; the engine's repair 0 applies). Two or more members of one sibling group become the group, and an open group is also a prerequisite. A point already in another point's ancestry is dropped. One point: `continue`; several: a join chain. The relation recorded is `result-dependent` when a prerequisite remains, otherwise `addition` (or `new`), with the model's probability for it.
+
+**Decomposition** is called when the gate judges the message composite, and also when the gate confirms explicit conversation-wide wording or a change to a session-wide requirement: only the decomposer may write a requirement's text (invariant 9). With fewer than two fragments the message stays atomic. A requirement is session-wide only when the gate confirmed explicit wording; the decomposer saying so is not enough (D1). Spans out of bounds, repeated keys, and references to unknown fragments or candidates are `malformed-response`, never repaired.
+
+**Revisions.** A unit is a revision when corrective wording is at or above `clearlyCorrective` and it names something to correct: a target's work or a session-wide requirement. Shared scope, or any change to a session-wide requirement, makes it `shared-requirement`. Corrective wording with two or more plausible targets and none clear is a target ambiguity; with no plausible target and no requirement to change, it is additional work.
+
+**Clarification.** `about` is fixed wording per reason (the decision model writes nothing); the question's instruction is composed by core (`clarificationInstruction`) from the blocked requests and `about`. The question section's title is "Question" and its label "question about {labels}". A shared requirement that the gate judges ambiguous is one clarification for every unit that carries it; otherwise each unit is asked separately. A message is the answer when it targets an open question explicitly, or when the gate infers the question as its target (Q98); the answer releases each held directive into a new `clarified-answer` response per user bubble.
+
+**Undo split** also withdraws the split's clarification questions (their sections superseded, their elicitations withdrawn).
+
+**A message routed again keeps its options.** Retry after a routing failure, and a routing lost with the executor, route with the chosen targets of its latest answered target-ambiguity elicitation and with `forcedComposition: 'atomic'` after Undo split (`queries.routeOptionsFor`).
+
+**The routing corpus** is `packages/core/src/routing/corpus/`: 44 labelled examples over hand-written scenes, each with the spec reference that justifies its label. `evaluateCorpus({ decisionProvider, decomposer?, settings? })` routes every example and reports mismatches by topic; without a decomposer it uses each example's reference decomposition, so the decision model is evaluated alone. A core test runs it with a provider that answers as the labels say (`oracleDecisionProvider`), which checks the deterministic stages. The live run belongs in a providers smoke test.
+
 ## 8. Order of work and reviews
 
 1. **ui-foundation's contract commit** (section 3, "The foundation contract comes first"). Nothing else in `packages/web` starts before it is in the tree.

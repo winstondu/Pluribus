@@ -197,6 +197,7 @@ export async function createTestBackend(overrides: TestBackendOverrides = {}): P
         modules: overrides.modules,
         extraModules: overrides.extraModules,
         options: overrides.options,
+        useScriptedRouter: overrides.useScriptedRouter,
         ...next,
         clock,
         model,

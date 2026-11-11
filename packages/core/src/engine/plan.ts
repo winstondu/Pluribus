@@ -336,10 +336,6 @@ function waitsForDirective(unit: PlannedUnit, directiveId: DirectiveId): boolean
   return unit.prerequisites.some((p) => p.kind === 'directive' && p.directiveId === directiveId)
 }
 
-function waitsForGroup(unit: PlannedUnit, groupId: SiblingGroupId): boolean {
-  return unit.prerequisites.some((p) => p.kind === 'sibling-group' && p.groupId === groupId)
-}
-
 /** One of the three placements (Q76), with the repairs and the ordered cases of PLAN §2. */
 export function placeUnit(unit: PlannedUnit, ctx: StepContext): Placed {
   const placement = unit.placement

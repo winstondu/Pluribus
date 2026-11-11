@@ -703,11 +703,10 @@ class RequirementBook {
   private readonly byKey = new Map<string, Requirement>()
   private readonly uses = new Map<string, number>()
 
-  constructor(
-    input: RoutingInput,
-    decomposition: Decomposition | null,
-    private readonly sessionWide: boolean,
-  ) {
+  private readonly sessionWide: boolean
+
+  constructor(input: RoutingInput, decomposition: Decomposition | null, sessionWide: boolean) {
+    this.sessionWide = sessionWide
     for (const f of decomposition?.fragments ?? []) {
       const seen = new Set<string>()
       for (const r of f.requirements) {
