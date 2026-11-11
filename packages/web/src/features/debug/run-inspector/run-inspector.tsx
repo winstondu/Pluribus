@@ -9,6 +9,8 @@ import type {
   PointRef,
   PrerequisiteRef,
   RunInspection,
+  StrategyChoice,
+  StrategySelectionRecord,
   TranscriptProjection,
   UnitRoutingDecision,
   WaitTargetView,
@@ -450,6 +452,43 @@ function prerequisiteWord(ref: PrerequisiteRef, transcript: TranscriptProjection
   return section?.title ?? ref.directiveId
 }
 
+const FALLBACK_SENTENCE: { readonly [F in NonNullable<StrategySelectionRecord['fallback']>]: string } = {
+  failed: 'the decision model could not be asked',
+  'low-confidence': 'the decision model was not confident',
+  'no-budget': 'the decision budget had no room to ask the decision model',
+}
+
+function strategyWord(choice: StrategyChoice): string {
+  if (choice.strategy === 'one-pass') return 'One pass'
+  const settings = [
+    choice.searchLongRuns ? 'long runs searched' : 'runs listed',
+    choice.startAtTrunkBase ? 'from the trunk base' : null,
+    choice.hopBetweenBranchPoints ? 'hopping between branch points' : null,
+  ].filter((text): text is string => text !== null)
+  return `Tree walk (${settings.join(', ')})`
+}
+
+/** How the referent strategy was chosen for this routing, when a strategy selector was on. */
+function StrategySelectionRow({ selection }: { selection: StrategySelectionRecord }) {
+  const by = selection.selector === 'rules' ? 'the rules' : 'the decision model'
+  const scores = selection.scores ? Object.entries(selection.scores) : []
+  return (
+    <Row label="Strategy">
+      <span data-testid="strategy-selection">
+        {strategyWord(selection.choice)} · <span className="text-muted-foreground">chosen by {by}</span>
+        {selection.reused ? <span className="text-muted-foreground"> · reused for the same shape</span> : null}
+        {selection.fallback ? <span className="text-muted-foreground"> · {FALLBACK_SENTENCE[selection.fallback]}</span> : null}
+        <span className="mt-0.5 block text-muted-foreground">{selection.reason}</span>
+        {scores.length > 0 ? (
+          <span className="mt-0.5 block font-mono text-2xs text-muted-foreground">
+            {scores.map(([name, value]) => `${name} ${value.toFixed(2)}`).join(' · ')}
+          </span>
+        ) : null}
+      </span>
+    </Row>
+  )
+}
+
 /** Item 5: what routing decided. A record, not a verdict. */
 function Routing(props: { inspection: RunInspection; transcript: TranscriptProjection; genealogy: GenealogyProjection }) {
   const { inspection, transcript, genealogy } = props
@@ -476,6 +515,7 @@ function Routing(props: { inspection: RunInspection; transcript: TranscriptProje
           {decision.composition.value} · <span className="text-muted-foreground">{confidence(decision.composition)}</span>
         </Row>
         {unit ? <UnitRows unit={unit} transcript={transcript} genealogy={genealogy} inspection={inspection} /> : null}
+        {decision.strategySelection ? <StrategySelectionRow selection={decision.strategySelection} /> : null}
         <Row label="Explanation">{unit?.explanation || decision.explanation || 'None recorded.'}</Row>
       </dl>
       {decision.questions.length > 0 ? (

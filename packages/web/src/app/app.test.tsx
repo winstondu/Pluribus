@@ -176,6 +176,15 @@ describe('shell', () => {
     expect(within(dialog).getByText('Tokens per message')).toBeInTheDocument()
     await user.click(within(dialog).getByRole('radio', { name: /Share of the conversation/ }))
     await waitFor(() => expect(store.getState().app?.settings.routing.tokenBudget).toEqual({ mode: 'relative', fraction: 0.02, floor: 16_000, ceiling: 40_000 }))
+    // Strategy selection: off unless asked for; the rules, or the decision model.
+    expect(within(dialog).getByRole('radio', { name: /As set here/ })).toBeChecked()
+    await user.click(within(dialog).getByRole('radio', { name: /By the decision model/ }))
+    await waitFor(() => expect(store.getState().app?.settings.routing.strategySelection).toBe('decision-model'))
+    expect(await within(dialog).findByText(/the ones set below are not used/)).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('radio', { name: /By rules/ }))
+    await waitFor(() => expect(store.getState().app?.settings.routing.strategySelection).toBe('rules'))
+    await user.click(within(dialog).getByRole('radio', { name: /As set here/ }))
+    await waitFor(() => expect(store.getState().app?.settings.routing.strategySelection).toBe('off'))
     // The tree walk's two switches sit under the strategy, are independent, and are shown only for the tree walk.
     expect(within(dialog).getByRole('radio', { name: /Tree walk/ })).toBeChecked()
     expect(within(dialog).getAllByRole('switch')).toHaveLength(4)

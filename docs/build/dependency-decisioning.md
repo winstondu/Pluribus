@@ -345,7 +345,7 @@ The fixed budget bounds decision cost against one measured answer. The user's ru
 
 With 1,700 expected output tokens the allowance is 40,500 tokens and the token budget binds first. With answers of 250 tokens it is about 6,100, the pipeline's request takes 3,300 to 5,100 of it, and the strategy gets what is left. With answers of 100 tokens it is about 2,450, and the pipeline's request is cut to fit it.
 
-**The grid** (`routing/referents/cost-grid.ts`; `cost-grid.test.ts` asserts the price bound and the token budget on all 270 cells; `pnpm smoke` prints them). Conversations of 50, 500, 3,300 and 8,000 sections with exchanges of 120, 300, 2,000 and 10,000 tokens, every cell at most a million tokens, in five shapes: flat (one chain), an early split with two long branches, bushy (two parallel answers joined back, one answer on the join-back, repeated), nested forks (every answer continued twice, one continuation going on), and many roots. Each cell routes the message that costs most: every yes/no is answered 0.5, so every line is walked into and every chunk followed. Tokens are the guard's estimate over every decision request of the routing. The Haiku answer is the conversation's own answer length (85% of the exchange) on a new chain. Worst shape per size, the switches shown where they differ:
+**The grid** (`routing/referents/cost-grid.ts`; `cost-grid.test.ts` asserts the price bound and the token budget on all 360 cells: five shapes, six fixed strategies and the two strategy selectors; `pnpm smoke` prints them). Conversations of 50, 500, 3,300 and 8,000 sections with exchanges of 120, 300, 2,000 and 10,000 tokens, every cell at most a million tokens, in five shapes: flat (one chain), an early split with two long branches, bushy (two parallel answers joined back, one answer on the join-back, repeated), nested forks (every answer continued twice, one continuation going on), and many roots. Each cell routes the message that costs most: every yes/no is answered 0.5, so every line is walked into and every chunk followed. Tokens are the guard's estimate over every decision request of the routing. The Haiku answer is the conversation's own answer length (85% of the exchange) on a new chain. Worst shape per size, the switches shown where they differ:
 
 | Sections × tokens per exchange | Strategy | Worst shape | Unguarded: requests / questions / tokens | $ | ÷ Haiku answer | Guarded: requests / questions / tokens | $ | ÷ Haiku answer |
 |---|---|---|---|---|---|---|---|---|
@@ -377,7 +377,7 @@ With 1,700 expected output tokens the allowance is 40,500 tokens and the token b
 | 3,300 × 300 | tree walk, any setting | bushy | 1,101 / 5,505 / 1,072,469 | $0.04504 | 350× | 4 / 21 / 6,066 | $0.00025 | **1.98×** |
 | 3,300 × 300 | tree walk, any setting | nested forks | 1,651 / 4,957 / 1,254,249 | $0.05268 | 409× | 4 / 17 / 5,712 | $0.00024 | 1.86× |
 
-Guarded, the worst cell of the whole grid is **1.99×** (one pass in a bushy conversation of 500 or 8,000 sections and 120-token exchanges: the pipeline's request, cut to the 4 most recent sections and their group), and the worst with 300-token exchanges is 1.98× (the tree walk in a bushy conversation of 3,300 sections: the pipeline's request and three small levels, which use the allowance up). The largest guarded routing in tokens is 17,341 (500 unrelated answers of 2,000 tokens: the pipeline's request and one round of chunks; the budget there is 20,000). Unguarded, the worst message in a million-token conversation costs up to 2,303 Haiku answers.
+Guarded, the worst cell of the whole grid is **1.99×** (one pass in a bushy conversation of 500 or 8,000 sections and 120-token exchanges: the pipeline's request, cut to the 4 most recent sections and their group), and the worst with 300-token exchanges is 1.98× (the tree walk in a bushy conversation of 3,300 sections: the pipeline's request and three small levels, which use the allowance up). The largest guarded routing in tokens is 18,106 (500 unrelated answers of 2,000 tokens: the decision-model selector's request, the pipeline's request and one round of chunks; 17,341 without the selector; the budget there is 20,000). Unguarded, the worst message in a million-token conversation costs up to 2,303 Haiku answers.
 
 **Where the guard cuts the walk short, and what that costs.**
 
@@ -388,6 +388,89 @@ Guarded, the worst cell of the whole grid is **1.99×** (one pass in a bushy con
 - *What it never does:* exceed a cap, send a request it has not counted, or take a section as a referent without having asked about it.
 
 The pipeline's later request (the question which dependents a revision affects) is not reserved for; a revision also re-runs its dependents, whose answers are not in the allowance either.
+
+## Strategy selection
+
+The user's request (2026-11-11), whose working name for this is **"decision-inception"**:
+
+> we can maybe do a decision-inception here where we can send the shape of the conversation genealogy to a decision model for which strategy (and if tree walk settings, whether tree walk settings) are used. Make this decision-inception a clean layer too, and optional setting.
+
+In code and in the spec it is **strategy selection**, done by a **strategy selector** (11 · "Strategy selection").
+
+### What was built
+
+An optional layer in front of the referent strategy, behind its own port, `StrategySelector` (`packages/core/src/ports/strategy-selector.ts`):
+
+```ts
+interface StrategySelector {
+  readonly name: string
+  /** Whether a choice may stand for a later routing of the same shape. */
+  readonly reusable: boolean
+  select(request: StrategySelectionRequest, ask: SelectorAsk): Promise<StrategySelection>
+}
+```
+
+- **Setting.** `settings.routing.strategySelection`: `off` (the default: the configured strategy and switches, exactly as before) | `rules` | `decision-model`. Settings → Routing → "Choosing the strategy". `CoreDependencies.strategySelector` injects another.
+- **Input: the shape only** (`GenealogyShape`, `routing/selection/shape.ts`), read from the same context tree the strategies build, so trunk, run and branch point mean the same thing: answer sections and how many are older than the window; roots and old single-answer roots; branch points; depth in branching levels; sibling groups open and closed; total tokens; the number of trunks and of branch runs, and for the longest of each its sections, the listed ones before its end, the unlisted ones, its tokens and whether it ends in a split. And one number that is not shape: the decision tokens this routing may use (the token budget or the price allowance, whichever is smaller), because with no room for a further request a walk cannot descend. No request, answer or title is in it; a test asserts that.
+- **Output: a typed choice** (`StrategyChoice` in protocol): `{ strategy: 'one-pass' }`, or `{ strategy: 'tree-walk', startAtTrunkBase, hopBetweenBranchPoints, searchLongRuns }`. `searchLongRuns: false` hands the walk a run size nothing reaches, which is the walk as it was before long runs were searched; the size that is searched stays the configured `searchRunsOverTokens`.
+- **The pipeline and the strategies do not know how the choice was made.** `chooseStrategy` in `routing/pipeline.ts` returns a strategy and tree-walk settings, as the settings alone would; the strategies read `ReferentRequest.treeWalk` as before. Explicit and chosen reply targets, an empty conversation and an injected referent strategy select nothing.
+- **Recorded with the routing decision** (`RoutingDecision.strategySelection`, a `StrategySelectionRecord`): whose choice was used, the choice, the shape signature, a one-sentence reason, the decision model's scores, why the rules stood in (`failed`, `low-confidence`, `no-budget`) and whether the choice was reused. The decision's explanation carries it as a sentence, the run inspector shows a "Strategy" row, and the selector's four questions and answers are in the decision's question list beside the others.
+
+### The rules (`routing/selection/rules.ts`)
+
+From what was measured above, when each setting pays:
+
+| Rule | Evidence |
+|---|---|
+| **One pass** when every answer is listed in the pipeline's request | Inside the window the two strategies routed every corpus example the same (58/62 and 61/62 differ only by the three examples beyond the window); one pass needs no further request |
+| **One pass** when the routing may use fewer than 6,000 decision tokens | The pipeline's request takes up to 5,400 with its full window and a level of the walk about 600. With less, the walk asks about the roots in the pipeline's request and cannot descend, so answers below a root go unasked **even when they are listed**; one pass asks about every listed answer in that same request. Test: with 3,000 tokens the configured tree walk places J on nothing, the rules' one pass on both siblings |
+| **Tree walk** otherwise, **long runs searched** | Only the walk reaches answers older than the window; the search is the only setting that found a referent the walk could not (59/62 → 61/62) and changes nothing inside the window |
+| **Start at the trunk base** when the longest trunk has 12 or more listed answers before its last and ends in a split | −23 tokens per skipped answer, +1,900 and a request when one of them is referred to. A trunk that has split is history more often than subject; a trunk that never splits is the conversation itself and replies to its earlier answers are the normal case, so there it stays off |
+| **Hop between branch points** when a run below a split has 6 or more answers | −108 tokens per skipped answer, +280 and a request when a reply is inside the run |
+
+The two switch rules are derived from the formulae and from one corpus example each; the corpus has no example where they change the result.
+
+### The decision-model selector (`routing/selection/decision.ts`)
+
+One request to the injected `DecisionProvider`, through the pipeline's `SelectorAsk`. Its state text is the shape in words (`describeShape`: a heading line, seven lines of counts and the budget, under 1,400 characters); its questions are typed, never free text:
+
+| ID | Type | Asks |
+|---|---|---|
+| `sel_strategy` | `choice`, options `one-pass` and `tree-walk` with a description each | Which way of finding the earlier answers fits a conversation of this shape |
+| `sel_trunk` | `noul` | Whether the longest trunk ends in a split with 12 or more listed answers before its last |
+| `sel_hops` | `noul` | Whether the longest run below a split has 6 or more answers |
+| `sel_search` | `noul` | Whether more than a dozen answers of one run, or old single answers, are older than the listed ones |
+
+- **Size.** 806 to 849 input tokens as the provider reported them (the difference between the same corpus example with and without the selector); 754 to 785 by the guard's estimate. About 0.15 s.
+- **Reading the answers.** The strategy stands at or above the target-choice threshold (0.70). A switch is turned on only on a confident yes (≥ 0.70); the search is turned off only on a confident no (≤ 0.30), because off, a run too long to list is out of reach.
+- **Fallback to the rules**, with the reason recorded: the request fails (`failed`; routing goes on, it does not fail with it); the strategy's confidence is below the threshold (`low-confidence`, with the confidence); the request does not fit (`no-budget`: it may take at most 15% of the routing's token budget, `SELECTOR_BUDGET_SHARE`, and nothing is sent).
+- **Its cost is inside the guard.** The request is counted against the routing's token budget like the pipeline's own, before the pipeline's request is fitted to what is left. The cost grid runs both selectors on every cell: worst 1.99× (the same cell as without), and with 120-token answers the request is refused and the rules choose.
+- **Reuse by shape signature.** `shapeSignature` reduces the shape to buckets: every count by its power of two (1, 2–3, 4–7, …), tokens by the thousand, whether the longest trunk and run end in a split, and whether the budget has room for a further request. A choice made from the shape alone is the same for every routing with the same signature, so it is made once: the backend hands the router the most recent selection in the conversation's recorded routing decisions (`RoutingInput.strategySelectionOnRecord`, from `state.messages[…].decision`), and when its signature is the current one and it was the decision model's own choice, it is used and **nothing is asked**. The cache is the event log: nothing is held outside state, it survives a restart, and core stays deterministic. A fallback on record is not reused. A growing conversation changes signature a number of times logarithmic in its size.
+- **The message is not shown.** `createDecisionSelector({ includeMessage: true })` adds it and words the options for it; it is not a setting. Measured below: no gain, more fallbacks, and a choice that depends on the message cannot be reused.
+
+### Measured (live, `typesafe/jev-1.13`, 2026-11-11, reference decompositions, 62 examples)
+
+Two runs of the corpus for the default and the selectors, one for the other rows. The decision-model rows are **without reuse**: the corpus routes one message per conversation, so the selector is asked every time.
+
+| Configuration | Score, run 1 | Score, run 2 | Requests | Tokens reported | Per routing |
+|---|---|---|---|---|---|
+| One pass | 58/62 | | 74 | 92,592 | 1.19 requests, 1,493 tokens |
+| Tree walk, runs listed | 59/62 | | 94 | 104,582 | 1.52, 1,687 |
+| Tree walk, long runs searched (the default) | 60/62 | 61/62 | 100 | 120,245 | 1.61, 1,939 |
+| + trunk base | 61/62 | | 100 | 118,215 | 1.61, 1,907 |
+| + hops | 61/62 | | 102 | 120,018 | 1.65, 1,936 |
+| + both | 61/62 | | 102 | 117,988 | 1.65, 1,903 |
+| **Selected by rules** | **61/62** | **61/62** | **83** | **110,364** | **1.34, 1,780** |
+| Selected by the decision model | 61/62 | 60/62 | 126 | 145,539 | 2.03, 2,347 |
+| Selected by the decision model, shown the message | 61/62 | 61/62 | 126 | 147,233 | 2.03, 2,375 |
+
+- The differences between runs are one borderline example each, none of them about referents: `revision-session-requirement` (the default, run 1), `target-ambiguous-use-that-one` (the decision model, run 2). `split-correction-and-new-work` is missed by every configuration, as before.
+- **The rules** score what the default tree walk scores, with 17% fewer requests and 8% fewer tokens: 34 or 35 of the 40 or 41 routings that select anything are inside the window and get one pass, the six beyond it the tree walk.
+- **The decision model does not beat the rules.** Its choices: one pass 35 times, the tree walk 3 times, the tree walk with runs listed twice (conversations with fewer than a dozen older answers, where listing fits), and once not confident. The score is the same within the noise; it costs 26% more requests and 21% more tokens than the default, and 52% and 32% more than the rules. With reuse a real conversation pays the request once per shape, which removes most of that cost and none of the reason: the questions it answers are the rules, stated in words.
+- **Shown the message**: the same score, five or six fallbacks for low confidence instead of one, about 41 more tokens a request.
+- The J request on both siblings, five runs of five cases, and the follow-up naming two sections, five runs of two: **25/25 and 10/10 with each of the three selectors.**
+
+**Default: `off`.** The layer is optional and the user asked for it as a setting. On this evidence `rules` would be the better default than a fixed strategy (the same results for fewer requests, and the walk exactly where it is needed), and `decision-model` should stay off until it has something the rules do not. Changing the default is the user's call; see "Left open".
 
 ## Evidence and the default
 
@@ -419,13 +502,17 @@ Live, `typesafe/jev-1.13`, reference decompositions, 2026-11-11. The corpus grew
 - `routing/referents/referents.test.ts`: the tree; for both strategies C19, C9, C20, ancestor removal and its exception; one pass asks everything once; the walk's levels, state text, pruning, descent below an irrelevant branch point, linear runs; the guard (request, question and token budgets, the partial fallback, a strategy that keeps asking, one pass bounded); the strategy swap and a strategy that names an unsupplied section.
 - `routing/acceptance/referents.test.ts`: the J request end to end on a backend with each strategy: C19 (continues from the join-back on the base chain and reads both), C9 twice (two of three running siblings wait for the third; a weak second sibling with a relevant group), C20 (join chain over leaves).
 - `routing/referents/referents.test.ts`, long runs: a section of a 200-section chain and of 200 unrelated roots found within the budget where listing falls back; a referent at the start, middle and end of a run; two referents in different chunks; no relevant chunk; the most recent answer beside chunk questions; a run split in two rounds; the budget ending a search (the chunk's sections are put to the user) and the guard under five budgets; the trunk base (what is asked, a mid-trunk reply resolved exactly, elicited with no budget, a correction keeping its ancestor, a trunk that never splits); hops (what is asked, a mid-run reply resolved exactly, the end of a hop asked again, the fallback, descent through a relevant chunk); and for each of the four combinations of the two switches C19, C9, C19 after a long trunk and among long branches, a mid-run reply in trunk and branch, a correction keeping its ancestor, and the guard with a deterministic fallback.
-- `routing/referents/cost-grid.test.ts`: the price guard and the token budget on 270 cells of conversations up to a million tokens, answers down to 102 tokens.
+- `routing/referents/cost-grid.test.ts`: the price guard and the token budget on 360 cells of conversations up to a million tokens, answers down to 102 tokens, with each fixed strategy and with each strategy selector in front.
 - `routing/referents/referents.test.ts`, token budget: the smaller of budget and allowance in either mode; every request of a routing counted; a relative budget reaching a section of a 700-exchange chain that a fixed 16,000 does not, and the two the same routing in a short conversation; for each strategy, the pipeline's request cut to its most recent sections under short answers and under a fixed budget, uncut with answers of ordinary length, and sent with its smallest window when nothing fits; a composite cut to the budget of its parts.
 - `routing/acceptance/budget.test.ts`: on a backend, the log is every user message and every attempt's text, a failed attempt's partial text included, and only grows; a request that cannot be made smaller is sent and the decision says so.
 - `protocol/src/contracts.test.ts`: the three tree-walk settings and the price guard merge key by key, validate, and are defaulted for stored settings that lack them; the token budget resolves by mode, is replaced as a whole, validates by mode, and normalises from what earlier versions stored.
 - `web/src/app/app.test.tsx`: the two switches in Settings → Routing, independent, shown only for the tree walk; the decision budget's mode and value.
 - `routing/corpus/corpus.test.ts`: every example with decisions as labelled, once per strategy and once per combination of the two switches.
-- `providers/src/referents.smoke.test.ts` (`pnpm smoke`): the corpus for six configurations (one pass, runs always listed, the default, each switch, both) with its decision cost and the cost of every long example; the J and two-section cases five times per configuration; and the cost grid, printed.
+- `routing/selection/selection.test.ts`: the shape of the trip tree, a long chain, old single roots, a trunk that splits and long branch runs; the description is counts only; the signature by powers of two; each rule; each mode through the pipeline (off: nothing asked or recorded; rules: no request, the record; decision model: one request about the shape alone with typed questions, then the chosen strategy's routing); the fallback on failure, on low confidence and on no budget; the search turned off only on a confident no; reuse of a recorded choice for the same signature and a new request when the shape changed; explicit targets select nothing; an injected selector; **the routing with a selector is, request for request, the routing of the chosen strategy configured directly** (four shapes); C19 and C9 with each selector and each strategy chosen; the token budget with a selector on.
+- `routing/acceptance/selection.test.ts`: on a backend with each selector, C19 (J continues from the join-back and reads both) and C9 (J waits for the whole group); the selection is in the `routing-decided` event and in state; the decision model is asked once per shape and the next message reuses the choice from the log.
+- `routing/corpus/corpus.test.ts`: every example with decisions as labelled, with the strategy the rules select (configured the other way round).
+- `protocol/src/contracts.test.ts`, `web/src/app/app.test.tsx`, `web/src/features/debug/debug.test.tsx`: the mode as a setting, its control in Settings → Routing, and the run inspector's "Strategy" row.
+- `providers/src/referents.smoke.test.ts` (`pnpm smoke`): the corpus for nine configurations (one pass, runs always listed, the default, each switch, both, and the three selectors) with its decision cost, the cost of every long example and a tally of the selections; the J and two-section cases five times per configuration; and the cost grid, printed.
 - `providers/src/j-request.smoke.test.ts` (`pnpm smoke`): the brief, A, B and J through a real backend with the live providers, J sent during and after the siblings' runs.
 
 ## Left open
@@ -435,6 +522,7 @@ Live, `typesafe/jev-1.13`, reference decompositions, 2026-11-11. The corpus grew
 - Beyond about 1,200 to 2,000 older sections (by request length) the first chunk request exceeds the budget's ceiling and old referents are again out of reach. Asking the newest chunks that fit would extend it.
 - The fraction (2%) fits exchanges of about 1,400 tokens and more; for shorter ones the floor is the reach. A per-section term (so many tokens per recorded exchange) would fit both and is not built: the user asked for a share of the log's tokens.
 - The reach table is measured with decisions as labelled (the oracle) and the guard's token estimates, not live.
+- Strategy selection: whether `rules` should be the default; the two switch rules rest on formulae, not on a corpus that exercises them; the rule "one pass under 6,000 tokens" is a fixed figure where the pipeline's own request could be estimated; the selector is not shown which sibling groups are open beyond their count; and whether a decision model given more than counts (for example which lines are active) would choose better than the rules is not explored.
 - The two rare pipeline requests that follow the strategy's are not reserved for: see "The pipeline's request draws from the budget".
 - Context summaries for decisioning are designed in `docs/build/context-summaries.md`.
 

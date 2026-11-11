@@ -168,8 +168,23 @@ export interface DecisionCostGuard {
   readonly expectedOutputTokens: number
 }
 
+/**
+ * Whether a strategy selector chooses the referent strategy, and the tree
+ * walk's switches, for each routing from the shape of the conversation's
+ * genealogy (docs/build/dependency-decisioning.md · "Strategy selection").
+ * - `off`: the strategy and switches set here are used as they are.
+ * - `rules`: deterministic rules over the shape. No request.
+ * - `decision-model`: one small decision request about the shape, reused
+ *   while the shape does not change materially; the rules when it fails, is
+ *   not confident, or does not fit the routing's token budget.
+ */
+export type StrategySelectionMode = 'off' | 'rules' | 'decision-model'
+
+export const STRATEGY_SELECTION_MODES: readonly StrategySelectionMode[] = ['off', 'rules', 'decision-model']
+
 export interface RoutingSettings {
   readonly referentStrategy: ReferentStrategyName
+  readonly strategySelection: StrategySelectionMode
   readonly referentBudget: DecisionCaps
   readonly tokenBudget: DecisionTokenBudget
   readonly treeWalk: TreeWalkSettings
@@ -236,6 +251,9 @@ export const DEFAULT_SETTINGS: Settings = {
   routing: {
     // Chosen on the routing corpus and on cost (docs/build/dependency-decisioning.md).
     referentStrategy: 'tree-walk',
+    // Off: on the corpus the rules match the configured tree walk's score at fewer requests, and the decision model does
+    // not beat the rules (docs/build/dependency-decisioning.md · "Strategy selection"). The layer is optional.
+    strategySelection: 'off',
     referentBudget: { requests: 4, questions: 96 },
     // 2% of the conversation's log, at least what the pipeline's request and a search of a long run cost (16,000) and
     // at most what twice a 1,700-token answer on the cheapest answer model buys (40,000): the budget grows with what
@@ -267,6 +285,7 @@ export interface SettingsPatch {
   readonly thresholds?: Partial<DecisionThresholds>
   readonly routing?: {
     readonly referentStrategy?: ReferentStrategyName
+    readonly strategySelection?: StrategySelectionMode
     readonly referentBudget?: Partial<DecisionCaps>
     /** Replaced as a whole: the two modes share no field. */
     readonly tokenBudget?: DecisionTokenBudget
@@ -288,6 +307,7 @@ export function applySettingsPatch(settings: Settings, patch: SettingsPatch): Se
     thresholds: { ...settings.thresholds, ...definedOnly(patch.thresholds) },
     routing: {
       referentStrategy: patch.routing?.referentStrategy ?? settings.routing.referentStrategy,
+      strategySelection: patch.routing?.strategySelection ?? settings.routing.strategySelection,
       referentBudget: { ...settings.routing.referentBudget, ...definedOnly(patch.routing?.referentBudget) },
       tokenBudget: patch.routing?.tokenBudget ?? settings.routing.tokenBudget,
       treeWalk: { ...settings.routing.treeWalk, ...definedOnly(patch.routing?.treeWalk) },
@@ -319,6 +339,9 @@ export function validateSettingsPatch(patch: SettingsPatch): string | null {
   }
   if (patch.routing?.referentStrategy !== undefined && !REFERENT_STRATEGY_NAMES.includes(patch.routing.referentStrategy)) {
     return `Unknown referent strategy "${String(patch.routing.referentStrategy)}"`
+  }
+  if (patch.routing?.strategySelection !== undefined && !STRATEGY_SELECTION_MODES.includes(patch.routing.strategySelection)) {
+    return `Unknown strategy selection "${String(patch.routing.strategySelection)}"`
   }
   for (const [name, value] of Object.entries(patch.routing?.referentBudget ?? {})) {
     if (typeof value === 'number' && (!Number.isInteger(value) || value < 0)) {
@@ -366,6 +389,7 @@ export function normalizeSettings(stored: Partial<Settings>): Settings {
     thresholds: { ...DEFAULT_SETTINGS.thresholds, ...stored.thresholds },
     routing: {
       referentStrategy: stored.routing?.referentStrategy ?? DEFAULT_SETTINGS.routing.referentStrategy,
+      strategySelection: STRATEGY_SELECTION_MODES.find((mode) => mode === stored.routing?.strategySelection) ?? DEFAULT_SETTINGS.routing.strategySelection,
       referentBudget: {
         requests: caps?.requests ?? DEFAULT_SETTINGS.routing.referentBudget.requests,
         questions: caps?.questions ?? DEFAULT_SETTINGS.routing.referentBudget.questions,

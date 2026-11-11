@@ -54,7 +54,7 @@ import {
   type SummariseReason,
   type SummariseRequest,
 } from '../ports'
-import { resolveTargets, routingCandidates, sessionLogTokens } from './candidates'
+import { resolveTargets, routingCandidates, sessionLogTokens, strategySelectionOnRecord } from './candidates'
 import { assembleContext, contextChainOf, sessionRequirementsInForce, type AssembledContext } from './context'
 import { defaultModules } from './engine-module'
 import { defaultRetryPlanner, defaultRoutingRetryPlanner, notStartedInSection, scheduleRoutingRetry, settleWait } from './lifecycle'
@@ -535,6 +535,7 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
       candidates: routingCandidates(state),
       sessionRequirements: sessionRequirementsInForce(state),
       sessionLogTokens: sessionLogTokens(state),
+      strategySelectionOnRecord: strategySelectionOnRecord(state),
       settings: { models: settings.models, thresholds: settings.thresholds, routing: settings.routing },
       // Decisions may be shown a summary of a node's context; the chain comes from the same assembly a run uses.
       ...(settings.routing.useSummaryIfAvailable

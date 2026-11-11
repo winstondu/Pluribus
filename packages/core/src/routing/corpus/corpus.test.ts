@@ -45,6 +45,21 @@ describe('routing corpus', () => {
     })
   })
 
+  // A strategy selector in front, by the rules: every example is routed as labelled, the ones beyond the window included,
+  // because the rules choose the tree walk exactly there. The record names the choice.
+  describe('referents by the strategy the rules select', () => {
+    const settings = { ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, referentStrategy: 'one-pass' as const, strategySelection: 'rules' as const } }
+    test.each(ROUTING_CORPUS.map((e) => [e.id, e] as const))('corpus · with decisions as labelled, the pipeline routes %s as labelled', async (_id, example) => {
+      const input = corpusInput(example, settings)
+      const router = createRouter({ decisionProvider: oracleDecisionProvider(example, input), decomposer: referenceDecomposer(example) })
+      const outcome = await router.route(input, NEVER_CANCELLED)
+      expect(compare(example, outcome)).toEqual([])
+      if (outcome.kind !== 'plan' || (example.replyTo ?? []).length > 0 || example.scene.candidates.sections.every((s) => s.asksElicitationId !== null)) return
+      // No explicit target and answers to refer to: a selection was made and recorded.
+      if (outcome.plan.answersElicitationId === null) expect(outcome.plan.decision.strategySelection?.choice.strategy).toBe(example.scene.candidates.sections.filter((s) => !s.asksElicitationId).length > 24 ? 'tree-walk' : 'one-pass')
+    })
+  })
+
   test('corpus · the evaluator reports per topic, and a provider that always says no fails the labels it should', async () => {
     const no = {
       async decide(request: { questions: Record<string, { type: string; options?: Record<string, string> }> }) {

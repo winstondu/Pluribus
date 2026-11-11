@@ -528,6 +528,12 @@ describe('run inspector', () => {
     expect(routing).toHaveTextContent('not a judgement that it was right')
     expect(routing).toHaveTextContent('confidence 0.89')
     expect(routing).toHaveTextContent(DEFAULT_SETTINGS.models.decision)
+    // A strategy selector was on for this routing: what ran, who chose it, why the rules stood in, and the model's confidence.
+    const selection = within(routing).getByTestId('strategy-selection')
+    expect(selection).toHaveTextContent('Tree walk (long runs searched, hopping between branch points) · chosen by the rules')
+    expect(selection).toHaveTextContent('the decision model was not confident')
+    expect(selection).toHaveTextContent('9 answers are older than the routing request lists')
+    expect(selection).toHaveTextContent('strategy 0.58')
 
     await user.click(screen.getByRole('button', { name: 'Show in transcript' }))
     expect(ui.getState().reveal?.sectionId).toBe(fx.id('section', 'packing'))

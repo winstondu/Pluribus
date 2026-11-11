@@ -1,5 +1,7 @@
 import {
   type DecisionBudget,
+  type StrategySelectionRecord,
+  type TreeWalkSettings,
   provisionalLabel,
   providerError,
   type Decided,
@@ -36,12 +38,14 @@ import type {
   RoutingInput,
   RoutingOutcome,
   RoutingPlan,
+  SelectorAsk,
   UnitReferents,
 } from '../ports'
 import { Batch, ask, type Answers } from './batch'
 import { AMBIGUITY_FLOOR, derivePlacement, neededWork, placedWithoutTarget, referentCovered, resolveUnitTargets, selected, validatePlan, type TargetMode } from './derive'
 import { askUnit, readUnit, sectionNumbers, withReferents, type UnitScope, type UnitSignals } from './questions'
 import { createReferentAsk, estimateRequestTokens, referentStrategyFor, routingTokenBudget, type ReferentSpend, type RoutingTokenBudget } from './referents'
+import { applyChoice, choiceText, selectStrategy, strategySelectorFor } from './selection'
 import { MAX_SECTIONS, MIN_SECTIONS, decisionContextOf, describeState, numberedAnswerSections, supply, type Supplied } from './supply'
 
 /**
@@ -77,6 +81,12 @@ import { MAX_SECTIONS, MIN_SECTIONS, decisionContextOf, describeState, numberedA
  * the most recent ones, down to `MIN_SECTIONS`. What is left is the referent
  * strategy's.
  *
+ * Which strategy runs, and with which tree-walk settings, is the settings'
+ * unless a strategy selector is on (`selection/`): then it is chosen for
+ * this routing from the shape of the genealogy, before the gate, and how it
+ * was chosen is recorded with the decision. The pipeline is handed a
+ * strategy and settings either way.
+ *
  * Shared-requirement revisions take one more call over the brief's
  * consumers, to pre-select the work actually affected (Q44).
  *
@@ -95,7 +105,7 @@ export function createRouter(deps: Deps): Router {
   }
 }
 
-type Deps = Pick<CoreDependencies, 'decisionProvider' | 'decomposer' | 'referentStrategy'>
+type Deps = Pick<CoreDependencies, 'decisionProvider' | 'decomposer' | 'referentStrategy' | 'strategySelector'>
 
 const failed = (error: ProviderError): RoutingOutcome => ({ kind: 'failed', error })
 const malformed = (message: string): RoutingOutcome => failed(providerError('malformed-response', message))
@@ -113,6 +123,8 @@ class Record {
   referentNote = ''
   /** Whether the decision model was shown stored summaries, for the decision's explanation. Empty when not. */
   contextNote = ''
+  /** How the referent strategy was chosen, when a strategy selector was on. Null when the settings were used as they are. */
+  selection: StrategySelectionRecord | null = null
   /** Why the pipeline's request listed fewer answer sections than its window, for the decision's explanation. Empty when it listed them all. */
   windowNote = ''
   /** Estimated input tokens of the pipeline's own decision requests so far: they are counted against the routing's token budget first. */
@@ -146,7 +158,8 @@ async function routeMessage(deps: Deps, input: RoutingInput, signal: CancelSigna
   if (answered) return answerPlan(input, answered, record, given?.mode ?? 'explicit', given?.sectionIds ?? [])
 
   const relate = input.candidates.sections.length > 0 || input.candidates.chains.length > 0
-  const strategy = deps.referentStrategy ?? referentStrategyFor(input.settings.routing.referentStrategy)
+  // Explicit and chosen targets are used as given, so there is no strategy to choose for them.
+  const { strategy, treeWalk } = await chooseStrategy(deps, input, given ? null : everything, record, signal)
 
   // ── 1. The decision gate ──
   /** The gate's request when the pipeline lists at most `window` answer sections. */
@@ -180,7 +193,7 @@ async function routeMessage(deps: Deps, input: RoutingInput, signal: CancelSigna
     ].join('\n')
     const stateText = describeState(input, supplied, subject)
     // Explicit and chosen targets are used as given: nothing is asked about the message's referents.
-    const referentRequest = referentRequestFor(input, supplied, given ? [] : [{ key: 'm', name: 'the new message' }], stateText, subject)
+    const referentRequest = referentRequestFor(input, supplied, given ? [] : [{ key: 'm', name: 'the new message' }], stateText, subject, treeWalk)
     addReferentQuestions(gate, strategy, referentRequest)
     return { supplied, batch: gate, messageScope, subject, stateText, referentRequest }
   }
@@ -259,7 +272,7 @@ async function routeMessage(deps: Deps, input: RoutingInput, signal: CancelSigna
   const compositeDecided: Decided<'atomic' | 'composite'> = { value: 'atomic', confidence: composite }
 
   if (isComposite && decomposition && decomposition.fragments.length >= 2) {
-    return routeComposite(deps, input, signal, { given, record, decomposition, requirements, composite, strategy })
+    return routeComposite(deps, input, signal, { given, record, decomposition, requirements, composite, strategy, treeWalk })
   }
 
   // ── Atomic ──
@@ -352,6 +365,8 @@ interface CompositeContext {
   readonly requirements: RequirementBook
   readonly composite: number | null
   readonly strategy: ReferentStrategy
+  /** The tree-walk settings the strategy is handed: the configured ones, or a strategy selector's. */
+  readonly treeWalk: TreeWalkSettings
 }
 
 async function routeComposite(deps: Deps, input: RoutingInput, signal: CancelSignal, c: CompositeContext): Promise<RoutingOutcome> {
@@ -405,7 +420,7 @@ async function routeComposite(deps: Deps, input: RoutingInput, signal: CancelSig
       ...(given ? [`The user replied to ${given.sectionIds.map((id) => `S${numbers.get(id) ?? '?'}`).join(' and ')}.`] : []),
     ].join('\n')
     const stateText = describeState(input, supplied, subject)
-    const referentRequest = referentRequestFor(input, supplied, scopes.map((scope) => ({ key: scope.key, name: scope.name })), stateText, subject)
+    const referentRequest = referentRequestFor(input, supplied, scopes.map((scope) => ({ key: scope.key, name: scope.name })), stateText, subject, c.treeWalk)
     addReferentQuestions(batch, c.strategy, referentRequest)
     return { supplied, batch, scopes, stateText, referentRequest }
   }
@@ -597,6 +612,7 @@ function referentRequestFor(
   units: ReferentRequest['units'],
   stateText: string,
   subject: string,
+  treeWalk: TreeWalkSettings,
 ): ReferentRequest {
   const sections = numberedAnswerSections(input, supplied)
   return {
@@ -608,8 +624,70 @@ function referentRequestFor(
     relevance: { clear: input.settings.thresholds.targetChoice, floor: AMBIGUITY_FLOOR },
     useSummaryIfAvailable: input.settings.routing.useSummaryIfAvailable,
     decisionContext: (section) => decisionContextOf(input, section),
-    treeWalk: input.settings.routing.treeWalk,
+    treeWalk,
   }
+}
+
+/** The share of a routing's token budget a strategy selector's request may take: beyond it the rules choose. */
+export const SELECTOR_BUDGET_SHARE = 0.15
+
+/**
+ * The referent strategy of this routing and the tree-walk settings it is
+ * handed. The settings' own, unless a strategy selector is on: then the
+ * selector chooses from the shape of the genealogy (`selection/`), its
+ * request to the decision model is counted against the routing's token
+ * budget like the pipeline's own, and what it chose and why goes into the
+ * decision record. An injected referent strategy is used as it is.
+ */
+async function chooseStrategy(
+  deps: Deps,
+  input: RoutingInput,
+  supplied: Supplied | null,
+  record: Record,
+  signal: CancelSignal,
+): Promise<{ readonly strategy: ReferentStrategy; readonly treeWalk: TreeWalkSettings }> {
+  const routing = input.settings.routing
+  const configured = { strategy: deps.referentStrategy ?? referentStrategyFor(routing.referentStrategy), treeWalk: routing.treeWalk }
+  const selector = deps.strategySelector ?? strategySelectorFor(routing.strategySelection)
+  if (deps.referentStrategy || !selector || !supplied) return configured
+  const sections = numberedAnswerSections(input, supplied)
+  if (sections.length === 0) return configured
+  const budget = tokenBudgetFor(input, 1)
+  const ask: SelectorAsk = async (stateText, questions) => {
+    const batch = new Batch()
+    for (const [id, question] of Object.entries(questions)) {
+      if (question.type === 'choice') batch.choice(id, question.instructions, question.options)
+      else batch.noul(id, question.instructions)
+    }
+    if (batch.size === 0) return { kind: 'answered', noul: () => null, choice: () => null }
+    // One small request, inside the routing's budget: the pipeline's own request still has to fit after it.
+    const tokens = estimateRequestTokens(stateText, batch.questions)
+    if (tokens > budget.total * SELECTOR_BUDGET_SHARE || tokens > budget.total - record.pipelineTokens) return { kind: 'refused' }
+    const result = await record.ask(deps.decisionProvider, input.settings.models.decision, stateText, batch, signal)
+    if (!result.ok) return { kind: 'failed', error: result.error }
+    record.add(result.answers)
+    return { kind: 'answered', noul: (id) => result.answers.noul(id), choice: (id) => result.answers.choice(id) }
+  }
+  const selection = await selectStrategy({
+    selector,
+    routing,
+    sections,
+    candidates: input.candidates,
+    message: input.text,
+    confidence: input.settings.thresholds.targetChoice,
+    tokenBudget: budget.total,
+    onRecord: input.strategySelectionOnRecord ?? null,
+    ask,
+  })
+  record.selection = selection
+  return applyChoice(selection.choice, routing.treeWalk)
+}
+
+function selectionNote(selection: StrategySelectionRecord | null): string {
+  if (!selection) return ''
+  const by = selection.selector === 'rules' ? 'the rules' : 'the decision model'
+  const reused = selection.reused ? ', as chosen earlier for a conversation of this shape' : ''
+  return ` Referent strategy chosen by ${by}${reused}: ${choiceText(selection.choice)}. ${selection.reason}`
 }
 
 /** The strategy's questions ride in the pipeline's own request. A question never replaces one the pipeline asks itself. */
@@ -978,8 +1056,9 @@ function decisionRecord(
     composition,
     units,
     thresholds: { ...input.settings.thresholds, ambiguityFloor: AMBIGUITY_FLOOR },
-    explanation: `${explanation}${record.windowNote}${record.referentNote}${record.contextNote}`,
+    explanation: `${explanation}${selectionNote(record.selection)}${record.windowNote}${record.referentNote}${record.contextNote}`,
     questions: record.questions,
+    ...(record.selection ? { strategySelection: record.selection } : {}),
   }
 }
 

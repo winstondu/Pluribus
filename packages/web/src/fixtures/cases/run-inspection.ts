@@ -456,6 +456,17 @@ const packing: RunInspection = {
     prerequisites: { value: [{ kind: 'directive', directiveId: id('directive', 'itinerary') }], confidence: 0.9 },
     needsClarification: 0.07,
     explanation: '“That plan” is the itinerary, which is still being written, so the packing list waits for it.',
+  }, {
+    // A strategy selector was on: the decision model was not confident, so the rules chose.
+    strategySelection: {
+      selector: 'rules',
+      choice: { strategy: 'tree-walk', startAtTrunkBase: false, hopBetweenBranchPoints: true, searchLongRuns: true },
+      signature: 'v1|s6|w4|r2|o0|p2|d2|g0.1|k7|t3.2.0s|b3.4.2.3l|q5',
+      reason: 'The decision model chose one-pass with confidence 0.58, below 0.70. By the rules: 9 answers are older than the routing request lists, which only the tree walk reaches; long runs are searched, hopping between branch points (a run of 7 answers below a split).',
+      scores: { strategy: 0.58 },
+      fallback: 'low-confidence',
+      reused: false,
+    },
   }),
   attempt: null,
   directiveState: 'dependency-queued',

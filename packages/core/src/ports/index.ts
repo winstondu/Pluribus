@@ -86,5 +86,15 @@ export type {
   SummariseReason,
   SummariseRequest,
 } from './context-summary'
+export type {
+  GenealogyShape,
+  RunShape,
+  SelectorAsk,
+  SelectorAskResult,
+  SelectorQuestions,
+  StrategySelection,
+  StrategySelectionRequest,
+  StrategySelector,
+} from './strategy-selector'
 export type { Backend, CoreDependencies, CoreOptions } from './backend'
 export { DEFAULT_CORE_OPTIONS } from './backend'

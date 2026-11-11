@@ -1,4 +1,4 @@
-import { textTokens, type DirectiveId, type NodeId, type SectionId, type TargetRedirect } from '@committee/protocol'
+import { textTokens, type DirectiveId, type NodeId, type SectionId, type StrategySelectionRecord, type TargetRedirect } from '@committee/protocol'
 import type { CandidateChain, CandidateGroup, CandidateSection, CandidateWork, RoutingCandidates } from '../ports'
 import {
   activeMembers,
@@ -107,6 +107,19 @@ export function sessionLogTokens(state: ConversationState): number {
   for (const id of state.messageOrder) tokens += textTokens(state.messages[id]?.text.length ?? 0)
   for (const text of Object.values(state.attemptText)) tokens += textTokens(text.length)
   return tokens
+}
+
+/**
+ * The most recent strategy selection among the conversation's routing
+ * decisions (`RoutingInput.strategySelectionOnRecord`): what a strategy
+ * selector reuses while the genealogy's shape has not changed materially.
+ */
+export function strategySelectionOnRecord(state: ConversationState): StrategySelectionRecord | null {
+  for (let i = state.messageOrder.length - 1; i >= 0; i--) {
+    const selection = state.messages[state.messageOrder[i] ?? '']?.decision?.strategySelection
+    if (selection) return selection
+  }
+  return null
 }
 
 /**

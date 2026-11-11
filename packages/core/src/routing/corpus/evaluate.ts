@@ -9,6 +9,7 @@ import {
   type PointRef,
   type PrerequisiteRef,
   type Settings,
+  type StrategySelectionRecord,
   type TextSpan,
 } from '@committee/protocol'
 import type {
@@ -23,6 +24,7 @@ import type {
   RoutingInput,
   RoutingOutcome,
   RoutingPlan,
+  StrategySelector,
 } from '../../ports'
 import { NEVER_CANCELLED } from '../../ports'
 import { createRouter } from '../pipeline'
@@ -40,6 +42,8 @@ export interface CorpusRun {
   readonly settings?: Pick<Settings, 'models' | 'thresholds' | 'routing'>
   readonly examples?: readonly CorpusExample[]
   readonly signal?: CancelSignal
+  /** Injected in place of the strategy selector the settings name. */
+  readonly strategySelector?: StrategySelector
 }
 
 export interface CorpusResult {
@@ -53,6 +57,8 @@ export interface CorpusResult {
   readonly questions: readonly DecisionQuestionRecord[]
   /** What routing the example cost in decision calls. */
   readonly decisions: DecisionSpend
+  /** How the referent strategy was chosen, when a strategy selector was on. */
+  readonly selection: StrategySelectionRecord | null
 }
 
 /** Decision calls made, and the input tokens the provider reported for them (0 where it reported none). */
@@ -158,7 +164,7 @@ export async function evaluateCorpus(run: CorpusRun): Promise<CorpusReport> {
   for (const example of run.examples ?? ROUTING_CORPUS) {
     const input = corpusInput(example, run.settings)
     const metered = meteredDecisionProvider(run.decisionProvider)
-    const router = createRouter({ decisionProvider: metered, decomposer: run.decomposer ?? referenceDecomposer(example) })
+    const router = createRouter({ decisionProvider: metered, decomposer: run.decomposer ?? referenceDecomposer(example), ...(run.strategySelector ? { strategySelector: run.strategySelector } : {}) })
     const outcome = await router.route(input, run.signal ?? NEVER_CANCELLED)
     const mismatches = compare(example, outcome)
     results.push({
@@ -169,6 +175,7 @@ export async function evaluateCorpus(run: CorpusRun): Promise<CorpusReport> {
       outcome: outcome.kind,
       questions: outcome.kind === 'plan' ? outcome.plan.decision.questions : [],
       decisions: metered.spent(),
+      selection: outcome.kind === 'plan' ? (outcome.plan.decision.strategySelection ?? null) : null,
     })
   }
   const byTopic: { [T in CorpusTopic]?: { passed: number; total: number } } = {}

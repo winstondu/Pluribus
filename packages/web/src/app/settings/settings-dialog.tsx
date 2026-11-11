@@ -10,6 +10,7 @@ import {
   type RetryPolicy,
   type Settings,
   type SettingsPatch,
+  type StrategySelectionMode,
 } from '@committee/protocol'
 import { CheckIcon, KeyRoundIcon, MinusIcon, PlusIcon } from 'lucide-react'
 import { useEffect, useId, useState, type ReactNode } from 'react'
@@ -393,6 +394,17 @@ const REFERENT_STRATEGIES: readonly { value: ReferentStrategyName; label: string
   },
 ]
 
+/** Whether the strategy and the tree walk's switches are chosen for each message from the shape of the conversation. */
+const STRATEGY_SELECTION: readonly { value: StrategySelectionMode; label: string; description: string }[] = [
+  { value: 'off', label: 'As set here', description: 'Every message uses the strategy and switches chosen below.' },
+  { value: 'rules', label: 'By rules', description: 'Chosen for each message from the shape of the conversation. No extra request.' },
+  {
+    value: 'decision-model',
+    label: 'By the decision model',
+    description: 'One small request about the shape, reused until the shape changes. The rules when it fails or is unsure.',
+  },
+]
+
 /** The tree walk's two switches. A run that is too long to ask about answer by answer is searched whichever way they are set. */
 const TREE_WALK_SWITCHES: readonly { key: 'startAtTrunkBase' | 'hopBetweenBranchPoints'; label: string; description: string }[] = [
   {
@@ -427,8 +439,24 @@ const SUMMARY_SWITCHES: readonly { key: 'useSummaryIfAvailable' | 'backgroundSum
 function ReferentSettings({ settings }: { settings: Settings }) {
   const change = useChangeSettings()
   const label = useId()
+  const selectionLabel = useId()
+  const selecting = settings.routing.strategySelection !== 'off'
   return (
     <Panel title="Referents" description="How routing decides which earlier answers a message refers to and waits for.">
+      <Row
+        label="Choosing the strategy"
+        labelId={selectionLabel}
+        description={selecting ? 'While this is on, the strategy and the two tree-walk switches are chosen for each message; the ones set below are not used.' : undefined}
+        stacked
+      >
+        <ChoiceCards
+          labelledBy={selectionLabel}
+          options={STRATEGY_SELECTION}
+          value={settings.routing.strategySelection}
+          onChoose={(value) => void change({ routing: { strategySelection: value } })}
+          className="sm:grid-cols-3"
+        />
+      </Row>
       <Row label="Strategy" labelId={label} stacked>
         <ChoiceCards
           labelledBy={label}

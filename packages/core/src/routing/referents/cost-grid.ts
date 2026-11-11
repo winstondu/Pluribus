@@ -138,7 +138,14 @@ const STRATEGIES: readonly (readonly [string, Partial<RoutingSettings>])[] = [
   ['+ trunk base', { treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, startAtTrunkBase: true } }],
   ['+ hops', { treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, hopBetweenBranchPoints: true } }],
   ['+ trunk base and hops', { treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, startAtTrunkBase: true, hopBetweenBranchPoints: true } }],
+  // A strategy selector in front: the rules cost nothing; the decision model's request is counted like any other. The
+  // worst-case provider is not confident about anything, so the rules choose after the request has been paid for.
+  ['selected by rules', { strategySelection: 'rules' }],
+  ['selected by the decision model', { strategySelection: 'decision-model' }],
 ]
+
+/** Rows per size: every shape with every strategy. */
+export const COST_GRID_ROWS_PER_SIZE = SHAPES.length * STRATEGIES.length
 
 export interface DecisionCost {
   readonly requests: number

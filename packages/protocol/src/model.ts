@@ -520,6 +520,41 @@ export interface UnitRoutingDecision {
  * (run inspector item 5). The decision model only selects among supplied
  * candidates; any rewritten text comes from decomposition (invariant 9).
  */
+/**
+ * Which referent strategy a routing uses and how the tree walk treats runs,
+ * as a strategy selector chose it from the shape of the conversation's
+ * genealogy (11 · "Strategy selection").
+ */
+export type StrategyChoice =
+  | { readonly strategy: 'one-pass' }
+  | {
+      readonly strategy: 'tree-walk'
+      readonly startAtTrunkBase: boolean
+      readonly hopBetweenBranchPoints: boolean
+      /** Whether runs too long to ask about answer by answer are searched in chunks. Off: every answer of a run is asked about. */
+      readonly searchLongRuns: boolean
+    }
+
+/** Why a strategy selector's own choice was not used and the rules' was. */
+export type StrategySelectionFallback = 'failed' | 'low-confidence' | 'no-budget'
+
+/** How the referent strategy of one routing was chosen, for the run inspector. */
+export interface StrategySelectionRecord {
+  /** Whose choice was used: the rules, or the decision model. */
+  readonly selector: 'rules' | 'decision-model'
+  readonly choice: StrategyChoice
+  /** The shape the choice was made for, reduced to what a material change of shape changes. */
+  readonly signature: string
+  /** One sentence: what about the shape decided it. */
+  readonly reason: string
+  /** The decision model's confidence in the strategy and the probability of each switch; null when the rules chose. */
+  readonly scores: { readonly [name: string]: number } | null
+  /** Set when the decision model was to choose and the rules chose in its place. */
+  readonly fallback: StrategySelectionFallback | null
+  /** True when the choice was taken from an earlier routing of the same shape and nothing was asked. */
+  readonly reused: boolean
+}
+
 export interface RoutingDecision {
   /**
    * - `decision-model`: produced by the routing pipeline.
@@ -534,6 +569,8 @@ export interface RoutingDecision {
   readonly thresholds: { readonly [name: string]: number }
   readonly explanation: string
   readonly questions: readonly DecisionQuestionRecord[]
+  /** How the referent strategy was chosen, when a strategy selector was on (`settings.routing.strategySelection`). */
+  readonly strategySelection?: StrategySelectionRecord | null
 }
 
 // ─────────────────────────── decomposition ───────────────────────────

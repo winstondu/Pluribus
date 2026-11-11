@@ -130,6 +130,7 @@ async function route(sc: Scene, text: string, rules: Rules, routing: RouteOption
   }
   const settings: RoutingSettings = {
     referentStrategy: routing.strategy ?? 'tree-walk',
+    strategySelection: 'off',
     referentBudget: { requests: routing.budget?.requests ?? DEFAULT_SETTINGS.routing.referentBudget.requests, questions: routing.budget?.questions ?? DEFAULT_SETTINGS.routing.referentBudget.questions },
     tokenBudget,
     treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, ...routing.treeWalk },

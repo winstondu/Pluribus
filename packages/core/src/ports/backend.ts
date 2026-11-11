@@ -6,6 +6,7 @@ import type { ModelProvider } from './model-provider'
 import type { ContextSummariser, ContextSummaryProvider } from './context-summary'
 import type { ReferentStrategy } from './referent-strategy'
 import type { Router } from './router'
+import type { StrategySelector } from './strategy-selector'
 import type { EventStore, ProjectionCache, SecretsStore } from './stores'
 
 /**
@@ -35,6 +36,12 @@ export interface CoreDependencies {
    * `settings.routing.referentStrategy`. Left out by the application.
    */
   readonly referentStrategy?: ReferentStrategy
+  /**
+   * Replaces the strategy selector the routing pipeline would take from
+   * `settings.routing.strategySelection`. Left out by the application. An
+   * injected referent strategy is used as it is: nothing is selected.
+   */
+  readonly strategySelector?: StrategySelector
   /**
    * What the decision model is shown for a node while
    * `settings.routing.useSummaryIfAvailable` is on. Left out, the backend

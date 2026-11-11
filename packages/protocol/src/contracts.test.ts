@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest'
 import { COMMAND_TYPES } from './commands'
 import { APP_EVENT_TYPES, APP_LOG, CONVERSATION_EVENT_TYPES, EVENT_SCHEMA_VERSION, upcastEvent } from './events'
 import { IN_FLIGHT_STATES, NOT_STARTED_STATES, PROVIDER_ERROR_CLASS, providerError, providerErrorCodeForStatus } from './model'
-import { DEFAULT_ABSOLUTE_TOKEN_BUDGET, DEFAULT_RELATIVE_TOKEN_BUDGET, DEFAULT_SETTINGS, LEGACY_REFERENT_INPUT_TOKENS, RETRY_POLICIES, applySettingsPatch, normalizeSettings, resolveTokenBudget, textTokens, validateSettingsPatch } from './settings'
+import { DEFAULT_ABSOLUTE_TOKEN_BUDGET, DEFAULT_RELATIVE_TOKEN_BUDGET, DEFAULT_SETTINGS, LEGACY_REFERENT_INPUT_TOKENS, RETRY_POLICIES, STRATEGY_SELECTION_MODES, applySettingsPatch, normalizeSettings, resolveTokenBudget, textTokens, validateSettingsPatch } from './settings'
 import { groupCountText, pausedText, provisionalLabel, recoveryLabels, redoneByDefaultText, supersededInputText, waitingText } from './wording'
 
 describe('commands', () => {
@@ -133,6 +133,7 @@ describe('settings', () => {
     const old = { ...DEFAULT_SETTINGS, routing: { referentStrategy: 'one-pass', referentBudget: { requests: 1, questions: 10, inputTokens: 500 } } } as unknown as typeof DEFAULT_SETTINGS
     expect(normalizeSettings(old).routing).toEqual({
       referentStrategy: 'one-pass',
+      strategySelection: 'off',
       referentBudget: { requests: 1, questions: 10 },
       tokenBudget: { mode: 'absolute', inputTokens: 500 },
       treeWalk: DEFAULT_SETTINGS.routing.treeWalk,
@@ -145,6 +146,23 @@ describe('settings', () => {
     expect(summaries.routing.useSummaryIfAvailable).toBe(true)
     expect(summaries.routing.backgroundSummaries).toBe(false)
     expect(applySettingsPatch(summaries, { routing: { backgroundSummaries: true } }).routing).toMatchObject({ useSummaryIfAvailable: true, backgroundSummaries: true })
+  })
+})
+
+describe('strategy selection', () => {
+  test('selection · the mode is a setting: off by default, validated, and defaulted for settings stored before it existed', () => {
+    expect(DEFAULT_SETTINGS.routing.strategySelection).toBe('off')
+    expect(STRATEGY_SELECTION_MODES).toEqual(['off', 'rules', 'decision-model'])
+    const rules = applySettingsPatch(DEFAULT_SETTINGS, { routing: { strategySelection: 'rules' } })
+    expect(rules.routing).toEqual({ ...DEFAULT_SETTINGS.routing, strategySelection: 'rules' })
+    expect(applySettingsPatch(rules, { routing: { strategySelection: 'decision-model' } }).routing.strategySelection).toBe('decision-model')
+    expect(applySettingsPatch(DEFAULT_SETTINGS, { routing: { strategySelection: 'off' } })).toBe(DEFAULT_SETTINGS)
+    expect(validateSettingsPatch({ routing: { strategySelection: 'rules' } })).toBeNull()
+    expect(validateSettingsPatch({ routing: { strategySelection: 'guess' as never } })).toMatch(/Unknown strategy selection/)
+    const { strategySelection: _dropped, ...before } = DEFAULT_SETTINGS.routing
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, routing: before as never }).routing.strategySelection).toBe('off')
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, strategySelection: 'guess' as never } }).routing.strategySelection).toBe('off')
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, strategySelection: 'rules' } }).routing.strategySelection).toBe('rules')
   })
 })
 

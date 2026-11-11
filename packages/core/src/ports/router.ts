@@ -20,6 +20,7 @@ import type {
   SectionState,
   Settings,
   SiblingGroupId,
+  StrategySelectionRecord,
   TargetRedirect,
   TextSpan,
   WholeRequestBarrier,
@@ -99,6 +100,14 @@ export interface RoutingInput {
    * from the context summary provider and its own context assembly.
    */
   readonly decisionContext?: (nodeId: NodeId) => DecisionContext | null
+  /**
+   * The most recent strategy selection recorded in the conversation's
+   * routing decisions, or null. A selector whose choice depends on the
+   * genealogy's shape alone is not asked again while the shape's signature
+   * is the one recorded: the choice is reused from the log, so nothing is
+   * cached outside state.
+   */
+  readonly strategySelectionOnRecord?: StrategySelectionRecord | null
   /** Mints the IDs the plan needs: directives, fragments, requirements. */
   readonly ids: IdFactory
 }
