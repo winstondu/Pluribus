@@ -48,8 +48,10 @@ A `directive` prerequisite therefore follows a revision by itself: J waiting on 
 | P has a child in flight | Fork. Opens a sibling group at P, or joins the open one. A child that began as an ordinary continuation moves to a fork chain of its own, with anything queued behind it (`sibling-group-opened.rechained`): the only time a node changes chain |
 | P is a sibling-group member, or P is not its chain's head and has no child in flight | New `branch` chain from P, own color (Q89). No sibling group, no join-back |
 
-- `{ kind: 'sibling-group' }` as a point resolves, when the attempt starts, to the base chain's latest completed node at or after the group's current join-back: the join-back itself, or the exchange of a retry that ran after closure.
-- A retry after closure is new work on the base chain placed that same way, so paused dependents read `join-back (with the marker) → retry's exchange` (Q92).
+- "A child in flight" is a directive in `IN_FLIGHT_STATES` whose node names P exactly: its planned parent is `{ kind: 'node', nodeId: P }`, or it has started with P among its parents. Queued work whose planned parent is still an unresolved `sibling-group` point is nobody's child until it starts.
+- `{ kind: 'sibling-group' }` as a point resolves, when the attempt starts, to the base chain's latest completed node at or after the group's current join-back: the join-back itself when nothing on the base chain has completed since. The table above is then applied to that node.
+- A retry after closure is new work on the base chain placed at that same point (Q92). So a dependent paused on the group reads `join-back (with the marker) → the retry's exchange` when it is released, and a dependent that already ran without the member keeps its record and gets the superseded-input note.
+- A replacement's context never includes the exchange it replaces, with the one exception in 06: a revision of *finished* work, where A′ sees A and the correction.
 - When a member is revised after its group closed, a further `join-back-formed` for the same group replaces the earlier one once the replacement completes. Membership never changes. In context the record reads: the member's request, the correction, the replacement answer (Q39).
 - Membership is by directive. A member revised while the group is open stays a member through its replacement.
 - An ancestor exchange that did not complete is read as its request plus a marker, never partial text, whether it sits in a join-back or on a plain chain (`ContextOrigin: 'unfinished-exchange'`).

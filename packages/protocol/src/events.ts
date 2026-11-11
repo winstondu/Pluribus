@@ -474,8 +474,8 @@ export interface AttemptStarted extends ConversationEnvelope<'attempt-started'> 
   /** The OpenRouter model ID used (Q65). */
   readonly model: string
   /**
-   * The exact nodes this run's context descends from. For a continuation
-   * from a sibling group this is the join-back node that existed at start.
+   * The exact nodes this run's context descends from: its planned parents
+   * with every `sibling-group` point resolved as it stood at start.
    */
   readonly parents: readonly NodeId[]
   /** Snapshot at start (Q29): a result that finishes during the run is not added. */

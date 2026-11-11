@@ -379,7 +379,9 @@ export type PointRef =
   | { readonly kind: 'node'; readonly nodeId: NodeId }
   /**
    * A sibling group as a whole: its join-back, whether already formed or
-   * not. Resolved to the join-back node when the attempt starts. Work that
+   * not. Resolved when the attempt starts, to the group's current join-back
+   * node or to the latest node completed on the base chain after it (the
+   * exchange of a retry that ran after the group closed, Q92). Work that
    * needs more than one member must use this, never a subset (Q30).
    */
   | { readonly kind: 'sibling-group'; readonly groupId: SiblingGroupId }
