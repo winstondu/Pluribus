@@ -3,7 +3,16 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
-  "scripts": { "typecheck": "tsc --noEmit -p ." },
-  "dependencies": { "@committee/protocol": "workspace:*", "@committee/core": "workspace:*" }
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@committee/core": "workspace:*",
+    "@committee/protocol": "workspace:*",
+    "eventsource-parser": "^4.1.3",
+    "zod": "^4.6.7"
+  }
 }
