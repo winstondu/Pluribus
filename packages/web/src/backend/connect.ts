@@ -45,7 +45,6 @@ async function connectFixture(id: string, manual: boolean): Promise<Connection> 
   }
   // `manual` leaves the steps to whoever holds the handle (the fixture gallery's stepper, an e2e test).
   const backend = createFixtureBackend(fixture, { timers: !manual })
-  if (typeof window !== 'undefined') window.__committeeFixture = backend
   return { mode: 'fixture', store: createBackendStore(backend), fixture: backend }
 }
 

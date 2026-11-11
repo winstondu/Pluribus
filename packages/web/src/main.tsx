@@ -5,7 +5,7 @@ import { App } from './App.tsx'
 import { ThemeProvider } from './app/theme.tsx'
 import { FIXTURES_ENABLED } from './backend/connect.ts'
 
-// The fixture gallery is a development route; its code is not in a production bundle.
+// The fixture gallery is a development route; a production build never loads its chunk.
 const Gallery = FIXTURES_ENABLED ? lazy(() => import('./app/gallery.tsx')) : null
 const showGallery = Gallery !== null && new URLSearchParams(window.location.search).has('fixtures')
 

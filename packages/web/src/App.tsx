@@ -25,6 +25,8 @@ export function App() {
         return
       }
       opened = next
+      // The handle the gallery's stepper and e2e tests drive: always the backend this app is mounted on.
+      if (next.fixture) window.__committeeFixture = next.fixture
       setConnection(next)
     })
     return () => {
