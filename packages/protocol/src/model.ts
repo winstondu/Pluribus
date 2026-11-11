@@ -595,7 +595,14 @@ export type ContextOrigin =
        */
       readonly joinBackId: JoinBackId | null
     }
-  /** The answer of an ancestor exchange, from the exact attempt that produced it. */
+  /**
+   * The answer of an ancestor exchange, from the exact attempt that produced
+   * it. An ancestor is read by its directive as it stood when the run
+   * started, so after a revision, a regenerate or a retry in place
+   * `attemptId` is the directive's current result, not the attempt that
+   * first ran on `nodeId` (Q39, Q96). A join-back member is read as the
+   * record holds it.
+   */
   | {
       readonly kind: 'ancestor-answer'
       readonly nodeId: NodeId

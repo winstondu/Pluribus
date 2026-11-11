@@ -207,6 +207,13 @@ export interface PlannedUnit {
   readonly instruction: string
   /** Short noun phrase naming the work. */
   readonly label: string
+  /**
+   * True when `label` is only the request's first words (`provisionalLabel`),
+   * as for an atomic message, which has no decomposition to name it. The
+   * engine then asks `Decomposer.label` in the background, when the
+   * decomposer has one, and records `directive-labeled` if it answers.
+   */
+  readonly labelIsProvisional: boolean
   /** Requirements that apply to this unit, shared ones included (Q4). Local unless explicitly session-wide (Q17). */
   readonly requirements: readonly Requirement[]
   /** Never `revision`: a revision creates no directive and is described by `RoutingPlan.revision`. */

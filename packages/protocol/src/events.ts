@@ -135,6 +135,21 @@ export interface RoutingFailed extends ConversationEnvelope<'routing-failed'> {
 }
 
 /**
+ * The user used Retry on a request whose routing had failed. The message is
+ * routed again and its responding bubble shows the routing status again.
+ *
+ * A message is waiting for a routing outcome from each of these events until
+ * a `routing-decided`, a `routing-failed` or a target-ambiguity
+ * `elicitation-raised` for it follows: `message-submitted`,
+ * `routing-retried`, `split-undone`, and the `elicitation-answered` that
+ * chose its targets. A message found still waiting when the backend starts
+ * lost its routing with the executor and is routed again (invariant 8).
+ */
+export interface RoutingRetried extends ConversationEnvelope<'routing-retried'> {
+  readonly messageId: MessageId
+}
+
+/**
  * A composite message was decomposed into fragments. Both the source spans
  * and the rewritten text are recorded (Q59).
  */
@@ -933,6 +948,7 @@ export type ConversationEvent =
   | MessageSubmitted
   | RoutingDecided
   | RoutingFailed
+  | RoutingRetried
   | MessageDecomposed
   | SplitUndone
   | SessionRequirementRecorded
@@ -1009,6 +1025,7 @@ export const CONVERSATION_EVENT_TYPES = [
   'message-submitted',
   'routing-decided',
   'routing-failed',
+  'routing-retried',
   'message-decomposed',
   'split-undone',
   'session-requirement-recorded',
