@@ -2,7 +2,7 @@ import { describe, expect, expectTypeOf, test } from 'vitest'
 import type { AttemptStarted, ConversationEvent } from '@committee/protocol'
 import type { ModelRequest, ModelStreamEvent } from '../../ports'
 import { answer, fail, independent, say, sequential, spanOf } from '../../testing'
-import { scenario } from './helpers'
+import { clone, scenario } from './helpers'
 
 /** Architecture invariants 1, 2, 4, 6 and 10 (11 · "Invariants") that milestone 1 can express. */
 
@@ -59,7 +59,7 @@ describe('invariants', () => {
     await s.ask('Suggest neighborhoods', { label: 'neighborhoods', placement: s.on('brief') }, answer('Gion.', 100, 400))
     await s.ask('Suggest activities', { label: 'activities', placement: s.onHeadOf('brief') }, [say(50, 'Museums'), fail(80, 'invalid-request')])
     await s.t.advance(100)
-    const snapshotOfRecords = () => structuredClone(Object.fromEntries(Object.values(s.state().attempts).map((a) => [a.id, a.context])))
+    const snapshotOfRecords = () => clone(Object.fromEntries(Object.values(s.state().attempts).map((a) => [a.id, a.context])))
     const before = snapshotOfRecords()
     // What the model received is exactly the record.
     for (const event of startedOf(await s.events())) {

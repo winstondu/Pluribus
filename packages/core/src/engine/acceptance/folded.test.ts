@@ -363,7 +363,7 @@ describe('reducers over hand-written logs', () => {
         nodeId: 'nod_jb2' as NodeId,
         groupId: group.id,
         chainId: group.baseChainId,
-        members: [first.members[0], { ...first.members[1], outcome: 'stopped', attemptId: null }].filter((m): m is NonNullable<typeof m> => m !== undefined),
+        members: first.members.map((m, i) => (i === 1 ? { ...m, outcome: 'stopped' as const, attemptId: null } : m)),
         replacesJoinBackId: first.id,
       },
     ])

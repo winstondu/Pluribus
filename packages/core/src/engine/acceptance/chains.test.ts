@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import type { AttemptStarted, ConversationEvent } from '@committee/protocol'
 import { answer, fail, independent, spanOf } from '../../testing'
-import { expectRebuildable, scenario, seqOf, type Scenario } from './helpers'
+import { clone, expectRebuildable, scenario, seqOf, type Scenario } from './helpers'
 
 /**
  * C1–C20 (04 · "Chains, dependencies, and context"), on the running example:
@@ -130,7 +130,7 @@ describe('chains, dependencies and context', () => {
     await s.t.advance(300)
     await s.ask('Suggest indoor evening activities', { label: 'evening', placement: s.on('activities') }, answer('Jazz bars.', 10, 50))
     const attemptId = s.d('evening').attemptIds[0] ?? ''
-    const recorded = structuredClone(s.state().attempts[attemptId]?.context)
+    const recorded = clone(s.state().attempts[attemptId]?.context)
     const inspected = await s.t.backend.snapshot({ kind: 'run', conversationId: s.c, directiveId: s.id('evening'), attemptId: null })
     await s.t.advance(2_500)
     expect(s.d('neighborhoods').state).toBe('completed')
@@ -213,7 +213,7 @@ describe('chains, dependencies and context', () => {
   test('C12 · a closed group and its join-back cannot be enlarged by later branches', async () => {
     const s = await trip(answer('Gion.', 100, 400), answer('Museums.', 50, 200))
     await s.t.advance(500)
-    const before = structuredClone(Object.values(s.state().groups)[0])
+    const before = clone(Object.values(s.state().groups)[0])
     await s.ask('Suggest day trips', { label: 'day trips', placement: s.on('brief') }, answer('Nara.', 10, 1_000))
     await s.ask('Give me three cheaper alternatives', { label: 'cheaper', placement: s.on('activities') }, answer('Shrines.', 10, 1_000))
     const after = Object.values(s.state().groups)[0]
@@ -336,7 +336,7 @@ describe('chains, dependencies and context', () => {
     }, answer('Both are blue-ish.', 10, 500))
     const join = s.d('comparison')
     expect(s.state().chains[join.chainId]?.kind).toBe('join')
-    const record = structuredClone(s.state().attempts[join.attemptIds[0] ?? '']?.context)
+    const record = clone(s.state().attempts[join.attemptIds[0] ?? '']?.context)
     // The sources stay independently continuable.
     await s.ask('And why are sunsets red?', { label: 'sunsets', placement: s.on('sky') }, answer('Longer path.', 10, 20))
     expect(s.d('sunsets').chainId).toBe(s.d('sky').chainId)

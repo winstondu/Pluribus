@@ -120,3 +120,8 @@ export function seqOf(events: readonly ConversationEvent[], match: (e: Conversat
   if (!found) throw new Error('No such event')
   return found.seq
 }
+
+/** A deep copy of JSON data. */
+export function clone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T
+}

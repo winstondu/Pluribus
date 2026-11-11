@@ -72,6 +72,11 @@ export class ScriptedModelProvider implements ModelProvider {
     return this
   }
 
+  /** Adds a script for the next request, whatever it is: scripts added this way answer in call order. */
+  next(steps: readonly ScriptStep[]): this {
+    return this.script(() => true, steps)
+  }
+
   /** The script used when nothing matches. */
   setDefault(steps: readonly ScriptStep[]): this {
     this.defaultSteps = steps

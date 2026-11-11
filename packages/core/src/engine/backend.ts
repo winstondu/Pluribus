@@ -374,7 +374,11 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
     return enqueue(async () => {
       const runtime = runtimes.get(conversationId)
       if (!runtime || disposed) return
-      await step(runtime, produce)
+      try {
+        await step(runtime, produce)
+      } catch {
+        // A store failure is exceptional: the step is not committed and its effects never start.
+      }
       schedule()
     })
   }
@@ -742,9 +746,15 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
         ctx.emit({ type: 'attempt-failed', attemptId, error: event.error, retry })
         return
       }
-      case 'cancelled':
-        // Only a cancellation Committee asked for ends a stream this way, and whoever asked recorded it.
+      case 'cancelled': {
+        // A cancellation Committee asked for was recorded by whoever asked, and the run is no longer live.
+        // One it did not ask for is the provider ending the run: a transient failure, never a silent hang.
+        ctx.flushOutput(attemptId)
+        live.delete(attemptId)
+        const error = providerError('network', 'The provider ended the run')
+        ctx.emit({ type: 'attempt-failed', attemptId, error, retry: ctx.retryPlan(attempt.directiveId, { kind: 'failed', error }) })
         return
+      }
     }
   }
 

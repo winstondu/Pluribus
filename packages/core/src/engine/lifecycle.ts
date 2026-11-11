@@ -110,7 +110,9 @@ export function settleWait(ctx: StepContext, directiveId: DirectiveId, force = f
 }
 
 /** First states, releases and refreshed waits, for every directive that has not started. */
-const waitReaction: Reaction = (_state, _event, ctx) => {
+const waitReaction: Reaction = (_state, event, ctx) => {
+  // Streamed text never changes what anything waits for (C13), and it is by far the most frequent event.
+  if (event.type === 'attempt-output') return
   for (const id of ctx.state.directiveOrder) {
     const d = ctx.state.directives[id]
     if (!d) continue
@@ -150,7 +152,8 @@ export function formJoinBack(ctx: StepContext, groupId: SiblingGroupId, replacin
 }
 
 /** The closing rule: an open group closes once every counting member has settled (Q49, Q92). */
-const groupClosingReaction: Reaction = (_state, _event, ctx) => {
+const groupClosingReaction: Reaction = (_state, event, ctx) => {
+  if (event.type === 'attempt-output') return
   for (const group of Object.values(ctx.state.groups)) {
     if (groupCanClose(ctx.state, group)) formJoinBack(ctx, group.id)
   }

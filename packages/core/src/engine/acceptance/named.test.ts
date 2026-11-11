@@ -422,6 +422,38 @@ describe('engine lifecycle', () => {
     expect(second?.context.messages.some((m) => m.content.includes('Caching is'))).toBe(false)
   })
 
+  test('capacity · a rate-limited directive shows "Waiting for capacity", never a dependency wait, and resumes in the same section', async () => {
+    const rateLimited: CoreModule = {
+      name: 'test-rate-limit',
+      retryPlanner: (_state, _id, cause, now) =>
+        cause.kind === 'failed' && cause.error.code === 'rate-limited'
+          ? { kind: 'scheduled', at: now + (cause.error.retryAfterMs ?? 1_000), wait: 'rate-limit', retryNumber: 1 }
+          : { kind: 'none', reason: 'non-retryable' },
+    }
+    const s = await scenario({ extraModules: [rateLimited] })
+    s.t.model.next([{ afterMs: 10, event: { type: 'failed', error: providerError('rate-limited', 'Too many requests', { httpStatus: 429, retryAfterMs: 2_000 }) } }])
+    s.t.model.next(answer('Done.', 10, 20))
+    await s.ask('Explain caching', { label: 'caching' })
+    await s.t.advance(100)
+    expect(s.d('caching').state).toBe('waiting-for-capacity')
+    const section = await s.section('caching')
+    expect(section.status).toEqual({ kind: 'waiting-for-capacity', text: WORDING.waitingForCapacity })
+    expect(section.placement).toBe('pending')
+    const snap = await s.snap()
+    expect(snap.queue.items).toEqual([])
+    expect(snap.operationGraph.operations[section.operationId]?.status).toBe('waiting-for-capacity')
+    await s.t.advance(2_100)
+    expect(s.d('caching').state).toBe('completed')
+    expect(s.d('caching').sectionIds).toHaveLength(1)
+    expect(s.state().attempts[s.d('caching').attemptIds[1] ?? '']?.origin).toBe('automatic-retry')
+  })
+
+  test('backend · createBackend refuses to build without a router or a module that makes one', async () => {
+    const { createEngine } = await import('../backend')
+    const t = s0()
+    expect(() => createEngine({ ...t, router: undefined } as never, {}, [])).toThrow(/router/)
+  })
+
   test('chunks · the first text is stored at once, then grouped by size or delay, and flushed before the terminal event', async () => {
     const s = await scenario({ options: { outputChunk: { maxChars: 10, maxDelayMs: 80 } } })
     await s.ask('Count', { label: 'count' }, [say(10, 'one'), say(20, ' two'), say(30, ' three four five'), say(40, ' six'), say(200, ' seven'), say(210, ' eight'), done(220)])
@@ -630,6 +662,10 @@ describe('engine lifecycle', () => {
     void ({} as DirectiveId)
   })
 })
+
+function s0() {
+  return { modelProvider: {}, decisionProvider: {}, decomposer: {}, eventStore: {}, projectionCache: {}, secretsStore: {}, clock: {}, timers: {}, ids: {} }
+}
 
 function done(afterMs: number) {
   return { afterMs, event: { type: 'completed' as const, finishReason: 'stop' as const, usage: null } }
