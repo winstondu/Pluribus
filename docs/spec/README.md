@@ -105,7 +105,7 @@ Read in order the first time. Each behavior document ends with its acceptance co
 | 08 | [Failure, stopping, and recovery](08-failure-and-recovery.md) | Retries, stop, paused dependents, interruption |
 | 09 | [Debug views](09-debug-views.md) | Mini-map, association, Compare, operation graph, run inspector, and the prototypes that illustrate them |
 | 10 | [Front-end interface](10-front-end.md) | What the user sees and can do, user settings, and the commands and events between client and backend |
-| 11 | [Architecture](11-architecture.md) | Backend, event log, storage, providers, routing pipeline, scheduling, error mapping |
+| 11 | [Architecture](11-architecture.md) | Backend, event log, storage, providers, routing pipeline, dependency attachment (referent strategies, decision budget, context summaries for decisions, strategy selection), scheduling, error mapping |
 | 12 | [Build plan](12-build-plan.md) | Packages, milestones, tests, and what is deliberately left to the build |
 
 ## How to read citations

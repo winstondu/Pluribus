@@ -3,10 +3,11 @@ import type { ChoiceQuestion, NoulQuestion } from './decision-provider'
 
 /**
  * Strategy selection: an optional layer in front of the referent strategy
- * (docs/build/dependency-decisioning.md · "Strategy selection"; the user's working name for it is
- * "decision-inception"). A selector chooses, for one routing, which
- * referent strategy runs and how the tree walk treats runs, from the shape
- * of the conversation's genealogy.
+ * (11 · "Strategy selection"; build record in
+ * docs/build/dependency-decisioning.md · "Strategy selection"; the user's
+ * working name for it is "decision-inception"). A selector chooses, for
+ * one routing, which referent strategy runs and how the tree walk treats
+ * runs, from the shape of the conversation's genealogy.
  *
  * The pipeline and the strategies do not know how the choice was made: the
  * pipeline is handed a strategy and tree-walk settings, as it would be

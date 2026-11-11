@@ -237,6 +237,22 @@ Closes the round-3 routing blocker and the related major finding; see [dependenc
 
 The e2e flows were not rerun. Settings gained a "Referents" choice on the Routing tab; it was opened and switched in Chromium by hand.
 
+### After the final gate: decision budget, strategy selection, and the spec section (2026-11-11)
+
+Three changes, one commit each: the decision token budget as a setting, with the pipeline's own request drawing from it; strategy selection ("decision-inception"); and the specification of both, with the context summaries, in [11 · Architecture, "Dependency attachment"](../spec/11-architecture.md#dependency-attachment). Evidence in [dependency-decisioning.md](dependency-decisioning.md).
+
+| Command | Result |
+|---|---|
+| `pnpm typecheck` | 5 packages, no errors |
+| `pnpm test` | 58 files, 1,113 tests passed, 0 failed (core 763, web 89) |
+| `pnpm --filter @committee/web lint` | Exit 0, warnings only |
+| `pnpm build` | Succeeds |
+| `pnpm smoke` | 4 files, 28 tests passed. Corpus, 62 examples: one pass 58, tree walk (the default) 61 (60 in one of three runs), selected by rules 61 in all three, selected by the decision model 61 (60 in one of three). J on both siblings 25/25 and a follow-up naming two sections 10/10 with each of nine configurations. The J request through the whole backend with live answers: 4 of 4 |
+
+The e2e flows were not rerun. Settings → Routing gained "Choosing the strategy" and "Decision budget"; both were opened and switched in Chromium, light and dark, at desktop width only.
+
+The specification's own status lines ("No production code exists", README, 11 and 12) were written before the build and were left as they are.
+
 ## How to run
 
 ```sh

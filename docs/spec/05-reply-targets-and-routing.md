@@ -7,6 +7,7 @@ A follow-up message raises two separate questions: what does it refer to, and wh
 - Every answer section has its own explicit reply affordance. There is no reply button for a whole composite response (Q10, Q20).
 - A follow-up sent without an explicit target has its target inferred. The inference may select one section or several, including several sections of the previous composite response (Q20).
 - Inference only selects among existing sections. It never invents section text.
+- The sections a follow-up may refer to are its **referents**. How they are found, and the limit on what finding them may cost, are in [architecture](11-architecture.md#dependency-attachment). The rules in this document hold whichever way they are found.
 - When the target is genuinely ambiguous, Committee asks the user to choose among the candidate sections. It never guesses silently (Q10, Q20). Ambiguity is decided by a confidence threshold ([elicitation](07-elicitation.md), Q74).
 - A target identifies the context being referred to. By itself it does not make the follow-up a revision, a fork, or a join (Q20).
 - A reply that targets a superseded section resolves to its current replacement, with a small "Replying to the revised version" note. The superseded attempt stays visible but is not a target for new work. Wanting the earlier version back is itself a revision or new work (Q43).

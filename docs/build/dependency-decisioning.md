@@ -1,5 +1,7 @@
 # Dependency decisioning: which earlier work a message refers to
 
+Specified in [11 · Architecture, "Dependency attachment"](../spec/11-architecture.md#dependency-attachment): the stage's contract, the two referent strategies, the decision budget and strategy selection. This document is the build record behind it: the measurements, the departures and what is open. Where the two disagree the spec wins. The spec calls a run of only children an "unbranched run", because in the spec a run is one model call; this document and the code say "run".
+
 Build-time record for the routing change of 2026-11-11. It closes the round-3 blocker "the spec's own J request is silently placed on one sibling" and the related "follow-up naming two sections raises the target-ambiguity prompt".
 
 Sources: `docs/spec/01-mental-model.md`, `04-chains-dependencies-context.md`, `05-reply-targets-and-routing.md` and `11-architecture.md`. The slides on the join-back "under the hood" (`docs/presentation/`) are gitignored and were not in the checkout; the join-back is taken from the spec text quoted below.
@@ -450,21 +452,21 @@ One request to the injected `DecisionProvider`, through the pipeline's `Selector
 
 ### Measured (live, `typesafe/jev-1.13`, 2026-11-11, reference decompositions, 62 examples)
 
-Two runs of the corpus for the default and the selectors, one for the other rows. The decision-model rows are **without reuse**: the corpus routes one message per conversation, so the selector is asked every time.
+Three runs of the corpus for the default and the selectors, two for the other rows (the third run of each is the whole `pnpm smoke`). Requests and tokens were the same in every run. The decision-model rows are **without reuse**: the corpus routes one message per conversation, so the selector is asked every time.
 
-| Configuration | Score, run 1 | Score, run 2 | Requests | Tokens reported | Per routing |
-|---|---|---|---|---|---|
-| One pass | 58/62 | | 74 | 92,592 | 1.19 requests, 1,493 tokens |
-| Tree walk, runs listed | 59/62 | | 94 | 104,582 | 1.52, 1,687 |
-| Tree walk, long runs searched (the default) | 60/62 | 61/62 | 100 | 120,245 | 1.61, 1,939 |
-| + trunk base | 61/62 | | 100 | 118,215 | 1.61, 1,907 |
-| + hops | 61/62 | | 102 | 120,018 | 1.65, 1,936 |
-| + both | 61/62 | | 102 | 117,988 | 1.65, 1,903 |
-| **Selected by rules** | **61/62** | **61/62** | **83** | **110,364** | **1.34, 1,780** |
-| Selected by the decision model | 61/62 | 60/62 | 126 | 145,539 | 2.03, 2,347 |
-| Selected by the decision model, shown the message | 61/62 | 61/62 | 126 | 147,233 | 2.03, 2,375 |
+| Configuration | Score per run | Requests | Tokens reported | Per routing |
+|---|---|---|---|---|
+| One pass | 58/62, 58/62 | 74 | 92,592 | 1.19 requests, 1,493 tokens |
+| Tree walk, runs listed | 59/62, 59/62 | 94 | 104,582 | 1.52, 1,687 |
+| Tree walk, long runs searched (the default) | 60/62, 61/62, 61/62 | 100 | 120,245 | 1.61, 1,939 |
+| + trunk base | 61/62, 61/62 | 100 | 118,215 | 1.61, 1,907 |
+| + hops | 61/62, 61/62 | 102 | 120,018 | 1.65, 1,936 |
+| + both | 61/62, 61/62 | 102 | 117,988 | 1.65, 1,903 |
+| **Selected by rules** | **61/62, 61/62, 61/62** | **83** | **110,364** | **1.34, 1,780** |
+| Selected by the decision model | 61/62, 60/62, 61/62 | 126 | 145,539 | 2.03, 2,347 |
+| Selected by the decision model, shown the message | 61/62, 61/62, 61/62 | 126 | 147,233 | 2.03, 2,375 |
 
-- The differences between runs are one borderline example each, none of them about referents: `revision-session-requirement` (the default, run 1), `target-ambiguous-use-that-one` (the decision model, run 2). `split-correction-and-new-work` is missed by every configuration, as before.
+- The differences between runs are one borderline example each, neither of them about the strategy: `revision-session-requirement` (the default, run 1), `target-ambiguous-use-that-one` (the decision model, run 2). `split-correction-and-new-work` is missed by every configuration, as before.
 - **The rules** score what the default tree walk scores, with 17% fewer requests and 8% fewer tokens: 34 or 35 of the 40 or 41 routings that select anything are inside the window and get one pass, the six beyond it the tree walk.
 - **The decision model does not beat the rules.** Its choices: one pass 35 times, the tree walk 3 times, the tree walk with runs listed twice (conversations with fewer than a dozen older answers, where listing fits), and once not confident. The score is the same within the noise; it costs 26% more requests and 21% more tokens than the default, and 52% and 32% more than the rules. With reuse a real conversation pays the request once per shape, which removes most of that cost and none of the reason: the questions it answers are the rules, stated in words.
 - **Shown the message**: the same score, five or six fallbacks for low confidence instead of one, about 41 more tokens a request.

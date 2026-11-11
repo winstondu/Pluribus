@@ -124,6 +124,41 @@ An elicitation that pre-selects a reasonable, reversible action and carries it o
 **Recovery choice**:
 The elicitation shown for a paused request: retry the prerequisite, continue without it, or cancel. It has no default.
 
+### Routing
+
+**Referent**:
+An existing answer section that a message or fragment may refer to, together with how confident routing is that it does. Referents that are confident enough become reply targets; a weaker one is put to the user, never assumed.
+_Avoid_: Reply target (for a section routing has not yet accepted)
+
+**Dependency attachment**:
+The part of routing that decides which earlier work a message or fragment attaches to: its referents, and from them its reply targets, its place in the genealogy, and the results it waits for.
+
+**Referent strategy**:
+The interchangeable method by which dependency attachment finds and scores referents. The rules that turn referents into targets, placement, and dependencies are the same for every strategy.
+_Avoid_: Algorithm, router (for the strategy alone)
+
+**Branch point**:
+A place where a line of work splits into two or more continuations, including the join-back of a sibling group.
+
+**Unbranched run**:
+The answers of one line of work between two branch points, each continuing the one before.
+_Avoid_: Run (which is one model call: "a run's context"), segment
+
+**Trunk**:
+The first unbranched run of a line of work that starts from nothing: from its first answer to its first branch point, or to its latest answer when it never splits. Its last answer is the trunk base.
+
+**Decision budget**:
+The limit on the decision-model work that routing one message may use: a number of tokens, fixed or a share of what the conversation has recorded, and never more than a set multiple of the cost of the answer being routed.
+_Avoid_: Rate limit, concurrency limit
+
+**Context summary**:
+A stored summary of the context of one point in the genealogy, shown to the decision model in place of that context when routing. It is never part of the context a run reads.
+_Avoid_: Compaction (which would shorten what a run reads and is out of scope)
+
+**Strategy selection**:
+An optional step that chooses the referent strategy for each message from the shape of the conversation's genealogy alone, by fixed rules or by asking the decision model.
+_Avoid_: Decision-inception (the working name)
+
 ### Presentation
 
 **Answer section**:

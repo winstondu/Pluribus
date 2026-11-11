@@ -1,7 +1,8 @@
 import type { ConsumedMessage, ConversationId, DirectiveId, NodeId } from '@committee/protocol'
 
 /**
- * Context summaries for decisioning (docs/build/context-summaries.md).
+ * Context summaries for decisions (11 · "Context summaries for decisions";
+ * build record in docs/build/context-summaries.md).
  *
  * The decision model can be shown, for a genealogy node, a stored summary
  * of the node's context ancestry up to an **anchor** node, followed by the

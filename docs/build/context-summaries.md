@@ -1,5 +1,7 @@
 # Context summaries for decisioning
 
+Specified in [11 · Architecture, "Context summaries for decisions"](../spec/11-architecture.md#context-summaries-for-decisions) (the spec writes "summarizer"; the code's port is `ContextSummariser`). This document is the build record behind it. Where the two disagree the spec wins.
+
 Build-time record, 2026-11-11. Status: **the interface, the wiring and two settings exist; nothing produces a summary.** The only provider returns a node's real context chain unchanged, and the only summariser produces nothing.
 
 The request, in the user's words:

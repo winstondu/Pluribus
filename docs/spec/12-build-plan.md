@@ -51,11 +51,14 @@ No user-visible promise depends on these, so they are not specification question
 | Where the embedded secrets store lives (Q64) | 2 |
 | Status wording for work held by the concurrency limit, as opposed to a provider rate limit | 3 |
 | Which pipeline stage assigns each fragment of a composite its chain and target; Q59's gate chooses these before decomposition | 4 |
+| The default referent strategy and tree-walk switches, the size of unbranched run that is searched, the figures of the decision budget, and the strategy selector's rules ([dependency attachment](11-architecture.md#dependency-attachment)) | 4 |
 | How a superseded input is detected for the superseded-input note, and whether a finer check estimates if the replacement would change the result before showing it (Q40) | 5 |
 
 ## Out of scope for the first version
 
 - Context compaction (Q67).
+- Generating context summaries for decisions. The first version has the interface, a pass-through, and the design ([architecture](11-architecture.md#context-summaries-for-decisions)).
+- Optimizing dependency attachment: tuning the referent strategies and the decision budget, summary policies, and the quality of a rule-based, learned, or model-based strategy selector. The interfaces, settings, guard, and recording are in scope ([architecture](11-architecture.md#scope-in-the-first-version)).
 - A server backend and server storage (Q63).
 - OAuth sign-in for OpenRouter; the user pastes a key (Q73).
 - A fallback decision provider; only the interface is kept (Q77).

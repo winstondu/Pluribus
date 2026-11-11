@@ -5,7 +5,9 @@ import type { CandidateSection, RoutingCandidates } from './router'
 
 /**
  * How routing decides which earlier work a message refers to, and through
- * that what it reads and waits for (docs/build/dependency-decisioning.md).
+ * that what it reads and waits for: the referent strategy of dependency
+ * attachment (11 · "Dependency attachment"; measurements in
+ * docs/build/dependency-decisioning.md).
  *
  * A strategy scores the answer sections a unit may refer to. Everything
  * after it is the same whichever strategy ran: thresholds turn the scores
