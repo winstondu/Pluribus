@@ -8,7 +8,8 @@ import type { ChainId, GenealogyProjection, NodeId, NodeView, SiblingGroupId } f
  * where they can, with forks to the right of the chain they left, in the
  * order they were sent. Nothing
  * here decides ancestry, and nothing about waiting or display order is read
- * from it: every edge is one entry of a node's `parents`, as projected.
+ * from it: every edge is one entry of a node's `parents`, as projected, and
+ * every planned edge is one entry of a node's `plannedGroupIds`.
  */
 
 export interface PlacedNode {
@@ -32,6 +33,21 @@ export interface PlacedEdge {
   readonly tip: { readonly x: number; readonly y: number }
 }
 
+/**
+ * Work planned on a sibling group that has no join-back yet (09 §1): the
+ * projection names the group, not a node, so the edge leaves the group's
+ * oval. It is always drawn dashed: nothing has been read yet.
+ */
+export interface PlannedEdge {
+  readonly key: string
+  readonly groupId: SiblingGroupId
+  readonly to: NodeId
+  /** The chain of the planned node: its color. */
+  readonly chainId: ChainId
+  readonly path: string
+  readonly tip: { readonly x: number; readonly y: number }
+}
+
 export interface PlacedGroup {
   readonly id: SiblingGroupId
   readonly x: number
@@ -44,6 +60,7 @@ export interface MiniMapLayout {
   readonly nodes: readonly PlacedNode[]
   readonly byId: ReadonlyMap<NodeId, PlacedNode>
   readonly edges: readonly PlacedEdge[]
+  readonly plannedEdges: readonly PlannedEdge[]
   readonly groups: readonly PlacedGroup[]
   readonly width: number
   readonly height: number
@@ -69,6 +86,11 @@ export function hasSecondLine(node: NodeView): boolean {
   return node.kind === 'join-back' || node.state !== 'completed'
 }
 
+/** The open sibling groups a node is planned on, as projected. A join-back node is never planned. */
+function plannedGroupsOf(node: NodeView): readonly SiblingGroupId[] {
+  return node.kind === 'exchange' ? (node.plannedGroupIds ?? []) : []
+}
+
 export function layoutGenealogy(genealogy: GenealogyProjection): MiniMapLayout {
   const { nodes, chains, groups } = genealogy
   const nodeIds = genealogy.nodeIds.filter((id) => nodes[id] !== undefined)
@@ -92,10 +114,15 @@ export function layoutGenealogy(genealogy: GenealogyProjection): MiniMapLayout {
     if (!node || visiting.has(id)) return 0
     visiting.add(id)
     const above = node.parents.filter((parent) => nodes[parent] !== undefined)
+    // Planned on an open group: below its members, leaving the row where the group's join-back will form.
+    const underGroups = plannedGroupsOf(node).flatMap((groupId) => {
+      const members = (groups[groupId]?.memberNodeIds ?? []).filter((member) => nodes[member] !== undefined)
+      return members.length > 0 ? [2 + Math.max(...members.map(rowOf))] : []
+    })
     // A node with no resolved parent yet still sits under what its chain already has.
     const before = previousInChain.get(id)
-    const anchors = above.length > 0 ? above : before ? [before] : []
-    const row = anchors.length === 0 ? 0 : 1 + Math.max(...anchors.map(rowOf))
+    const anchors = above.length > 0 || underGroups.length > 0 ? above : before ? [before] : []
+    const row = Math.max(anchors.length === 0 ? 0 : 1 + Math.max(...anchors.map(rowOf)), ...underGroups)
     visiting.delete(id)
     rows.set(id, row)
     return row
@@ -220,10 +247,40 @@ export function layoutGenealogy(genealogy: GenealogyProjection): MiniMapLayout {
     ovals.push({ id: group.id, x: left, y: top, width: right - left, height: bottom - top })
   }
 
+  // ── planned edges: from the oval of each open group a not-started node is planned on ──
+  const plannedEdges: PlannedEdge[] = []
+  for (const child of placed) {
+    for (const groupId of plannedGroupsOf(child.node)) {
+      const oval = ovals.find((entry) => entry.id === groupId)
+      if (!oval) continue
+      // Once the join-back is a parent, the edge from it says the same thing: never both.
+      const joinBack = groups[groupId]?.joinBackNodeId
+      if (joinBack && child.node.parents.includes(joinBack)) continue
+      // Leave from the flat part of the oval's bottom, as near above the child as it reaches.
+      const corner = Math.min(oval.height, oval.width) / 2
+      const startX = Math.min(Math.max(child.x, oval.x + corner), oval.x + oval.width - corner)
+      const startY = oval.y + oval.height
+      const endY = child.y - MAP.radius - 5
+      const bend = Math.max(12, (endY - startY) * 0.5)
+      plannedEdges.push({
+        key: `${groupId}>${child.node.id}`,
+        groupId,
+        to: child.node.id,
+        chainId: child.node.chainId,
+        path:
+          startX === child.x
+            ? `M ${startX} ${startY} L ${child.x} ${endY}`
+            : `M ${startX} ${startY} C ${startX} ${startY + bend}, ${child.x} ${endY - bend}, ${child.x} ${endY}`,
+        tip: { x: child.x, y: endY },
+      })
+    }
+  }
+
   return {
     nodes: placed,
     byId,
     edges,
+    plannedEdges,
     groups: ovals,
     width: MAP.paddingX * 2 + Math.max(1, columnCount) * MAP.columnWidth,
     height: MAP.paddingTop + Math.max(1, rowCount) * MAP.rowHeight - (MAP.rowHeight - MAP.radius * 2) + MAP.paddingBottom,

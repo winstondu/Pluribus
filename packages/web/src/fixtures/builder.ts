@@ -228,6 +228,8 @@ export interface NodeOptions {
   /** Parent nodes or join-backs, by name. */
   parents?: string[]
   parentsExact?: boolean
+  /** Open sibling groups it is planned on, by name: no join-back yet, so no parent can name it. Default: none. */
+  plannedGroups?: string[]
   /** Default: from the directive's section. */
   state?: NodeState
   reason?: NodeReason
@@ -1016,6 +1018,10 @@ export class ConversationBuilder {
         label: nodeLabel(name),
         parents: (node.parents ?? []).map((parent) => needNode(parent, `node "${name}"`)),
         parentsExact: node.parentsExact ?? true,
+        plannedGroupIds: (node.plannedGroups ?? []).map((group) => {
+          need('group', group, `node "${name}"`)
+          return id('siblingGroup', group)
+        }),
         state: node.state ?? (replacedBy.has(name) ? 'superseded' : nodeStateFromSection(node.directive)),
         reason: node.reason ?? 'initial',
         groupId: node.group ? id('siblingGroup', node.group) : null,

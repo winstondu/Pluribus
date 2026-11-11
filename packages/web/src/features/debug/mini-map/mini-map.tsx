@@ -97,31 +97,31 @@ export function MiniMap() {
             </rect>
           ))}
           {layout.edges.map((edge) => {
-            const from = relationOf(edge.from)
-            const to = relationOf(edge.to)
-            const dim = relation !== null && (from === 'other' || to === 'other')
-            const color = chainColor(genealogy.chains[edge.chainId]?.colorIndex ?? 0)
+            const dim = relation !== null && (relationOf(edge.from) === 'other' || relationOf(edge.to) === 'other')
             return (
-              <g key={edge.key} data-edge={edge.key} data-exact={edge.exact} opacity={dim ? 0.22 : 1} style={{ color }}>
-                <path
-                  d={edge.path}
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={1.5}
-                  strokeLinecap="round"
-                  strokeDasharray={edge.exact ? undefined : '4 4'}
-                />
-                <path
-                  d={`M ${edge.tip.x - 3.5} ${edge.tip.y - 5} L ${edge.tip.x} ${edge.tip.y} L ${edge.tip.x + 3.5} ${edge.tip.y - 5}`}
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={1.5}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </g>
+              <EdgeMark
+                key={edge.key}
+                data={{ 'data-edge': edge.key, 'data-exact': edge.exact }}
+                path={edge.path}
+                tip={edge.tip}
+                dashed={!edge.exact}
+                dim={dim}
+                color={chainColor(genealogy.chains[edge.chainId]?.colorIndex ?? 0)}
+              />
             )
           })}
+          {/* Planned on a group that has not joined back: from its oval, dashed, never a new root. */}
+          {layout.plannedEdges.map((edge) => (
+            <EdgeMark
+              key={edge.key}
+              data={{ 'data-planned-edge': edge.key, 'data-group': edge.groupId }}
+              path={edge.path}
+              tip={edge.tip}
+              dashed
+              dim={relation !== null && relationOf(edge.to) === 'other'}
+              color={chainColor(genealogy.chains[edge.chainId]?.colorIndex ?? 0)}
+            />
+          ))}
           {layout.nodes.map((placed) => (
             <MapNode
               key={placed.node.id}
@@ -150,6 +150,38 @@ export function MiniMap() {
         )}
       </div>
     </div>
+  )
+}
+
+/** One edge with its arrowhead at the child, in the child's chain color. Dashed while nothing has been read along it. */
+function EdgeMark(props: {
+  data: Record<`data-${string}`, string | boolean>
+  path: string
+  tip: { x: number; y: number }
+  dashed: boolean
+  dim: boolean
+  color: string
+}) {
+  const { tip } = props
+  return (
+    <g {...props.data} opacity={props.dim ? 0.22 : 1} style={{ color: props.color }}>
+      <path
+        d={props.path}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1.5}
+        strokeLinecap="round"
+        strokeDasharray={props.dashed ? '4 4' : undefined}
+      />
+      <path
+        d={`M ${tip.x - 3.5} ${tip.y - 5} L ${tip.x} ${tip.y} L ${tip.x + 3.5} ${tip.y - 5}`}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </g>
   )
 }
 
@@ -421,6 +453,7 @@ function JoinBackMark({ x, y, replaced }: { x: number; y: number; replaced: bool
 }
 
 function NodeIds({ node }: { node: NodeView }) {
+  const planned = node.kind === 'exchange' ? (node.plannedGroupIds ?? []) : []
   return (
     <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-0.5 font-mono text-2xs">
       <dt className="opacity-70">node</dt>
@@ -439,7 +472,13 @@ function NodeIds({ node }: { node: NodeView }) {
         </>
       )}
       <dt className="opacity-70">parents</dt>
-      <dd>{node.parents.length > 0 ? node.parents.join(', ') : 'none (a root)'}</dd>
+      <dd>{node.parents.length > 0 ? node.parents.join(', ') : planned.length > 0 ? 'none yet' : 'none (a root)'}</dd>
+      {planned.length > 0 ? (
+        <>
+          <dt className="opacity-70">planned on</dt>
+          <dd>{planned.join(', ')}</dd>
+        </>
+      ) : null}
     </dl>
   )
 }
@@ -575,6 +614,13 @@ function ExchangeRows(props: {
   })
   const notRead = later.filter((id) => !tails.includes(id))
   const started = node.parentsExact
+  // Open groups it is planned on: their join-back, which does not exist yet, will be read.
+  const plannedOn = (node.plannedGroupIds ?? []).flatMap((groupId) => {
+    const planned = genealogy.groups[groupId]
+    if (!planned) return []
+    const members = planned.memberNodeIds.filter((id) => !planned.withdrawnNodeIds.includes(id))
+    return [`the join-back of ${members.map((id) => nodeTitle(genealogy.nodes[id] ?? node)).join(' + ')}`]
+  })
 
   return (
     <>
@@ -585,8 +631,17 @@ function ExchangeRows(props: {
       </Row>
       <Row label={started ? 'Could read' : 'Will read'}>
         <span data-testid="could-read">
-          {ancestors.length > 0 ? labels(genealogy, ancestors) : 'Nothing before it: this is the start of a chain.'}
+          {plannedOn.length > 0
+            ? [...(ancestors.length > 0 ? [labels(genealogy, ancestors)] : []), ...plannedOn].join(', then ')
+            : ancestors.length > 0
+              ? labels(genealogy, ancestors)
+              : 'Nothing before it: this is the start of a chain.'}
         </span>
+        {plannedOn.length > 0 ? (
+          <span className="mt-0.5 block text-muted-foreground">
+            Its group is still running. The join-back forms when every member has finished.
+          </span>
+        ) : null}
         {!started ? (
           <span className="mt-0.5 block text-muted-foreground">
             Planned. Its exact context is recorded when its run starts, and it reads no answer that has not finished.

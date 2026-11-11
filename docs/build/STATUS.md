@@ -259,7 +259,6 @@ On the dev server, `/?fixtures` opens the fixture gallery.
 - **Two names for one piece of work (open since round 1).** The generated label never reaches the section title or the chain label. A queue item or recovery button may say "backwards clock repair" while the section heading shows the provisional "Write a 350-word short story about…". The queue item's link still leads to the right section.
 - **Late-retry rail color (round 3, minor).** After a late retry, the member's section and rail may move to the base chain's color. This was not re-verified after round 3's change, which attributes each run to its node's chain.
 - **Run inspector ancestry order (round 3, minor; open).** "Context ancestry, root first" lists the join-back before the member nodes it is a child of (`ConsumedContext.nodeIds` order).
-- **Planned edges in the mini-map.** The mini-map does not draw `plannedGroupIds` edges yet. A not-started dependent of an open group still appears as a root, although core projects the field.
 - **Two Retry buttons on a routing failure.** One is in the message header, one under the failure text, and both send the same command.
 - **Motion review.** Motion has not had the `review-animations` pass; the skill cannot be invoked from an agent session. Queue items animate `height`, which is a deliberate exception.
 - **Light-theme colors.** Chain 1 is 0.050 OKLab from `--warning`. Faint and muted ink are close together.

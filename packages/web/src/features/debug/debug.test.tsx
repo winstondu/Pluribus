@@ -173,8 +173,55 @@ describe('chain mini-map', () => {
     expect(screen.getByRole('tab', { name: 'Run' })).toHaveAttribute('aria-selected', 'true')
   })
 
+  test('09 §1 · work planned on an open group is drawn below it with a dashed edge from its oval, never as a root', async () => {
+    const { ready, container, backend } = renderWithBackend(<MiniMap />, { fixture: fixture('planned-on-group') })
+    await act(() => ready)
+    const group = fx.id('siblingGroup', 'forks')
+    const page = fx.id('node', 'page')
+    const joinBack = fx.id('node', 'join-back')
+    const plannedEdges = () => [...container.querySelectorAll('[data-planned-edge]')]
+    const edgesInto = (id: string) =>
+      [...container.querySelectorAll('[data-edge]')].filter((edge) => edge.getAttribute('data-edge')?.endsWith(`>${id}`))
+
+    // The group is open: one dashed edge from its oval to the page, and no node edge into the page.
+    expect(plannedEdges().map((edge) => edge.getAttribute('data-planned-edge'))).toEqual([`${group}>${page}`])
+    expect(one(plannedEdges()[0] as Element, 'path')).toHaveAttribute('stroke-dasharray')
+    expect(edgesInto(page)).toEqual([])
+
+    // Not a root: below the siblings, with the row where the join-back will form left free.
+    const layout = layoutGenealogy(fixture('planned-on-group').initial.genealogy)
+    const row = (name: string) => layout.byId.get(fx.id('node', name))?.row ?? -1
+    expect(row('page')).toBe(Math.max(row('abstract'), row('bio')) + 2)
+    expect(layout.byId.get(page)?.column).toBe(layout.byId.get(fx.id('node', 'brief'))?.column)
+
+    // The detail says what it will read without inventing a parent.
+    fireEvent.click(one(container, node('page')))
+    expect(screen.getByTestId('could-read')).toHaveTextContent('the join-back of abstract + speaker bio')
+
+    // The group closes: the join-back is the page's parent, and the planned edge is gone, with no duplicate.
+    act(() => {
+      backend?.step()
+    })
+    expect(plannedEdges()).toHaveLength(0)
+    expect(edgesInto(page).map((edge) => edge.getAttribute('data-edge'))).toEqual([`${joinBack}>${page}`])
+    expect(one(container, `[data-edge="${joinBack}>${page}"]`)).toHaveAttribute('data-exact', 'false')
+    const closed = layoutGenealogy(backend?.current.genealogy ?? fixture('planned-on-group').initial.genealogy)
+    expect(closed.byId.get(page)?.row).toBe(row('page'))
+    expect(closed.byId.get(joinBack)?.row).toBe(row('page') - 1)
+
+    // The page starts: the one edge into it is solid.
+    act(() => {
+      backend?.step()
+    })
+    expect(plannedEdges()).toHaveLength(0)
+    expect(edgesInto(page)).toHaveLength(1)
+    const solid = one(container, `[data-edge="${joinBack}>${page}"]`)
+    expect(solid).toHaveAttribute('data-exact', 'true')
+    expect(one(solid, 'path')).not.toHaveAttribute('stroke-dasharray')
+  })
+
   test('layout: every node has its own place, a chain keeps its column, and the join-back sits on the base chain', () => {
-    for (const id of ['trip', 'genealogy-marks', 'run-inspection']) {
+    for (const id of ['trip', 'genealogy-marks', 'run-inspection', 'planned-on-group']) {
       const { genealogy } = fixture(id).initial
       const layout = layoutGenealogy(genealogy)
       const cells = layout.nodes.map((placed) => `${placed.column}:${placed.row}`)
