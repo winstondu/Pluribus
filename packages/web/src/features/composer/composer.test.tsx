@@ -1,6 +1,7 @@
 import { WORDING } from '@committee/protocol'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, test, vi } from 'vitest'
+import { FocusBar } from '@/features/association'
 import { fx, getFixture } from '@/fixtures'
 import { TranscriptPane } from '@/features/transcript'
 import { byId, play } from '@/features/transcript/test-helpers'
@@ -240,4 +241,59 @@ test('modals · one at a time, oldest first; clarification and recovery elicitat
   paused.unmount()
   await open('clarification')
   expect(screen.queryByRole('dialog')).toBeNull()
+})
+
+test('reply target · "Reply to this" moves keyboard focus to the message box; removing a target leaves focus alone', async () => {
+  const view = await open('trip', true)
+  await act(async () => {
+    view.backend?.playAll()
+  })
+  const reply = screen.getAllByRole('button', { name: 'Reply to this' }).at(-1) as HTMLElement
+  reply.focus()
+  await act(async () => {
+    fireEvent.click(reply)
+  })
+  expect(view.ui.getState().replyTargets).toHaveLength(1)
+  expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Message' }))
+
+  reply.focus()
+  await act(async () => {
+    fireEvent.click(reply)
+  })
+  expect(view.ui.getState().replyTargets).toHaveLength(0)
+  expect(document.activeElement).toBe(reply)
+})
+
+test('Focus · Escape clears a pinned Focus while a target-ambiguity panel is shown: the panel is not a modal layer', async () => {
+  const view = renderWithBackend(
+    <>
+      <FocusBar />
+      <ComposerDock />
+    </>,
+    { fixture: getFixture('modal-target-ambiguity') },
+  )
+  await act(() => view.ready)
+  expect(screen.getByRole('dialog', { name: 'Which answer is this about?' })).toBeInTheDocument()
+  const chainId = view.store.getState().conversation?.genealogy.chainIds[0]
+  expect(chainId).toBeDefined()
+  act(() => {
+    if (chainId) view.ui.getState().pinFocus(chainId)
+  })
+  expect(view.ui.getState().focus.pinned).toBe(chainId)
+  fireEvent.keyDown(document.body, { key: 'Escape' })
+  expect(view.ui.getState().focus.pinned).toBeNull()
+})
+
+test('countdown bar · one linear transition over the whole remaining wait, not a step each second', async () => {
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+  const view = await open('modal-choice-default')
+  const bar = byId(view.container, 'data-slot', 'countdown-bar').firstElementChild as HTMLElement
+  expect(bar.style.transform).toBe('scaleX(0)')
+  const duration = Number(/transform (\d+)ms linear/.exec(bar.style.transition)?.[1])
+  expect(duration).toBeGreaterThan(20_000)
+  act(() => {
+    vi.advanceTimersByTime(3000)
+  })
+  // The seconds tick in the text; the bar's transition is not restarted.
+  expect(bar.style.transition).toBe(`transform ${duration}ms linear`)
 })

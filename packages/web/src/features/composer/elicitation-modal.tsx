@@ -5,8 +5,8 @@ import {
   type SectionId,
 } from '@committee/protocol'
 import { LocateIcon, LockIcon } from 'lucide-react'
-import { AnimatePresence, motion } from 'motion/react'
-import { useEffect, useId, useState } from 'react'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { useUiState } from '@/app/ui-state'
 import { useChain, useQueue } from '@/backend'
 import { Button } from '@/components/ui/button'
@@ -53,7 +53,8 @@ function ModalFrame(props: { titleId: string; kind: ElicitationView['kind']; chi
       aria-modal="false"
       aria-labelledby={props.titleId}
       data-elicitation={props.kind}
-      className="flex flex-col gap-3 rounded-2xl border border-border-strong/70 bg-surface-raised p-4 shadow-overlay"
+      // Capped, scrolling inside itself, so the composer and some of the transcript stay on screen on a short viewport.
+      className="scroll-quiet flex max-h-[min(45dvh,30rem)] flex-col gap-3 overflow-y-auto overscroll-contain rounded-2xl border border-border-strong/70 bg-surface-raised p-4 shadow-overlay [&>*]:shrink-0"
     >
       {props.children}
     </section>
@@ -163,6 +164,40 @@ function useSecondsLeft(deadlineAt: number): number {
   return Math.max(0, Math.ceil((deadlineAt - now) / 1000))
 }
 
+/**
+ * The wait, drawn as a bar that empties. One linear transition for the whole
+ * remaining wait, set once and again only when the deadline changes, so the
+ * bar moves evenly instead of in one-second steps; the browser runs it off
+ * the main thread. Reduced motion: the bar follows the whole seconds of the
+ * text beside it, without a transition.
+ */
+function CountdownBar({ deadlineAt, waitMs, secondsLeft }: { deadlineAt: number; waitMs: number; secondsLeft: number }) {
+  const reduce = useReducedMotion()
+  const bar = useRef<HTMLSpanElement>(null)
+  useLayoutEffect(() => {
+    const element = bar.current
+    if (!element || reduce) return
+    const remaining = Math.max(0, deadlineAt - Date.now())
+    const fraction = waitMs > 0 ? Math.min(1, remaining / waitMs) : 0
+    element.style.transition = 'none'
+    element.style.transform = `scaleX(${fraction})`
+    // Commit the starting value before the transition to empty is set.
+    void element.offsetWidth
+    element.style.transition = `transform ${remaining}ms linear`
+    element.style.transform = 'scaleX(0)'
+  }, [deadlineAt, waitMs, reduce])
+  const stepped = waitMs > 0 ? Math.min(1, (secondsLeft * 1000) / waitMs) : 0
+  return (
+    <span aria-hidden data-slot="countdown-bar" className="block h-0.5 overflow-hidden rounded-full bg-border">
+      <span
+        ref={bar}
+        className="block h-full origin-left bg-primary"
+        style={reduce ? { transform: `scaleX(${stepped})`, transition: 'none' } : undefined}
+      />
+    </span>
+  )
+}
+
 const OPTION_STATE_NOTE = {
   finished: null,
   running: 'was running, so it is always redone',
@@ -180,7 +215,6 @@ function ChoiceWithDefaultModal({ elicitation }: { elicitation: ChoiceWithDefaul
   const command = useCommand()
   const titleId = useId()
   const secondsLeft = useSecondsLeft(elicitation.deadlineAt)
-  const fraction = elicitation.waitMs > 0 ? Math.min(1, (secondsLeft * 1000) / elicitation.waitMs) : 0
 
   // The selection as the backend last reported it, edited optimistically until the next report.
   const reported = elicitation.options.filter((option) => option.selected).map((option) => option.directiveId)
@@ -255,12 +289,7 @@ function ChoiceWithDefaultModal({ elicitation }: { elicitation: ChoiceWithDefaul
             </span>
             <span className="text-faint-foreground">, or when you send another message</span>
           </p>
-          <span aria-hidden className="block h-0.5 overflow-hidden rounded-full bg-border">
-            <span
-              className="block h-full origin-left bg-primary transition-transform duration-[250ms] ease-linear motion-reduce:transition-none"
-              style={{ transform: `scaleX(${fraction})` }}
-            />
-          </span>
+          <CountdownBar deadlineAt={elicitation.deadlineAt} waitMs={elicitation.waitMs} secondsLeft={secondsLeft} />
         </div>
         <Button size="sm" onClick={confirm}>
           Confirm selection

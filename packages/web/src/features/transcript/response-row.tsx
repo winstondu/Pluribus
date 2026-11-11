@@ -6,7 +6,7 @@ import { useMessage, useResponse, useSection } from '@/backend'
 import { Button } from '@/components/ui/button'
 import { ChainRail, useFocusedChainId, useSectionsFocus } from '@/features/association'
 import { cn } from '@/lib/utils'
-import { Mark, StatusLine } from './marks'
+import { StatusLine } from './marks'
 import { ENTER, EXIT, MOVE, useEntrance, useKept } from './motion'
 import { SectionBlock } from './section'
 import { useCommand } from './use-command'
@@ -125,12 +125,8 @@ function RoutingBubble({ response, dimmed }: { response: ResponseView; dimmed: b
       <div className="flex min-w-0 flex-1 flex-col gap-1.5 py-0.5">
         {routing.state === 'failed' ? (
           <>
-            <p role="alert" className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-sm text-destructive">
-              <Mark kind="failed" className="self-center">
-                Not routed
-              </Mark>
-              <span>{routing.text}</span>
-            </p>
+            {/* Status, not a mark: a request as a whole never shows failed (08, 10). */}
+            <StatusLine kind="routing-failed" text={routing.text} />
             <RetryRouting messageId={response.messageId} />
           </>
         ) : (

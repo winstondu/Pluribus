@@ -150,7 +150,7 @@
   --foreground: oklch(0.255 0.012 175);
   --muted: oklch(0.955 0.005 95);
   --muted-foreground: oklch(0.49 0.012 155);
-  --faint-foreground: oklch(0.62 0.01 155);
+  --faint-foreground: oklch(0.54 0.01 155); /* 4.5:1 on the page: it is used for small type */
   --border: oklch(0.905 0.006 100);
   --border-strong: oklch(0.84 0.008 100);
   --input: oklch(0.885 0.006 100);
@@ -246,18 +246,18 @@
   --chain-0: oklch(0.78 0.11 258);
   --chain-1: oklch(0.8 0.09 55);
   --chain-2: oklch(0.79 0.11 305);
-  --chain-3: oklch(0.82 0.08 188);
+  --chain-3: oklch(0.76 0.09 200); /* kept clear of --primary and --success */
   --chain-4: oklch(0.78 0.12 352);
-  --chain-5: oklch(0.84 0.11 92);
-  --chain-6: oklch(0.82 0.12 145);
+  --chain-5: oklch(0.78 0.09 112); /* kept clear of --warning */
+  --chain-6: oklch(0.75 0.13 138); /* kept clear of --success */
   --chain-7: oklch(0.84 0.07 225);
   --chain-0-tint: oklch(0.78 0.11 258 / 13%);
   --chain-1-tint: oklch(0.8 0.09 55 / 13%);
   --chain-2-tint: oklch(0.79 0.11 305 / 13%);
-  --chain-3-tint: oklch(0.82 0.08 188 / 12%);
+  --chain-3-tint: oklch(0.76 0.09 200 / 13%);
   --chain-4-tint: oklch(0.78 0.12 352 / 13%);
-  --chain-5-tint: oklch(0.84 0.11 92 / 12%);
-  --chain-6-tint: oklch(0.82 0.12 145 / 12%);
+  --chain-5-tint: oklch(0.78 0.09 112 / 13%);
+  --chain-6-tint: oklch(0.75 0.13 138 / 13%);
   --chain-7-tint: oklch(0.84 0.07 225 / 12%);
 
   --sidebar: oklch(0.172 0.008 160);
@@ -365,6 +365,28 @@
   border-radius: 999px;
   flex: none;
   align-self: stretch;
+}
+
+/*
+ * Touch: the small text controls of the transcript (Stop, Retry, Reply to
+ * this, a reply-target link) are 16 to 24 px tall to sit quietly in the
+ * text. On a coarse pointer each gets a 40 px tall hit area around it, as
+ * the rails have, without changing the layout.
+ */
+@media (pointer: coarse) {
+  :where([data-slot='section-controls'], [data-slot='request-controls'], [data-slot='decomposition-control'], [data-slot='replying-to'], [data-slot='split-link'])
+    :where(button) {
+    position: relative;
+  }
+  :where([data-slot='section-controls'], [data-slot='request-controls'], [data-slot='decomposition-control'], [data-slot='replying-to'], [data-slot='split-link'])
+    :where(button)::after {
+    content: '';
+    position: absolute;
+    inset-inline: 0;
+    top: 50%;
+    height: 2.5rem;
+    translate: 0 -50%;
+  }
 }
 
 /* Thin, quiet scrollbars inside panels. */

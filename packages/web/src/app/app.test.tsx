@@ -51,6 +51,9 @@ describe('key prompt', () => {
 
     await user.click(screen.getByRole('button', { name: 'Save key' }))
     await waitFor(() => expect(store.getState().app?.key.configured).toBe(true))
+    // The first-run prompt keeps its own words while it confirms the save.
+    expect(screen.getByRole('dialog', { name: 'Bring your own OpenRouter key' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Not now' })).toBeInTheDocument()
     expect(input).toHaveValue('')
     expect(backend?.sent.at(-1)).toEqual({ type: 'change-settings', openRouterKey: { action: 'set', key: '[redacted]' } })
     expect(JSON.stringify(store.getState())).not.toContain(KEY)

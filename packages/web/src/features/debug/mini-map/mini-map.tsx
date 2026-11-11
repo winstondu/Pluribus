@@ -1,5 +1,5 @@
 import type { ExchangeNodeView, GenealogyProjection, JoinBackNodeView, NodeId, NodeState, NodeView } from '@committee/protocol'
-import { useMemo, type KeyboardEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { useUiState } from '@/app/ui-state'
 import { useApp, useGenealogy } from '@/backend'
 import { Button } from '@/components/ui/button'
@@ -27,6 +27,8 @@ export function MiniMap() {
   const previewFocus = useUiState((state) => state.previewFocus)
   const pinFocus = useUiState((state) => state.pinFocus)
   const inspect = useUiState((state) => state.inspect)
+
+  const overflow = useSidewaysOverflow(layout.width)
 
   const selected = selectedId ? genealogy.nodes[selectedId] : undefined
   const activeChain = focus.preview ?? focus.pinned
@@ -66,7 +68,8 @@ export function MiniMap() {
       <div className="flex items-baseline justify-between gap-3 px-4 pt-3">
         <p className="text-xs text-muted-foreground">Context flows downward. An edge means “could read”.</p>
       </div>
-      <div className="scroll-quiet max-h-[58%] shrink-0 overflow-auto px-2 pb-1">
+      <div className="relative flex max-h-[58%] min-h-0 shrink-0 flex-col">
+      <div ref={overflow.scroller} onScroll={overflow.measure} data-slot="mini-map-scroller" className="scroll-quiet min-h-0 overflow-auto px-2 pb-1">
         <svg
           role="group"
           aria-label="Genealogy of this conversation’s chains"
@@ -132,6 +135,10 @@ export function MiniMap() {
           ))}
         </svg>
       </div>
+        {/* The map is wider than the panel: a fade on the side where more of it lies. */}
+        <OverflowFade side="left" shown={overflow.left} />
+        <OverflowFade side="right" shown={overflow.right} />
+      </div>
       <Legend />
       <div className="scroll-quiet min-h-0 flex-1 overflow-y-auto border-t border-border">
         {selected ? (
@@ -144,6 +151,48 @@ export function MiniMap() {
       </div>
     </div>
   )
+}
+
+/** Whether a sideways scroller has more to show on each side. Measured on scroll, on resize and when the content changes. */
+function useSidewaysOverflow(contentKey: number) {
+  const scroller = useRef<HTMLDivElement>(null)
+  const [sides, setSides] = useState({ left: false, right: false })
+  const measure = () => {
+    const element = scroller.current
+    if (!element) return
+    const left = element.scrollLeft > 1
+    const right = element.scrollLeft + element.clientWidth < element.scrollWidth - 1
+    setSides((current) => (current.left === left && current.right === right ? current : { left, right }))
+  }
+  useEffect(() => {
+    measure()
+    const element = scroller.current
+    if (!element || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [contentKey])
+  return { scroller, measure, ...sides }
+}
+
+function OverflowFade({ side, shown }: { side: 'left' | 'right'; shown: boolean }) {
+  return (
+    <span
+      aria-hidden
+      data-slot="overflow-fade"
+      data-side={side}
+      data-shown={shown ? '' : undefined}
+      className={cn(
+        'pointer-events-none absolute inset-y-0 w-7 from-surface to-transparent opacity-0 transition-opacity duration-(--duration-fast) data-[shown]:opacity-100',
+        side === 'left' ? 'left-0 bg-linear-to-r' : 'right-0 bg-linear-to-l',
+      )}
+    />
+  )
+}
+
+/** Width of a label's backing, from its length: the map's type is set in px, so an estimate is steady. */
+function labelWidth(text: string, perCharacter: number): number {
+  return Math.ceil(text.length * perCharacter) + 8
 }
 
 const STATE_WORD: Record<NodeState, string> = {
@@ -203,6 +252,8 @@ function MapNode(props: {
         : withdrawn
           ? 'withdrawn'
           : STATE_WORD[node.state]
+  const title = clip(nodeTitle(node))
+  const backing = Math.max(labelWidth(title, 6.1), second ? labelWidth(second, 5.4) : 0)
   const name = `${nodeTitle(node)} · ${chain?.label ?? node.chainId} · ${
     node.kind === 'join-back' ? 'join-back, no model call' : STATE_WORD[node.state]
   }`
@@ -258,21 +309,34 @@ function MapNode(props: {
           ) : (
             <ExchangeMark x={x} y={y} state={node.state} />
           )}
+          {/*
+            Labels are drawn over the edges, on a backing in the panel's color, so an edge that passes behind a
+            label is interrupted by it instead of running through the letters.
+          */}
+          <rect
+            data-slot="label-backing"
+            x={x - backing / 2}
+            y={y + MAP.radius + 5}
+            width={backing}
+            height={second ? 27 : 14}
+            rx={3}
+            className="fill-surface"
+          />
           <text
             x={x}
-            y={y + MAP.radius + 15}
+            y={y + MAP.radius + MAP.label.first}
             textAnchor="middle"
             className={cn('fill-foreground stroke-surface text-[11px]', node.kind === 'exchange' && node.state === 'superseded' && 'line-through')}
             strokeWidth={3}
             strokeLinejoin="round"
             style={{ paintOrder: 'stroke' }}
           >
-            {clip(nodeTitle(node))}
+            {title}
           </text>
           {second ? (
             <text
               x={x}
-              y={y + MAP.radius + 28}
+              y={y + MAP.radius + MAP.label.second}
               textAnchor="middle"
               className="fill-muted-foreground stroke-surface text-[10px]"
               strokeWidth={3}

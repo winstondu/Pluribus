@@ -7,6 +7,14 @@
 .answer-text {
   overflow-wrap: anywhere;
 }
+/*
+ * The backend asks models for plain text, so an answer's single newlines are
+ * its line breaks. Markdown would fold them into spaces; paragraphs keep
+ * them. Only `p`: the newlines between list items and blocks are markup.
+ */
+.answer-text :where(p) {
+  white-space: pre-line;
+}
 .answer-text > * + * {
   margin-top: 0.7em;
 }

@@ -61,7 +61,7 @@ export function KeyPrompt(props: { validate?: KeyValidator }) {
     <Dialog open={open} onOpenChange={(next) => (next ? undefined : closeKeyPrompt())}>
       <DialogContent
         showCloseButton={false}
-        className="gap-0 overflow-hidden p-0 sm:max-w-[27.5rem]"
+        className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[27.5rem]"
         onOpenAutoFocus={(event) => {
           // Focus the field, not the first link.
           event.preventDefault()
@@ -69,8 +69,11 @@ export function KeyPrompt(props: { validate?: KeyValidator }) {
           content.querySelector<HTMLInputElement>('input[data-key-input]')?.focus()
         }}
       >
-        {/* Mounted only while open, so closing always forgets what was typed. */}
-        {open ? <KeyPromptBody validate={validate} onDone={closeKeyPrompt} /> : null}
+        {/*
+          The body stays through the dialog's exit, so the exit has something to show. The dialog unmounts its
+          content once closed, which is what forgets the typed value.
+        */}
+        <KeyPromptBody validate={validate} onDone={closeKeyPrompt} />
       </DialogContent>
     </Dialog>
   )
@@ -79,7 +82,8 @@ export function KeyPrompt(props: { validate?: KeyValidator }) {
 function KeyPromptBody({ validate, onDone }: { validate: KeyValidator; onDone: () => void }) {
   const app = useApp()
   const send = useSend()
-  const replacing = app?.key.configured === true
+  // Decided once per opening: saving the first key must not turn the prompt into "Replace your key" under the confirmation.
+  const [replacing] = useState(() => app?.key.configured === true)
   const [value, setValue] = useState('')
   const [visible, setVisible] = useState(false)
   const [check, setCheck] = useState<Check>({ state: 'idle' })
@@ -155,8 +159,9 @@ function KeyPromptBody({ validate, onDone }: { validate: KeyValidator; onDone: (
   const invalid = check.state === 'format' || result?.status === 'invalid'
 
   return (
-    <form onSubmit={onSubmit} noValidate>
-      <div className="px-6 pt-6 pb-5">
+    <form onSubmit={onSubmit} noValidate className="flex min-h-0 flex-col">
+      {/* On a short viewport this part scrolls and the actions stay in reach. */}
+      <div className="scroll-quiet min-h-0 overflow-y-auto overscroll-contain px-6 pt-6 pb-5">
         <div className="flex items-center gap-2.5">
           <BrandMark />
           <span className="eyebrow">{replacing ? 'OpenRouter key' : 'Before the first message'}</span>
@@ -218,7 +223,7 @@ function KeyPromptBody({ validate, onDone }: { validate: KeyValidator; onDone: (
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 border-t border-border bg-muted/50 px-6 py-4">
+      <div className="flex shrink-0 flex-col gap-3 border-t border-border bg-muted/50 px-6 py-4">
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
           <a
             href={OPENROUTER_KEYS_URL}

@@ -6,6 +6,9 @@ import { useChain } from '@/backend'
 import { chainColor } from '@/design/chains'
 import { cn } from '@/lib/utils'
 
+const MODAL_LAYERS =
+  '[role="dialog"][aria-modal="true"], [data-slot="dialog-content"], [data-slot="sheet-content"], [role="alertdialog"], [role="menu"], [role="listbox"], [data-slot="popover-content"]'
+
 /**
  * Focus in the header: names the chain being previewed, or the pinned one
  * with a button that clears it. Escape clears the pin too. Nothing is shown
@@ -20,8 +23,9 @@ export function FocusBar() {
     if (pinned === null) return
     function onKeyDown(event: KeyboardEvent): void {
       if (event.key !== 'Escape' || event.defaultPrevented) return
-      // A dialog, menu or popover that is open owns Escape.
-      if (document.querySelector('[role="dialog"], [role="menu"], [role="listbox"], [data-slot="popover-content"]')) return
+      // A modal dialog, menu or popover that is open owns Escape. The elicitation panel in the dock is a
+      // non-modal dialog that Escape cannot dismiss, so it does not take the key.
+      if (document.querySelector(MODAL_LAYERS)) return
       pinFocus(null)
     }
     document.addEventListener('keydown', onKeyDown)

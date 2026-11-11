@@ -193,8 +193,9 @@ const AttemptBlock = memo(function AttemptBlock(props: AttemptBlockProps) {
 /**
  * One attempt inside its section's bubble. Text that did not complete keeps
  * its mark. Collapsed text (superseded, or earlier partial text above a
- * retry) folds to one line that opens again on request; the fold animates,
- * so a retry never makes the text above it vanish in one frame.
+ * retry) folds to one line that opens again on request. Opening and closing
+ * it by hand animates; the fold the backend asks for is drawn closed at once,
+ * together with the line that replaces it.
  */
 function AttemptBody({ attempt, current, sectionState, historyOpen, directiveId }: AttemptBlockProps & { attempt: AttemptView }) {
   const reduce = useReducedMotion()
@@ -232,6 +233,11 @@ function AttemptBody({ attempt, current, sectionState, historyOpen, directiveId 
 
       {hasText ? (
         <motion.div
+          // The fold animates only when the reader opens or closes it. When the projection collapses the text
+          // (a retry began, the section was superseded) the header row and the closed height arrive in one
+          // commit: remounting with `initial={false}` draws the closed state at once, so nothing below grows
+          // for a frame and then shrinks back.
+          key={collapsed ? 'collapsed' : 'plain'}
           initial={false}
           animate={{ height: open ? 'auto' : 0, opacity: open ? 1 : 0 }}
           transition={reduce ? { duration: 0 } : COLLAPSE}

@@ -1,7 +1,7 @@
 import { WORDING } from '@committee/protocol'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { expect, test } from 'vitest'
-import { fx, getFixture } from '@/fixtures'
+import { fx, getFixture, type Fixture } from '@/fixtures'
 import { renderWithBackend } from '@/test/render'
 import { TranscriptPane } from './index'
 import { byId, drawnOrder, play } from './test-helpers'
@@ -366,4 +366,50 @@ test('inspect · Inspect decomposition appears only with its toggle, on a messag
   })
   fireEvent.click(screen.getByRole('button', { name: 'Inspect decomposition' }))
   expect(view.ui.getState().compare).toBe(fx.id('message', 'ask'))
+})
+
+test('answer text · the line breaks of a plain-text answer are kept: "a\\nb\\nc" is three lines', async () => {
+  const fixture: Fixture = {
+    id: 'lines',
+    title: 'Line breaks',
+    covers: [],
+    initial: fx
+      .conversation('lines')
+      .chain('fruit', { label: 'yellow fruits' })
+      .message('ask', 'List three yellow fruits, one per line.')
+      .response('ask', { message: 'ask' })
+      .section('fruit', { response: 'ask', chain: 'fruit', state: 'completed', title: 'yellow fruits' })
+      .attempt('fruit-1', { section: 'fruit', state: 'completed', text: 'Banana\nLemon\nPineapple' })
+      .build(),
+    steps: [],
+  }
+  const view = renderWithBackend(<TranscriptPane />, { fixture })
+  await act(() => view.ready)
+  const paragraph = await waitFor(() => {
+    const found = section(view.container, 'fruit').querySelector('.answer-text p')
+    expect(found).not.toBeNull()
+    return found as HTMLElement
+  })
+  // One paragraph whose newlines are intact; `answer-text.css` draws them as breaks (`white-space: pre-line`).
+  expect(paragraph.textContent?.split('\n')).toEqual(['Banana', 'Lemon', 'Pineapple'])
+})
+
+test('P13 (web) · the partial text is closed in the same commit that adds its header row and the retry status', async () => {
+  const view = await open('failed-retry')
+  await play(view, 3)
+  const late = section(view.container, 'late')
+  const attempt = late.querySelector<HTMLElement>('[data-attempt-id]')
+  expect(attempt?.hasAttribute('data-collapsed')).toBe(true)
+  // No frame at full height: the fold is already shut when the collapsed row is first drawn.
+  const fold = attempt?.querySelector<HTMLElement>('.answer-text')?.parentElement
+  expect(fold?.style.height).toBe('0px')
+})
+
+test('request controls · Stop and Retry sit in the message header line, so they add no row that comes and goes', async () => {
+  const view = await open('routing')
+  await play(view)
+  const message = byId(view.container, 'data-message-id', fx.id('message', 'ask'))
+  const controls = message.querySelector('[data-slot="request-controls"]')
+  expect(controls).not.toBeNull()
+  expect(controls?.parentElement?.tagName).toBe('HEADER')
 })

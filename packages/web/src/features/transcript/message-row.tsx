@@ -46,10 +46,11 @@ function MessageBody({ message }: { message: MessageView }) {
               {TIME.format(message.submittedAt)}
             </time>
             <FocusTag relation={relation} />
+            <RequestControls message={message} />
           </header>
           {message.replyingTo ? <ReplyingTo replyingTo={message.replyingTo} /> : null}
           <p className="text-prose break-words whitespace-pre-wrap">{message.text}</p>
-          <RequestControls message={message} />
+          <DecompositionControl message={message} />
         </div>
       </article>
     </div>
@@ -86,15 +87,16 @@ function ReplyingTo({ replyingTo }: { replyingTo: ReplyingToView }) {
 }
 
 /**
- * Request-level controls: Stop and Retry as `message.actions` offers them,
- * and Inspect decomposition behind its debug toggle. Controls only: there
- * is no status badge here and no arrow to pending work.
+ * Request-level Stop and Retry, as `message.actions` offers them. Controls
+ * only: there is no status badge here and no arrow to pending work.
+ *
+ * They come and go while the request runs, so they sit at the end of the
+ * header line and take no height of their own (the negative block margin
+ * keeps a 24 px button inside the 16 px line): nothing under the message
+ * moves when they appear or leave.
  */
 function RequestControls({ message }: { message: MessageView }) {
   const command = useCommand()
-  const openCompare = useUiState((state) => state.openCompare)
-  const compareIndependent = useApp()?.settings.debug.compareIndependent === true
-  const inspectDecomposition = compareIndependent && message.decomposition !== null
   // A request answered by one section has the same Stop and Retry on that section, right below: one control, not two.
   const sole = useStore(useBackendStore(), (state) => {
     const transcript = state.conversation?.transcript
@@ -105,10 +107,10 @@ function RequestControls({ message }: { message: MessageView }) {
   })
   const stop = message.actions.stop && sole?.stop !== true
   const retry = message.actions.retry && sole?.retry !== true
-  if (!stop && !retry && !inspectDecomposition) return null
+  if (!stop && !retry) return null
   const target = { kind: 'request', messageId: message.id } as const
   return (
-    <div data-slot="request-controls" className="-ml-2 flex flex-wrap items-center gap-0.5 text-muted-foreground">
+    <div data-slot="request-controls" className="-my-1 ml-auto flex flex-none items-center gap-0.5 self-center text-muted-foreground">
       {stop ? (
         <Button variant="ghost" size="xs" aria-label="Stop request" onClick={() => void command({ type: 'stop', target })}>
           <SquareIcon aria-hidden />
@@ -121,12 +123,21 @@ function RequestControls({ message }: { message: MessageView }) {
           Retry
         </Button>
       ) : null}
-      {inspectDecomposition ? (
-        <Button variant="ghost" size="xs" onClick={() => openCompare(message.id)}>
-          <ScanSearchIcon aria-hidden />
-          Inspect decomposition
-        </Button>
-      ) : null}
+    </div>
+  )
+}
+
+/** Inspect decomposition, behind its debug toggle. It stays for as long as the toggle is on, so it has its own line. */
+function DecompositionControl({ message }: { message: MessageView }) {
+  const openCompare = useUiState((state) => state.openCompare)
+  const compareIndependent = useApp()?.settings.debug.compareIndependent === true
+  if (!compareIndependent || message.decomposition === null) return null
+  return (
+    <div data-slot="decomposition-control" className="-ml-2 flex items-center text-muted-foreground">
+      <Button variant="ghost" size="xs" onClick={() => openCompare(message.id)}>
+        <ScanSearchIcon aria-hidden />
+        Inspect decomposition
+      </Button>
     </div>
   )
 }

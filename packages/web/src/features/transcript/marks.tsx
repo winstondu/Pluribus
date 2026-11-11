@@ -39,7 +39,7 @@ const ACTIVE_STATUS: ReadonlySet<string> = new Set(['responding', 'retrying', 'r
  * The status line of a responding bubble or pending section. Status text is
  * not answer text: it lives here, on the bubble, never on the user message.
  */
-export function StatusLine({ kind, text, className }: { kind: SectionStatus['kind'] | 'routing' | 'awaiting-target'; text: string; className?: string }) {
+export function StatusLine({ kind, text, className }: { kind: SectionStatus['kind'] | 'routing' | 'routing-failed' | 'awaiting-target'; text: string; className?: string }) {
   const active = ACTIVE_STATUS.has(kind)
   return (
     <p role="status" data-status={kind} className={cn('flex items-center gap-2 text-sm text-muted-foreground', className)}>

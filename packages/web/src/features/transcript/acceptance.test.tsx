@@ -110,7 +110,12 @@ test('P7 (routing) · routing status and a routing failure are on the provisiona
   expect(within(message).queryByRole('status')).toBeNull()
 
   await play(view)
-  expect(within(bubble).getByRole('alert').textContent).toContain('The decision model did not answer in time.')
+  // The failure is status text on the bubble. A request as a whole never shows a failed mark (08, 10).
+  const failure = within(bubble).getByRole('status')
+  expect(failure.textContent).toContain('The decision model did not answer in time.')
+  expect(failure.dataset.status).toBe('routing-failed')
+  expect(bubble.querySelector('[data-mark]')).toBeNull()
+  expect(within(bubble).queryByRole('alert')).toBeNull()
   expect(bubble.dataset.placement).toBe('pending')
   expect(within(message).queryByRole('alert')).toBeNull()
   expect(message.textContent).not.toContain('did not answer')

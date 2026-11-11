@@ -51,16 +51,23 @@ export interface MiniMapLayout {
 
 export const MAP = {
   columnWidth: 76,
-  rowHeight: 84,
+  rowHeight: 92,
   /** Radius of an exchange node. */
   radius: 11,
   paddingX: 16,
   paddingTop: 22,
   /** Room under the last row for its label. */
   paddingBottom: 46,
+  /** The label block under a node: where its lines sit, and where the block ends for one line and for two. */
+  label: { first: 15, second: 28, endOne: 21, endTwo: 34 },
   /** How far a sibling group's oval reaches beyond its member nodes. */
   ovalReach: { x: 35, top: 18, bottom: 40 },
 } as const
+
+/** Whether a node carries a second label line (its state, or what a join-back is). A completed exchange has none. */
+export function hasSecondLine(node: NodeView): boolean {
+  return node.kind === 'join-back' || node.state !== 'completed'
+}
 
 export function layoutGenealogy(genealogy: GenealogyProjection): MiniMapLayout {
   const { nodes, chains, groups } = genealogy
@@ -182,8 +189,8 @@ export function layoutGenealogy(genealogy: GenealogyProjection): MiniMapLayout {
     for (const parentId of child.node.parents) {
       const parent = byId.get(parentId)
       if (!parent) continue
-      const startY = parent.y + MAP.radius + 1
-      // Leave room below a parent for its label when the child sits straight under it.
+      // An edge leaves from under its parent's label block, never through the label.
+      const startY = parent.y + MAP.radius + (hasSecondLine(parent.node) ? MAP.label.endTwo : MAP.label.endOne)
       const endY = child.y - MAP.radius - 5
       const bend = Math.max(12, (endY - startY) * 0.5)
       edges.push({

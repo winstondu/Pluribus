@@ -1,37 +1,43 @@
 import type { QueueItemView, RecoveryView } from '@committee/protocol'
 import { ClockIcon, PauseIcon } from 'lucide-react'
-import { AnimatePresence, motion } from 'motion/react'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { useQueue } from '@/backend'
 import { Button } from '@/components/ui/button'
-import { ENTER, EXIT, MOVE, RISE, revealMessage, useCommand } from '@/features/transcript'
+import { ENTER, EXIT, revealMessage, useCommand } from '@/features/transcript'
 import { cn } from '@/lib/utils'
 
 /**
  * The composer queue (03 · "Composer queue"): one item per message that
  * waits on in-flight work, saying why in the backend's words and linked to
- * its message in the transcript. An item clears when processing begins; it
- * fades while the others close over it. A paused item carries the recovery
- * choice, which has no default.
+ * its message in the transcript. An item clears when processing begins. A
+ * paused item carries the recovery choice, which has no default.
+ *
+ * The dock sits under the transcript, so an item's height is the
+ * transcript's bottom edge. An item therefore stays in the flow and opens
+ * and closes its own space together with its fade (an accordion: the one
+ * place height animates), and the transcript's edge travels with it instead
+ * of jumping by a whole item in one frame. Reduced motion keeps the cut.
  */
 export function QueueItems() {
   const items = useQueue().items
-  // Any change to the list can move every item (the dock is anchored at the bottom), so all re-measure together.
-  const listKey = items.map((item) => item.id).join(' ')
+  const reduce = useReducedMotion()
+  const closed = { opacity: 0, height: 0 }
   return (
     <ul aria-label="Waiting messages" data-slot="queue" className="relative flex flex-col">
-      <AnimatePresence mode="popLayout" initial={false}>
+      <AnimatePresence initial={false}>
         {items.map((item) => (
           <motion.li
             key={item.id}
-            className="pb-1.5"
-            layout="position"
-            layoutDependency={listKey}
-            initial={{ opacity: 0, y: RISE }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, transition: EXIT }}
-            transition={{ ...ENTER, layout: MOVE }}
+            // Clipped while its space opens and closes. No padding here: a closed item must take no height at all.
+            className="overflow-clip"
+            initial={reduce ? false : closed}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={reduce ? { opacity: 0, height: 0, transition: { duration: 0 } } : { ...closed, transition: EXIT }}
+            transition={reduce ? { duration: 0 } : ENTER}
           >
-            <QueueItem item={item} />
+            <div className="pb-1.5">
+              <QueueItem item={item} />
+            </div>
           </motion.li>
         ))}
       </AnimatePresence>

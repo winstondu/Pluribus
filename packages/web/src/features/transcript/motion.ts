@@ -18,7 +18,12 @@ import { createContext, useContext, useState, type RefObject } from 'react'
  *   a short rise.
  * - Something dropped fades out, faster, while its neighbours close the gap
  *   at the same time (`EXIT`, with `popLayout`).
- * - Partial text collapses by height (`COLLAPSE`): it is an accordion.
+ * - Partial text folds by height (`COLLAPSE`) when the reader opens or
+ *   closes it: it is an accordion. When the backend collapses it (a retry
+ *   began, the section was superseded) it is drawn closed at once, in the
+ *   commit that adds the line replacing it, so nothing below hops.
+ * - A queue item opens and closes its own height with its fade, because its
+ *   height is the transcript's bottom edge; it is not popped out of flow.
  *
  * Reduced motion: both features sit inside `MotionConfig
  * reducedMotion="user"`, which keeps the fades and drops transforms and

@@ -1,7 +1,7 @@
 import type { SectionId } from '@committee/protocol'
 import { WORDING } from '@committee/protocol'
 import { ArrowUpIcon, CornerDownLeftIcon, XIcon } from 'lucide-react'
-import { useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useStore } from 'zustand'
 import { useUiState } from '@/app/ui-state'
 import { useActiveConversationId, useApp, useBackendStore, useSection } from '@/backend'
@@ -25,6 +25,15 @@ export function ComposerInput() {
   const [text, setText] = useState('')
   const textarea = useRef<HTMLTextAreaElement>(null)
   const hasKey = app?.key.configured === true
+
+  // "Reply to this" is followed by typing: a target that was added moves focus to the message box.
+  // Removing one leaves focus where it is.
+  const targetCount = useRef(replyTargets.length)
+  useEffect(() => {
+    if (replyTargets.length > targetCount.current) textarea.current?.focus({ preventScroll: true })
+    targetCount.current = replyTargets.length
+  }, [replyTargets.length])
+
   const canSend = hasKey && conversationId !== null && text.trim() !== ''
 
   function submit(event: FormEvent): void {

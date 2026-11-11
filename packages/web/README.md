@@ -206,7 +206,7 @@ The backend:
 - `fixture.respond(command, current)` is asked first. Return `{ result }` to reject a command, `{ steps }` to script what follows it, `{ app }` to change app state, or `null` to fall through. Every other command is accepted with an empty output.
 - `fixture.runs` answers `run` queries, by directive and then attempt.
 
-Cases in the tree from ui-foundation: `empty`, `no-key`, `routing`, `pending`, `streaming`, `overtaking`, `reply-group-mixed`, `trip`. From ui-transcript: `failed-retry`, `stopped`, `interrupted`, `cancelled`, `superseded`, `section-notes`, `queue-waiting`, `queue-paused`, `barrier-ordered-group`, `modal-target-ambiguity`, `modal-choice-default`, `split-messages`, `clarification`, `group-first-output`. From ui-debug: `genealogy-marks`, `operation-states`, `run-inspection`, `compare`; a case that needs debug toggles on or hand-written `RunInspection` records can use `@/features/debug/fixture-support`.
+Cases in the tree from ui-foundation: `empty`, `no-key`, `routing`, `pending`, `streaming`, `overtaking`, `reply-group-mixed`, `trip`. From ui-transcript: `failed-retry`, `stopped`, `interrupted`, `cancelled`, `superseded`, `section-notes`, `queue-waiting`, `queue-paused`, `barrier-ordered-group`, `modal-target-ambiguity`, `modal-choice-default`, `split-messages`, `clarification`, `group-first-output`, `plain-text`. From ui-debug: `genealogy-marks`, `operation-states`, `run-inspection`, `compare`; a case that needs debug toggles on or hand-written `RunInspection` records can use `@/features/debug/fixture-support`.
 
 ## Tests
 
