@@ -50,7 +50,7 @@ export interface MiniMapLayout {
 }
 
 export const MAP = {
-  columnWidth: 82,
+  columnWidth: 76,
   rowHeight: 84,
   /** Radius of an exchange node. */
   radius: 11,
@@ -59,7 +59,7 @@ export const MAP = {
   /** Room under the last row for its label. */
   paddingBottom: 46,
   /** How far a sibling group's oval reaches beyond its member nodes. */
-  ovalReach: { x: 38, top: 18, bottom: 40 },
+  ovalReach: { x: 35, top: 18, bottom: 40 },
 } as const
 
 export function layoutGenealogy(genealogy: GenealogyProjection): MiniMapLayout {

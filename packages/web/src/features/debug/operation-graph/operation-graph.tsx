@@ -45,7 +45,7 @@ export function OperationGraphDrawer() {
   const selected = selectedId ? graph.operations[selectedId] : undefined
 
   return (
-    <div className="flex max-h-[46dvh] flex-col" data-testid="operation-graph">
+    <div className="flex max-h-[48dvh] flex-col shell:max-h-[40dvh]" data-testid="operation-graph">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 pt-2.5 pb-1.5">
         <h2 className="eyebrow">Operation graph</h2>
         <p className="tabular text-xs text-muted-foreground">
@@ -67,17 +67,18 @@ export function OperationGraphDrawer() {
         <ul
           id="operation-history"
           aria-label="Operations that left the graph"
-          className="scroll-quiet flex max-h-20 flex-wrap gap-1.5 overflow-y-auto px-4 pb-2"
+          className="scroll-quiet flex max-h-[4.75rem] shrink-0 flex-wrap gap-1.5 overflow-y-auto px-4 pb-2.5"
         >
           {graph.retired.length === 0 ? <li className="text-xs text-muted-foreground">Nothing has left yet.</li> : null}
           {graph.retired.map((id) => {
             const operation = graph.operations[id]
             if (!operation) return null
             return (
-              <li key={id}>
+              <li key={id} className="flex">
                 <button
                   type="button"
                   aria-pressed={selectedId === id}
+                  aria-label={`${operation.label}, ${operation.statusText.toLowerCase()}`}
                   data-operation-id={id}
                   onClick={() => selectOperation(selectedId === id ? null : id)}
                   className={cn(
@@ -96,7 +97,7 @@ export function OperationGraphDrawer() {
       ) : null}
       <div className="flex min-h-0 flex-1 flex-col border-t border-border shell:flex-row">
         <GraphCanvas graph={graph} selectedId={selectedId} onSelect={(id) => selectOperation(selectedId === id ? null : id)} />
-        <div className="scroll-quiet max-h-40 shrink-0 overflow-y-auto border-t border-border shell:max-h-none shell:w-[19rem] shell:border-t-0 shell:border-l">
+        <div className="scroll-quiet max-h-36 min-h-0 shrink overflow-y-auto border-t border-border shell:max-h-none shell:w-[19rem] shell:border-t-0 shell:border-l">
           {selected ? (
             <OperationDetail operation={selected} graph={graph} />
           ) : (
@@ -186,6 +187,8 @@ const KIND_WORD = { answer: null, synthesis: 'synthesis', 'join-back': 'join-bac
 interface Leaving {
   readonly operation: OperationView
   readonly edges: readonly GraphEdge[]
+  /** Where it stood in the layout it left. */
+  readonly at: Point | null
 }
 
 function GraphCanvas(props: {
@@ -215,7 +218,7 @@ function GraphCanvas(props: {
         const operation = graph.operations[id] ?? previous.operations[id]
         if (!operation) return []
         const edges = (before?.edges ?? []).filter((edge) => edge.from === id || edge.to === id)
-        return [{ operation, edges }]
+        return [{ operation, edges, at: before?.positions.get(id) ?? null }]
       }),
     ])
   }
@@ -304,11 +307,10 @@ function GraphCanvas(props: {
   // Room for cards that are still fading beyond the new extent, so the scroll position is not pulled in under the reader.
   let width = layout.width
   let height = layout.height
-  for (const id of leavingIds) {
-    const point = shown.current.get(id)
-    if (!point) continue
-    width = Math.max(width, point.x + CARD.width + CARD.padding)
-    height = Math.max(height, point.y + CARD.height + CARD.padding)
+  for (const { at } of leaving) {
+    if (!at) continue
+    width = Math.max(width, at.x + CARD.width + CARD.padding)
+    height = Math.max(height, at.y + CARD.height + CARD.padding)
   }
 
   if (graph.active.length === 0 && leaving.length === 0) {
@@ -321,7 +323,7 @@ function GraphCanvas(props: {
 
   return (
     <div
-      className="scroll-quiet min-h-0 min-w-0 flex-1 overflow-auto"
+      className="scroll-quiet min-h-32 min-w-0 flex-1 overflow-auto"
       role="group"
       aria-label="Live operations by dependency depth"
       tabIndex={0}
@@ -419,7 +421,7 @@ function OperationCard(props: {
       onAnimationEnd={leaving ? props.onLeft : undefined}
       style={{ width: CARD.width, height: CARD.height, borderLeftColor: color }}
       className={cn(
-        'absolute top-0 left-0 flex flex-col justify-center gap-1 rounded-md border border-l-[3px] border-border bg-background px-2.5 text-left will-change-transform',
+        'absolute top-0 left-0 flex flex-col justify-center gap-0.5 rounded-md border border-l-[3px] border-border bg-background px-2.5 text-left',
         'focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
         leaving
           ? 'debug-fade-out pointer-events-none'

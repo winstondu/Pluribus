@@ -308,7 +308,7 @@ const fixture: Fixture = {
           .attempt('timing-1', { section: 'timing', state: 'running' })
           .patch('section', 'qa-prep', { status: 'responding' })
           .attempt('qa-prep-1', { section: 'qa-prep', state: 'running' })
-          .patch('operation', 'page', { status: 'completed', retired: true })
+          .patch('operation', 'page', { status: 'completed', statusText: 'Completed', retired: true })
           .patch('operation', 'timing', { status: 'running', statusText: 'Responding…', heldByBarrier: false, barrierWaitingFor: [] })
           .patch('operation', 'qa-prep', { status: 'running', statusText: 'Responding…', waitingFor: [] })
           .build(),

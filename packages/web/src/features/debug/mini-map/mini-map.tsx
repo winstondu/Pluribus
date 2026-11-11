@@ -70,10 +70,10 @@ export function MiniMap() {
         <svg
           role="group"
           aria-label="Genealogy of this conversation’s chains"
-          width={layout.width}
-          height={layout.height}
           viewBox={`0 0 ${layout.width} ${layout.height}`}
-          className="mx-auto block max-w-none"
+          // Drawn at its own size where there is room; a little smaller before it has to scroll sideways.
+          style={{ width: '100%', minWidth: Math.round(layout.width * 0.85), maxWidth: layout.width }}
+          className="mx-auto block h-auto"
         >
           {layout.groups.map((group) => (
             <rect
@@ -170,7 +170,7 @@ function nodeTitle(node: NodeView): string {
   return node.kind === 'join-back' ? 'join-back' : node.label
 }
 
-function clip(text: string, max = 13): string {
+function clip(text: string, max = 12): string {
   return text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text
 }
 

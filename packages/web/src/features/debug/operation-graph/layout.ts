@@ -6,7 +6,7 @@ import type { OperationGraphProjection, OperationId } from '@committee/protocol'
  * projection gives it, never elapsed time; rows keep scheduling order.
  */
 
-export const CARD = { width: 184, height: 62, gapX: 56, gapY: 12, padding: 14 } as const
+export const CARD = { width: 180, height: 54, gapX: 56, gapY: 10, padding: 14 } as const
 
 export interface Point {
   readonly x: number
