@@ -1,0 +1,64 @@
+<div id="operation-explorer">
+  <div class="op-head"><div><div class="op-title">Operation queue</div><div class="op-sub">Simulation · dependency depth, not elapsed time · 3 concurrent slots</div></div><div class="op-actions"><button data-action="append">Add demo work</button><button data-action="reset">Reset</button></div></div>
+  <div class="op-bar"><span id="op-count"></span><span>← Scroll to explore dependencies →</span><button data-action="recent" class="recent" hidden></button><div class="op-actions"><button data-action="left" aria-label="Scroll left">←</button><button data-action="right" aria-label="Scroll right">→</button></div></div>
+  <div class="op-scroll" aria-label="Scrollable dependency network"><div class="op-canvas"><svg class="op-links" aria-hidden="true"></svg><div class="op-nodes"></div></div></div>
+  <div class="op-detail" aria-live="polite"></div>
+</div>
+<style>
+#operation-explorer { --bg:light-dark(#fff,#1c1d21); --ink:light-dark(#24252b,#eeedf3); --sub:light-dark(#686a75,#aaaab6); --line:light-dark(#dfdfe6,#44454e); --soft:light-dark(#f6f6f8,#292a31); --a:light-dark(#4262ac,#9eb8ff); --b:light-dark(#8d57a4,#d8a5e8); --j:light-dark(#a36535,#ebb68b); color-scheme:light dark; background:var(--bg); color:var(--ink); font:400 14px/1.4 system-ui,sans-serif; border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+#operation-explorer * {box-sizing:border-box}
+#operation-explorer button {font:inherit;color:inherit;cursor:pointer}
+#operation-explorer .op-head,#operation-explorer .op-bar {display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:14px 18px}
+#operation-explorer .op-head {border-bottom:1px solid var(--line)}
+#operation-explorer .op-title {font-size:16px;font-weight:500}
+#operation-explorer .op-sub,#operation-explorer .op-bar {font-size:12px;color:var(--sub)}
+#operation-explorer .op-sub {margin-top:2px}
+#operation-explorer .op-actions {display:flex;gap:6px;align-items:center}
+#operation-explorer .op-actions button,#operation-explorer .recent,#operation-explorer .complete {border:1px solid var(--line);border-radius:7px;background:var(--bg);padding:6px 10px}
+#operation-explorer .complete {background:var(--ink);color:var(--bg);border-color:var(--ink);white-space:nowrap}
+#operation-explorer .complete:disabled {opacity:.4;cursor:default}
+#operation-explorer .op-scroll {overflow-x:auto;overscroll-behavior-x:contain;border-block:1px solid var(--line);background:var(--soft)}
+#operation-explorer .op-canvas {position:relative;height:330px;min-width:100%}
+#operation-explorer .op-links {position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none}
+#operation-explorer .op-links path {fill:none;stroke:var(--sub);stroke-width:1.2;opacity:.65}
+#operation-explorer .op-node {position:absolute;left:0;top:0;width:170px;height:72px;text-align:left;border:1px solid var(--line);border-left:3px solid var(--c);border-radius:8px;background:var(--bg);padding:9px 10px;transition:transform 240ms cubic-bezier(.77,0,.175,1),opacity 180ms cubic-bezier(.23,1,.32,1);will-change:transform}
+#operation-explorer .op-node.selected {outline:2px solid var(--ink);outline-offset:2px}
+#operation-explorer .op-node.retiring {opacity:0;pointer-events:none}
+#operation-explorer .op-node strong {display:block;font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#operation-explorer .op-node small {display:block;font-size:11px;color:var(--sub);margin-top:5px}
+#operation-explorer .op-detail {display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:15px 18px;min-height:104px}
+#operation-explorer .op-detail strong {font-weight:500}
+#operation-explorer .op-meta {font-size:12px;color:var(--sub);margin-top:4px}
+#operation-explorer .op-input {font-size:12px;margin-top:5px}
+@media(max-width:520px){#operation-explorer .op-detail{flex-direction:column}#operation-explorer .op-head,#operation-explorer .op-bar{padding:12px}#operation-explorer .op-detail{padding:12px}}
+@media(prefers-reduced-motion:reduce){#operation-explorer .op-node{transition:opacity 120ms cubic-bezier(.23,1,.32,1)}}
+</style>
+<script>
+(() => {
+ const root=document.getElementById('operation-explorer'), canvas=root.querySelector('.op-canvas'), nodes=root.querySelector('.op-nodes'), links=root.querySelector('.op-links'), scroll=root.querySelector('.op-scroll'), detail=root.querySelector('.op-detail');
+ const base=[
+ {id:'a',name:'Draft reply',chain:'Research',color:'a',kind:'Generating reply',row:0,deps:[],message:'Message 12 · attempt 2',inputs:'User request + conversation context'},
+ {id:'b',name:'Look up sources',chain:'Research',color:'a',kind:'Waiting on tool',row:1,deps:[],message:'Message 12 · tool call 4',inputs:'Release timeline query'},
+ {id:'c',name:'Review alternatives',chain:'Review fork',color:'b',kind:'Waiting on subagent',row:2,deps:[],message:'Message 9 · delegated branch',inputs:'Review brief + branch context'},
+ {id:'d',name:'Draft recommendation',chain:'Recommendation',color:'j',kind:'Generating reply',row:3,deps:[],message:'Message 7 · attempt 1',inputs:'User request + earlier decisions'},
+ {id:'e',name:'Synthesize research',chain:'Research',color:'a',kind:'Generating reply',row:0,deps:['a','b'],message:'Message 12 · synthesis',inputs:'Draft reply + source results'},
+ {id:'f',name:'Join branch context',chain:'Review fork',color:'b',kind:'Context bookkeeping',row:2,deps:['c'],message:'Message 9 · join-back',inputs:'Completed review branch; no generation'},
+ {id:'g',name:'Compose final reply',chain:'Recommendation',color:'j',kind:'Generating reply',row:1,deps:['d','e','f'],message:'Message 13 · final response',inputs:'Synthesis + joined context + recommendation'},
+ {id:'h',name:'Check response',chain:'Recommendation',color:'j',kind:'Waiting on tool',row:1,deps:['g'],message:'Message 13 · validation',inputs:'Final response'},
+ {id:'i',name:'Prepare handoff',chain:'Recommendation',color:'j',kind:'Generating reply',row:1,deps:['h'],message:'Message 14 · handoff',inputs:'Validated response'}];
+ let tasks,done,started,selected,serial=0,retiring=null,timer=null,edgeFrame=0;
+ function reset(){clearTimeout(timer);serial++;tasks=structuredClone(base);done=[];started=['a','b','c'];selected='a';retiring=null;nodes.innerHTML='';scroll.scrollLeft=0;render()}
+ const get=id=>tasks.find(t=>t.id===id);
+ function status(t){if(done.includes(t.id))return 'Completed';if(started.includes(t.id))return t.kind;return t.deps.every(d=>done.includes(d))?'Ready · awaiting capacity':'Blocked · dependencies'}
+ function schedule(){for(const t of tasks){if(started.length>=3)break;if(!done.includes(t.id)&&!started.includes(t.id)&&t.deps.every(d=>done.includes(d)))started.push(t.id)}}
+ function layout(){const depths={};for(const t of tasks){if(done.includes(t.id))continue;const active=t.deps.filter(d=>!done.includes(d));depths[t.id]=active.length?1+Math.max(...active.map(d=>depths[d])):0}return depths}
+ function render(){const depth=layout(), alive=tasks.filter(t=>!done.includes(t.id));const width=Math.max(720,(Math.max(0,...Object.values(depth))+1)*230+32);canvas.style.width=width+'px';links.setAttribute('viewBox',`0 0 ${width} 330`);
+ for(const t of alive){let el=nodes.querySelector(`[data-id="${t.id}"]`);if(!el){el=document.createElement('button');el.className='op-node';el.dataset.id=t.id;nodes.appendChild(el)}el.style.setProperty('--c',`var(--${t.color})`);el.style.transform=`translate(${24+depth[t.id]*230}px,${20+t.row*76}px)`;el.classList.toggle('selected',t.id===selected);el.classList.toggle('retiring',t.id===retiring);el.setAttribute('aria-pressed',String(t.id===selected));el.innerHTML=`<strong>${t.name}</strong><small>${status(t)}</small>`}
+ nodes.querySelectorAll('.op-node').forEach(el=>{if(!alive.some(t=>t.id===el.dataset.id))el.remove()});
+ const drawEdges=()=>{links.innerHTML=alive.flatMap(t=>t.deps.filter(d=>depth[d]!==undefined).map(d=>{const from=nodes.querySelector(`[data-id="${d}"]`),to=nodes.querySelector(`[data-id="${t.id}"]`);if(!from||!to)return '';const a=new DOMMatrixReadOnly(getComputedStyle(from).transform),b=new DOMMatrixReadOnly(getComputedStyle(to).transform),x1=a.m41+170,y1=a.m42+36,x2=b.m41,y2=b.m42+36,mid=(x1+x2)/2;return `<path d="M${x1} ${y1} C${mid} ${y1},${mid} ${y2},${x2} ${y2}"></path>`})).join('')};cancelAnimationFrame(edgeFrame);drawEdges();const edgeStart=performance.now();function followEdges(now){drawEdges();if(now-edgeStart<270)edgeFrame=requestAnimationFrame(followEdges)}if(!matchMedia('(prefers-reduced-motion: reduce)').matches)edgeFrame=requestAnimationFrame(followEdges);
+ const recent=root.querySelector('.recent');recent.hidden=!done.length;recent.textContent=done.length?'Recent: '+get(done[done.length-1]).name:'';const t=get(selected);root.querySelector('#op-count').textContent=`${started.length} / 3 slots in use · ${alive.length} operations remaining`;if(!t){detail.innerHTML='<span>All demo operations completed.</span>';return}const blocked=t.deps.filter(d=>!done.includes(d)).map(d=>get(d).name);detail.innerHTML=`<div><strong>${t.name}</strong> <span class="op-meta">· ${status(t)} · ${t.chain}</span><div class="op-meta">${t.message} · Inputs: ${t.inputs}</div><div class="op-input">${t.deps.length?'Depends on: '+t.deps.map(d=>get(d).name).join(' + '):'No dependencies'}${blocked.length?' · Waiting for: '+blocked.join(', '):''}</div>${t.id==='a'?'<div class="op-meta">Attempt 1 superseded by attempt 2</div>':''}</div><button class="complete" data-action="complete" ${started.includes(t.id)&&!retiring?'':'disabled'}>Complete selected</button>`}
+ function complete(){if(!started.includes(selected)||retiring)return;const id=selected,token=++serial;retiring=id;render();timer=setTimeout(()=>{if(token!==serial)return;done.push(id);started=started.filter(x=>x!==id);schedule();retiring=null;selected=id;render()},matchMedia('(prefers-reduced-motion: reduce)').matches?0:180)}
+ function append(){const n=tasks.filter(t=>t.id.startsWith('extra')).length+1,prev=tasks[tasks.length-1].id;tasks.push({id:'extra'+n,name:'Follow-up '+n,chain:'Recommendation',color:'j',kind:'Generating reply',row:1,deps:[prev],message:'Demo follow-up '+n,inputs:'Output of '+get(prev).name});schedule();render();requestAnimationFrame(()=>scroll.scrollTo({left:scroll.scrollWidth,behavior:'smooth'}))}
+ root.addEventListener('click',e=>{const node=e.target.closest('[data-id]');if(node&&!retiring){selected=node.dataset.id;render();return}const action=e.target.closest('[data-action]')?.dataset.action;if(action==='recent'&&done.length){selected=done[done.length-1];render()}if(action==='complete')complete();if(action==='reset')reset();if(action==='append')append();if(action==='left')scroll.scrollBy({left:-300,behavior:'smooth'});if(action==='right')scroll.scrollBy({left:300,behavior:'smooth'})});reset();
+})();
+</script>

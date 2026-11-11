@@ -1,0 +1,76 @@
+<div id="decomposition-debug-directions">
+  <div class="viz-carousel" aria-label="Decomposition inspector directions">
+    <section data-variant="Compare" aria-label="Source and rewrite comparison"><div class="mock" data-style="compare"></div></section>
+    <section data-variant="Fragments" aria-label="Compact fragment disclosure" hidden><div class="mock" data-style="chips"></div></section>
+  </div>
+</div>
+<style>
+#decomposition-debug-directions { color-scheme:light dark; }
+#decomposition-debug-directions * { box-sizing:border-box; }
+#decomposition-debug-directions .mock { --bg:light-dark(#fff,#171719);--ink:light-dark(#27262b,#f4f2f5);--muted:light-dark(#6e6b75,#bab6bf);--line:light-dark(#e8e6eb,#403d45);--soft:light-dark(#f6f5f7,#27252a);--a:light-dark(#4568b0,#9cb8ff);--b:light-dark(#a15830,#f2b18a);--joint:light-dark(#397e67,#8ad0b5);background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,sans-serif;border:1px solid var(--line);border-radius:14px;min-height:710px;overflow:hidden; }
+#decomposition-debug-directions button { font:inherit;color:inherit;cursor:pointer; }
+#decomposition-debug-directions .bar { padding:15px 20px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);gap:10px; }
+#decomposition-debug-directions .brand { font-weight:650; }
+#decomposition-debug-directions .sub { font-size:12px;color:var(--muted); }
+#decomposition-debug-directions .toggle { background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:6px 10px;white-space:nowrap; }
+#decomposition-debug-directions .toggle[aria-pressed=true] { color:var(--a); }
+#decomposition-debug-directions .thread { max-width:720px;margin:auto;padding:22px; }
+#decomposition-debug-directions .meta { display:flex;gap:8px;align-items:center;flex-wrap:wrap;color:var(--muted);font-size:12px;margin-bottom:8px; }
+#decomposition-debug-directions .who { color:var(--ink);font-weight:650; }
+#decomposition-debug-directions .user { background:var(--soft);border-radius:12px;padding:14px; }
+#decomposition-debug-directions .source { border-radius:3px; }
+#decomposition-debug-directions .source.selected-a { background:color-mix(in srgb,var(--a) 17%,transparent);box-shadow:0 2px var(--a); }
+#decomposition-debug-directions .source.selected-b { background:color-mix(in srgb,var(--b) 17%,transparent);box-shadow:0 2px var(--b); }
+#decomposition-debug-directions .shared { background:color-mix(in srgb,var(--joint) 15%,transparent); }
+#decomposition-debug-directions .pills { display:flex;gap:5px;flex-wrap:wrap; }
+#decomposition-debug-directions .pill { border:0;border-radius:20px;padding:3px 8px;background:color-mix(in srgb,var(--a) 14%,var(--bg));color:var(--a);font-size:12px; }
+#decomposition-debug-directions .pill.b { background:color-mix(in srgb,var(--b) 14%,var(--bg));color:var(--b); }
+#decomposition-debug-directions .pill[aria-pressed=true] { box-shadow:inset 0 0 0 1px currentColor; }
+#decomposition-debug-directions .inspect { border:0;background:none;color:var(--a);padding:3px 4px;font-size:12px; }
+#decomposition-debug-directions .detail { margin:12px 0 0;padding:13px 14px;border:1px solid var(--line);border-radius:10px;background:var(--bg); }
+#decomposition-debug-directions .label { color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px; }
+#decomposition-debug-directions .detail p { margin:0; }
+#decomposition-debug-directions .detail p+p { margin-top:10px; }
+#decomposition-debug-directions .chain { font-size:12px;font-weight:650;color:var(--a); }
+#decomposition-debug-directions .chain.b { color:var(--b); }
+#decomposition-debug-directions .joint { color:var(--joint); }
+#decomposition-debug-directions .detailhead { display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px; }
+#decomposition-debug-directions .comparison { display:grid;grid-template-columns:1fr 1fr;gap:14px; }
+#decomposition-debug-directions .comparison > div+div { border-left:1px solid var(--line);padding-left:14px; }
+#decomposition-debug-directions .disclosures { border-top:1px solid var(--line);margin-top:10px; }
+#decomposition-debug-directions .fragment { display:flex;gap:9px;width:100%;align-items:center;text-align:left;border:0;border-bottom:1px solid var(--line);padding:9px 0;background:transparent; }
+#decomposition-debug-directions .fragment .chevron { margin-left:auto;color:var(--muted); }
+#decomposition-debug-directions .number { display:grid;place-items:center;min-width:23px;height:23px;border-radius:6px;background:color-mix(in srgb,var(--a) 15%,var(--bg));color:var(--a);font-weight:650;font-size:12px; }
+#decomposition-debug-directions .number.b { background:color-mix(in srgb,var(--b) 15%,var(--bg));color:var(--b); }
+#decomposition-debug-directions .expanded { padding:9px 0 12px 32px;font-size:13px; }
+#decomposition-debug-directions .expanded p { margin:3px 0 9px; }
+#decomposition-debug-directions .assistant { margin-top:24px; }
+#decomposition-debug-directions .answer { display:grid;grid-template-columns:145px 1fr;gap:12px;padding:14px 10px;border-top:1px solid var(--line);border-left:3px solid transparent; }
+#decomposition-debug-directions .answer.active-a { border-left-color:var(--a);background:color-mix(in srgb,var(--a) 8%,var(--bg)); }
+#decomposition-debug-directions .answer.active-b { border-left-color:var(--b);background:color-mix(in srgb,var(--b) 8%,var(--bg)); }
+#decomposition-debug-directions .answer-title { font-weight:600;font-size:12px;color:var(--muted); }
+#decomposition-debug-directions .reply { border:1px solid var(--line);background:transparent;border-radius:20px;padding:3px 8px;font-size:12px;color:var(--muted); }
+#decomposition-debug-directions .compose { border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin-top:16px;color:var(--muted); }
+@media(max-width:550px) { #decomposition-debug-directions .thread { padding:16px; } #decomposition-debug-directions .answer { grid-template-columns:1fr;gap:4px; } #decomposition-debug-directions .comparison { grid-template-columns:1fr; } #decomposition-debug-directions .comparison > div+div { border-left:0;border-top:1px solid var(--line);padding:10px 0 0; } }
+</style>
+<script>
+(() => {
+ const root=document.getElementById('decomposition-debug-directions');
+ const data={a:{name:'Sky',source:'Why is the sky blue?',rewrite:'Explain why the sky is blue. Keep the answer brief.'},b:{name:'Menu',source:'Also, translate “sopa de verduras” into English.',rewrite:'Translate “sopa de verduras” into English. Keep the answer brief.'}};
+ const states=Array.from(root.querySelectorAll('.mock'),()=>({debug:false,open:false,selected:'a'}));
+ function save(){window.openai?.setWidgetState?.({modelContent:null,privateContent:states}).catch(()=>{});}
+ function applySaved(s){if(Array.isArray(s))s.forEach((v,i)=>{if(states[i]&&v){states[i].debug=!!v.debug;states[i].open=!!v.open;states[i].selected=v.selected==='b'?'b':'a';}});}
+ applySaved(window.openai?.widgetState?.privateContent);
+ function render(mock,i){const s=states[i],d=data[s.selected],style=mock.dataset.style;let inspector='';
+ const pills=`<span class="pills"><button type="button" class="pill" data-select="a" aria-pressed="${s.selected==='a'}">A · Sky</button><button type="button" class="pill b" data-select="b" aria-pressed="${s.selected==='b'}">B · Menu</button></span>`;
+ if(s.debug&&s.open){
+  if(style==='inline') inspector=`<div class="detail"><div class="detailhead"><span class="chain ${s.selected}">Chain ${s.selected.toUpperCase()} · ${d.name}</span>${pills}</div><div class="label">Rewritten prompt</div><p>${d.rewrite}</p><p class="sub"><span class="joint">●</span> Shared requirement: Keep both answers brief.</p></div>`;
+  if(style==='compare') inspector=`<div class="detail"><div class="detailhead"><span class="chain ${s.selected}">Chain ${s.selected.toUpperCase()} · ${d.name}</span>${pills}</div><div class="comparison"><div><div class="label">Exact source</div><p>“${d.source}”</p></div><div><div class="label">Rewritten prompt</div><p>${d.rewrite}</p></div></div><p class="sub" style="margin-top:12px"><span class="joint">●</span> Inherited from source: “Keep both answers brief.”</p></div>`;
+  if(style==='chips') inspector=`<div class="disclosures">${['a','b'].map((k,n)=>`<button type="button" class="fragment" data-select="${k}" aria-expanded="${s.selected===k}"><span class="number ${k}">${n+1}</span><span><b>Chain ${k.toUpperCase()}</b> · ${data[k].name}</span><span class="chevron">${s.selected===k?'−':'+'}</span></button>${s.selected===k?`<div class="expanded"><div class="label">Exact source</div><p>“${data[k].source}”</p><div class="label">Rewritten prompt</div><p>${data[k].rewrite}</p><span class="sub"><span class="joint">●</span> Inherited: Keep both answers brief.</span></div>`:''}`).join('')}</div>`;
+ }
+ mock.innerHTML=`<div class="bar"><div><span class="brand">Committee</span> <span class="sub"> / Simulated conversation</span></div><button type="button" class="toggle" data-action="debug" aria-pressed="${s.debug}">Debug ${s.debug?'on':'off'}</button></div><main class="thread"><div class="meta"><span class="who">You</span><span>10:41</span>${s.debug?pills+'<button type="button" class="inspect" data-action="inspect">'+(s.open?'Hide decomposition':'Inspect decomposition')+'</button>':''}</div><div class="user"><span class="source ${s.debug&&s.open&&s.selected==='a'?'selected-a':''}">Why is the sky blue?</span> <span class="source ${s.debug&&s.open&&s.selected==='b'?'selected-b':''}">Also, translate “sopa de verduras” into English.</span> <span class="${s.debug&&s.open?'shared':''}">Keep both answers brief.</span>${inspector}</div><div class="assistant"><div class="meta"><span class="who">Committee</span><span>Responding</span><button type="button" class="reply" data-action="reply">↩ Reply to request</button></div><div class="answer ${s.debug&&s.open&&s.selected==='a'?'active-a':''}"><div class="answer-title">Why the sky is blue ${s.debug?'<span class="chain"> · A</span>':''}</div><div>Air molecules scatter shorter blue wavelengths more strongly than red light.</div></div><div class="answer ${s.debug&&s.open&&s.selected==='b'?'active-b':''}"><div class="answer-title">Menu translation ${s.debug?'<span class="chain b"> · B</span>':''}</div><div>“Sopa de verduras” means <b>vegetable soup</b>.</div></div></div><div class="compose">${s.reply?'Replying to request · ':''}Ask a follow-up…</div></main>`;
+ }
+ root.querySelectorAll('.mock').forEach((mock,i)=>{render(mock,i);mock.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;const s=states[i];if(b.dataset.select){s.selected=b.dataset.select;s.open=true;}else if(b.dataset.action==='debug'){s.debug=!s.debug;if(!s.debug)s.open=false;}else if(b.dataset.action==='inspect')s.open=!s.open;else if(b.dataset.action==='reply')s.reply=!s.reply;render(mock,i);save();});});
+ window.addEventListener('openai:set_globals',e=>{const v=e.detail?.globals?.widgetState?.privateContent;if(v){applySaved(v);root.querySelectorAll('.mock').forEach(render);}});
+})();
+</script>

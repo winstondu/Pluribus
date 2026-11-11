@@ -1,0 +1,95 @@
+<div id="chain-directions">
+  <style>
+    #chain-directions { color-scheme: light dark; font: 14px/1.4 system-ui,sans-serif; color: light-dark(#202428,#eceeed); }
+    #chain-directions * { box-sizing: border-box; }
+    #chain-directions .stage { min-height: 660px; padding: 18px; background: light-dark(#f7f8f7,#191d1c); border: 1px solid light-dark(#d5dad7,#444c48); border-radius: 12px; }
+    #chain-directions .top { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
+    #chain-directions h3 { margin:0; font-size:15px; font-weight:500; }
+    #chain-directions .sub, #chain-directions .hint { color:light-dark(#59645e,#aab5ae); font-size:12px; }
+    #chain-directions .debug { display:flex; align-items:center; gap:6px; font-size:12px; }
+    #chain-directions .legend { display:flex; gap:12px; flex-wrap:wrap; margin: 0 0 14px; font-size:12px; }
+    #chain-directions .key { display:flex; align-items:center; gap:5px; }
+    #chain-directions .dot { width:9px; height:9px; border-radius:50%; background:var(--c); }
+    #chain-directions .oval-key { width:18px; height:11px; border:2px dotted light-dark(#68756d,#aab5ae); border-radius:50%; }
+    #chain-directions .map { display:grid; gap:12px; }
+    #chain-directions .label { color:light-dark(#59645e,#aab5ae); font-size:12px; margin-bottom:5px; }
+    #chain-directions .node { font:inherit; font-size:12px; color:inherit; background:color-mix(in srgb,var(--c) 14%,light-dark(#fff,#222a26)); border:1px solid color-mix(in srgb,var(--c) 48%,transparent); border-radius:7px; padding:7px 9px; min-height:36px; text-align:left; }
+    #chain-directions .node[aria-pressed="true"] { outline:2px solid var(--c); outline-offset:2px; }
+    #chain-directions .node small { display:block; color:light-dark(#59645e,#aab5ae); font-size:11px; }
+    #chain-directions .a { --c:var(--viz-series-1,#3976c5); } #chain-directions .b { --c:var(--viz-series-2,#ce7242); } #chain-directions .j { --c:var(--viz-series-3,#5c9c70); }
+    #chain-directions .line { color:light-dark(#718078,#aab5ae); text-align:center; font-size:16px; line-height:1; }
+    #chain-directions .split { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    #chain-directions .path { display:grid; gap:5px; align-content:start; }
+    #chain-directions .join { display:grid; justify-items:center; gap:5px; }
+    #chain-directions .join .node { width:min(100%,240px); text-align:center; }
+    #chain-directions .parallel { border:2px dotted light-dark(#84928a,#85958b); border-radius:50%; padding:17px 24px; display:flex; justify-content:center; gap:10px; }
+    #chain-directions .parallel .node { flex:1; max-width:180px; }
+    #chain-directions .book { display:grid; justify-items:center; gap:5px; }
+    #chain-directions .book .node { width:min(100%,300px); text-align:center; }
+    #chain-directions .lanes { display:grid; gap:10px; }
+    #chain-directions .lane { display:grid; grid-template-columns:72px 1fr; gap:8px; align-items:center; }
+    #chain-directions .lane-flow { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+    #chain-directions .lane .line { display:inline; }
+    #chain-directions .lanes .parallel { padding:10px 18px; flex-wrap:wrap; }
+    #chain-directions .detail { margin-top:16px; border-top:1px solid light-dark(#d5dad7,#444c48); padding-top:12px; min-height:94px; font-size:12px; }
+    #chain-directions .detail strong { font-weight:500; font-size:14px; }
+    #chain-directions .detail p { margin:4px 0; }
+    #chain-directions .extra { color:light-dark(#59645e,#aab5ae); }
+    @media(max-width:440px) { #chain-directions .stage { min-height:760px; padding:12px; } #chain-directions .lane { grid-template-columns:1fr; gap:2px; } #chain-directions .parallel { padding:14px; } }
+  </style>
+  <div class="viz-carousel viz-dotted-background" aria-label="Chain mini-map directions">
+    <section class="stage" data-variant="Genealogy" aria-label="Genealogy mini-map">
+      <div class="top"><div><h3>Chain map</h3><div class="sub">Genealogy · dependencies flow downward</div></div><label class="debug"><input type="checkbox" class="debug-toggle"> Debug details</label></div>
+      <div class="legend"><span class="key"><i class="dot" style="--c:var(--viz-series-1,#3976c5)"></i>A</span><span class="key"><i class="dot" style="--c:var(--viz-series-2,#ce7242)"></i>B</span><span class="key"><i class="dot" style="--c:var(--viz-series-3,#5c9c70)"></i>J · new synthesis chain</span><span class="key"><i class="oval-key"></i>parallel requests</span></div>
+      <div class="map">
+        <div class="split"><div class="path"><div class="label">Chain A</div><button class="node a" data-id="a1">A1 · Start</button><div class="line">↓</div><button class="node a" data-id="a2">A2 · Continue</button></div><div class="path"><div class="label">Chain B</div><button class="node b" data-id="b1">B1 · Start</button><div class="line">↓</div><button class="node b" data-id="b2">B2 · Continue</button></div></div>
+        <div class="join"><div class="line">↘ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ↙</div><button class="node j" data-id="j1">J1 · New synthesis chain<small>from A2 + B2</small></button></div>
+        <div class="label">Same-chain parallel fork · chain A</div>
+        <button class="node a" data-id="a3">A3 · Shared context</button>
+        <div class="line">↙ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ↘</div>
+        <div class="parallel"><button class="node a" data-id="p1">P1 · Request</button><button class="node a" data-id="p2">P2 · Request</button></div>
+        <div class="book"><div class="line">↘ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ↙</div><button class="node a" data-id="a4">A4 · Bookkeeping join-back<small>user1 / assistant1 / user2 / assistant2</small></button></div>
+      </div><div class="detail" aria-live="polite"></div>
+    </section>
+    <section class="stage" data-variant="Lanes" aria-label="Lane mini-map" hidden>
+      <div class="top"><div><h3>Chain map</h3><div class="sub">Lanes · each chain keeps its own track</div></div><label class="debug"><input type="checkbox" class="debug-toggle"> Debug details</label></div>
+      <div class="legend"><span class="key"><i class="dot" style="--c:var(--viz-series-1,#3976c5)"></i>A</span><span class="key"><i class="dot" style="--c:var(--viz-series-2,#ce7242)"></i>B</span><span class="key"><i class="dot" style="--c:var(--viz-series-3,#5c9c70)"></i>J · new synthesis chain</span><span class="key"><i class="oval-key"></i>parallel requests</span></div>
+      <div class="lanes">
+        <div class="lane"><div class="label">A</div><div class="lane-flow"><button class="node a" data-id="a1">A1 · Start</button><span class="line">→</span><button class="node a" data-id="a2">A2 · Continue</button><span class="line">→</span><button class="node a" data-id="a3">A3 · Shared context</button></div></div>
+        <div class="lane"><div class="label">B</div><div class="lane-flow"><button class="node b" data-id="b1">B1 · Start</button><span class="line">→</span><button class="node b" data-id="b2">B2 · Continue</button></div></div>
+        <div class="lane"><div class="label">New chain</div><div class="lane-flow"><button class="node j" data-id="j1">J1 · Synthesis<small>from A2 + B2</small></button></div></div>
+        <div class="lane"><div class="label">A fork<br><span class="hint">from A3</span></div><div class="parallel"><button class="node a" data-id="p1">P1 · Request</button><button class="node a" data-id="p2">P2 · Request</button></div></div>
+        <div class="lane"><div class="label">A resumes</div><div class="lane-flow"><span class="line">↳</span><button class="node a" data-id="a4">A4 · Bookkeeping join-back<small>user1 / assistant1 / user2 / assistant2</small></button></div></div>
+      </div><div class="detail" aria-live="polite"></div>
+    </section>
+  </div>
+  <script>
+    (() => {
+      const root = document.getElementById('chain-directions');
+      const data = {
+        a1:['A1 · Start','Context: initial prompt.','Chain A · parent: none · fragment: prompt A'],
+        a2:['A2 · Continue','Context: A1 and its response.','Chain A · parent: A1 · fragment: continuation A'],
+        a3:['A3 · Shared context','Context: A1 → A2 and the next prompt. Both requests receive this same snapshot.','Chain A · parent: A2 · fragment: shared fork input'],
+        b1:['B1 · Start','Context: initial prompt.','Chain B · parent: none · fragment: prompt B'],
+        b2:['B2 · Continue','Context: B1 and its response.','Chain B · parent: B1 · fragment: continuation B'],
+        j1:['J1 · New synthesis chain','Context: exact leaves A2 and B2. A and B remain independently continuable.','Chain J · parents: A2, B2 · fragment: synthesis prompt'],
+        p1:['P1 · Parallel request','Context: A3 snapshot only. P1 did not see P2’s result.','Chain A · fork parent: A3 · fragment: request P1'],
+        p2:['P2 · Parallel request','Context: A3 snapshot only. P2 did not see P1’s result.','Chain A · fork parent: A3 · fragment: request P2'],
+        a4:['A4 · Bookkeeping join-back','Future context records user1 → assistant1 → user2 → assistant2. Historical snapshots remain unchanged; no automatic synthesis.','Chain A · parents: P1, P2 · serialized fragments: user1 → assistant1 → user2 → assistant2']
+      };
+      root.querySelectorAll('.stage').forEach(stage => {
+        let selected = 'j1';
+        const detail = stage.querySelector('.detail');
+        const debug = stage.querySelector('.debug-toggle');
+        const render = () => {
+          const d = data[selected];
+          stage.querySelectorAll('[data-id]').forEach(b => { b.setAttribute('aria-pressed', String(b.dataset.id === selected)); b.setAttribute('data-tooltip', 'ID: ' + b.dataset.id.toUpperCase()); });
+          detail.innerHTML = '<strong>' + d[0] + '</strong><p>' + d[1] + '</p>' + (debug.checked ? '<p class="extra">' + d[2] + '</p>' : '');
+        };
+        stage.querySelectorAll('[data-id]').forEach(b => b.addEventListener('click', () => { selected = b.dataset.id; render(); }));
+        debug.addEventListener('change', render);
+        render();
+      });
+    })();
+  </script>
+</div>

@@ -1,0 +1,91 @@
+<div id="association-directions">
+<style>
+#association-directions { color-scheme:light dark; font:14px/1.45 system-ui,sans-serif; --ink:light-dark(#252b28,#edf0ee); --muted:light-dark(#63716a,#aab8b0); --paper:light-dark(#fff,#1c211f); --wash:light-dark(#f3f6f4,#252c28); --border:light-dark(#dce4df,#414c45); --a:var(--viz-series-1,#3976c5); --b:var(--viz-series-2,#ce7242); --j:var(--viz-series-3,#5c9c70); color:var(--ink); }
+#association-directions * { box-sizing:border-box; }
+#association-directions .stage { min-height:680px; background:var(--paper); border:1px solid var(--border); border-radius:12px; overflow:hidden; }
+#association-directions .top { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; border-bottom:1px solid var(--border); }
+#association-directions .title { font-weight:500; } #association-directions .sub { font-size:12px; color:var(--muted); }
+#association-directions .toggle { display:flex; gap:6px; align-items:center; font-size:12px; white-space:nowrap; }
+#association-directions .layout { display:grid; grid-template-columns:minmax(0,1fr) 170px; }
+#association-directions .chat { padding:16px; display:grid; gap:14px; align-content:start; }
+#association-directions .msg { position:relative; padding:8px 10px; border-radius:7px; transition:opacity .15s; }
+#association-directions .user { background:var(--wash); }
+#association-directions .who { color:var(--muted); font-size:12px; margin-bottom:5px; }
+#association-directions .msg p { margin:0; }
+#association-directions .answer { display:grid; gap:8px; }
+#association-directions .part { position:relative; padding:8px 10px; border-radius:7px; }
+#association-directions .part strong { display:block; font-weight:500; margin-bottom:3px; }
+#association-directions button { font:inherit; color:inherit; }
+#association-directions .selectable { cursor:inherit; }
+#association-directions .msg-button, #association-directions .part-button { display:block; width:100%; border:0; background:transparent; text-align:left; padding:0; }
+#association-directions .msg-button:focus-visible, #association-directions .part-button:focus-visible { outline:2px solid var(--ink); outline-offset:3px; }
+#association-directions .debug-tag { display:none; font-size:11px; color:var(--muted); margin-top:6px; }
+#association-directions .debug-on .debug-tag { display:block; }
+#association-directions .rail .debug-on .msg, #association-directions .rail .debug-on .part { border-left:3px solid transparent; border-image:linear-gradient(to bottom,var(--mark1),var(--mark2)) 1; border-radius:0; }
+#association-directions .rail .debug-on [data-match="A"] { --mark1:var(--a); --mark2:var(--a); }
+#association-directions .rail .debug-on [data-match="B"] { --mark1:var(--b); --mark2:var(--b); }
+#association-directions .rail .debug-on [data-match="J"] { --mark1:var(--j); --mark2:var(--j); }
+#association-directions .rail .debug-on [data-match="AB"] { --mark1:var(--a); --mark2:var(--b); }
+#association-directions .chips .debug-on .debug-tag span { display:inline-block; border:1px solid var(--border); background:var(--wash); border-radius:20px; padding:2px 7px; margin-right:4px; }
+#association-directions .focus .debug-on .debug-tag { letter-spacing:.01em; }
+#association-directions .debug-on .linked { background:color-mix(in srgb,var(--ink) 7%,var(--paper)); }
+#association-directions .debug-on .dim { opacity:.37; }
+#association-directions .aside { border-left:1px solid var(--border); padding:16px 12px; font-size:12px; }
+#association-directions .map-label { color:var(--muted); margin-bottom:8px; }
+#association-directions .roots { display:flex; justify-content:center; gap:9px; }
+#association-directions .map-node { background:var(--paper); border:1px solid var(--border); border-radius:7px; min-width:54px; min-height:36px; padding:5px; }
+#association-directions .map-node::before { content:''; display:inline-block; width:7px; height:7px; border-radius:50%; margin-right:5px; background:var(--color); }
+#association-directions .map-node[data-chain="A"] { --color:var(--a); } #association-directions .map-node[data-chain="B"] { --color:var(--b); } #association-directions .map-node[data-chain="J"] { --color:var(--j); }
+#association-directions .map-node.linked { outline:2px solid var(--color); outline-offset:2px; }
+#association-directions .connect { text-align:center; color:var(--muted); line-height:1.6; }
+#association-directions .join-node { text-align:center; }
+#association-directions .inspect { border-top:1px solid var(--border); padding-top:10px; margin-top:14px; color:var(--muted); min-height:82px; }
+#association-directions .inspect strong { display:block; color:var(--ink); font-weight:500; }
+#association-directions .off .aside { display:none; } #association-directions .off.layout { grid-template-columns:1fr; }
+#association-directions .off .debug-tag { display:none; }
+@media(max-width:520px) { #association-directions .stage { min-height:800px; } #association-directions .layout { grid-template-columns:1fr; } #association-directions .aside { border-left:0; border-top:1px solid var(--border); } #association-directions .inspect { min-height:55px; } }
+</style>
+<div class="viz-dotted-background"><section class="stage rail focus" aria-label="Chain association debug view"></section></div>
+<template id="association-template">
+  <div class="top"><div><div class="title">Committee</div><div class="sub">Sections conversation</div></div><label class="toggle"><input class="debug-toggle" type="checkbox" checked> Debug</label></div>
+  <div class="layout debug-on">
+    <div class="chat">
+      <div class="msg user" data-match="AB"><div class="who">You</div><button class="msg-button selectable" data-select="AB" data-tooltip="Message U1 · handled by chains A and B">Compare the tradeoffs of a local-first app and a hosted app.</button><div class="debug-tag"><span>Handled by A</span> <span>Handled by B</span> · U1</div></div>
+      <div class="answer"><div class="who">Committee</div>
+        <div class="part" data-match="A"><button class="part-button selectable" data-select="A" data-tooltip="Fragment F-A · handled by chain A"><strong>Local-first</strong>Fast offline access and user control, with sync complexity.</button><div class="debug-tag"><span>Handled by A</span> · F-A</div></div>
+        <div class="part" data-match="B"><button class="part-button selectable" data-select="B" data-tooltip="Fragment F-B · handled by chain B"><strong>Hosted</strong>Simple shared access and operations, with a network dependency.</button><div class="debug-tag"><span>Handled by B</span> · F-B</div></div>
+      </div>
+      <div class="msg user" data-match="J"><div class="who">You</div><button class="msg-button selectable" data-select="J" data-tooltip="Message U2 · handled by chain J">Bring those perspectives together.</button><div class="debug-tag"><span>Handled by J</span> · U2</div></div>
+      <div class="part" data-match="J"><div class="who">Committee</div><button class="part-button selectable" data-select="J" data-tooltip="Fragment F-J · handled by J; reads A and B"><strong>Synthesis</strong>A hybrid can keep core work local while using a service for sharing.</button><div class="debug-tag"><span>Handled by J</span> <span>Reads A + B</span> · F-J</div></div>
+    </div>
+    <aside class="aside"><div class="map-label">Genealogy</div><div class="roots"><button class="map-node selectable" data-chain="A" data-select="A" data-tooltip="Chain A · local-first response">A</button><button class="map-node selectable" data-chain="B" data-select="B" data-tooltip="Chain B · hosted response">B</button></div><div class="connect">↘ &nbsp;&nbsp;&nbsp; ↙</div><div class="join-node"><button class="map-node selectable" data-chain="J" data-select="J" data-tooltip="Chain J · reads A and B">J</button></div><div class="inspect" aria-live="polite"></div></aside>
+  </div>
+</template>
+<script>
+(() => {
+ const root = document.getElementById('association-directions');
+ const template = root.querySelector('#association-template');
+ const details = {A:['Chain A','Handles U1 and F-A.'], B:['Chain B','Handles U1 and F-B.'], J:['J + inherited A/B','J handles U2 and F-J; reads A and B as inputs.'], AB:['Message U1','Handled by both A and B.']};
+ root.querySelectorAll('.stage').forEach(stage => {
+   stage.appendChild(template.content.cloneNode(true));
+   const layout=stage.querySelector('.layout'), debug=stage.querySelector('.debug-toggle'), inspect=stage.querySelector('.inspect');
+   let chosen='J';
+   const render = key => {
+     const active=key || chosen, matches=active==='AB' ? ['A','B'] : active==='J' ? ['A','B','J'] : [active];
+     stage.querySelectorAll('[data-match]').forEach(el => { const m=el.dataset.match; const linked=m==='AB' ? matches.some(x=>x==='A'||x==='B') : matches.includes(m); el.classList.toggle('linked', linked); el.classList.toggle('dim', stage.classList.contains('focus') && !linked); });
+     stage.querySelectorAll('[data-chain]').forEach(el => el.classList.toggle('linked',matches.includes(el.dataset.chain)));
+     inspect.innerHTML='<strong>'+details[active][0]+'</strong>'+details[active][1];
+   };
+   stage.querySelectorAll('[data-select]').forEach(el => {
+     el.addEventListener('click',()=>{chosen=el.dataset.select;render();});
+     el.addEventListener('mouseenter',()=>render(el.dataset.select));
+     el.addEventListener('mouseleave',()=>render());
+     el.addEventListener('focus',()=>render(el.dataset.select));
+     el.addEventListener('blur',()=>render());
+   });
+   debug.addEventListener('change',()=>{layout.classList.toggle('debug-on',debug.checked); layout.classList.toggle('off',!debug.checked);});
+   render();
+ });
+})();
+</script>
+</div>

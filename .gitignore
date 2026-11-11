@@ -11,3 +11,7 @@ dist/
 
 # Office lock files
 ~$*
+
+# Large local-only docs
+docs/examples/
+docs/presentation/

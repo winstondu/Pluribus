@@ -1,0 +1,96 @@
+<div id="chat-directions">
+  <div class="viz-carousel" aria-label="Concurrent chat design directions">
+    <section data-variant="Flow" aria-label="Flow conversation design"><div class="mock flow"></div></section>
+    <section data-variant="Sections" aria-label="Sections conversation design" hidden><div class="mock sections"></div></section>
+    <section data-variant="Activity" aria-label="Activity conversation design" hidden><div class="mock activity"></div></section>
+  </div>
+</div>
+<style>
+#chat-directions { color-scheme: light dark; }
+#chat-directions .mock { --bg:light-dark(#fff,#171719); --ink:light-dark(#242329,#f1f0f3); --sub:light-dark(#706f79,#b4b1bb); --line:light-dark(#e9e8ec,#39383e); --soft:light-dark(#f5f4f7,#252428); --accent:light-dark(#5b54b4,#b4aaff); --accentsoft:light-dark(#eeecfc,#38334f); --one:light-dark(#506fbb,#9cb8ff); --two:light-dark(#a55d36,#f1b08a); --three:light-dark(#39836b,#8cd5b9); background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,sans-serif; min-height:720px; border:1px solid var(--line); border-radius:14px; overflow:hidden; }
+#chat-directions * { box-sizing:border-box; }
+#chat-directions button, #chat-directions textarea { font:inherit; color:inherit; }
+#chat-directions button { cursor:pointer; }
+#chat-directions .bar { display:flex;align-items:center;justify-content:space-between;gap:12px;padding:15px 20px;border-bottom:1px solid var(--line); }
+#chat-directions .brand { font-weight:650;letter-spacing:-.02em; }
+#chat-directions .sub { color:var(--sub);font-size:12px; }
+#chat-directions .bar button, #chat-directions .tiny { border:0;background:none;color:var(--sub);padding:5px 7px;border-radius:7px; }
+#chat-directions .bar button[aria-pressed=true] { color:var(--accent);background:var(--accentsoft); }
+#chat-directions .layout { display:grid; grid-template-columns:minmax(0,1fr); }
+#chat-directions .thread { padding:22px; max-width:780px; width:100%; margin:auto; }
+#chat-directions .message { margin-bottom:22px; scroll-margin:12px; }
+#chat-directions .meta { display:flex;align-items:center;gap:7px;color:var(--sub);font-size:12px;margin-bottom:7px; }
+#chat-directions .who { font-weight:650;color:var(--ink); }
+#chat-directions .usertext { background:var(--soft);border-radius:13px;padding:12px 14px; }
+#chat-directions .assistanttext { padding:0 3px; }
+#chat-directions .status { color:var(--accent);background:var(--accentsoft);border-radius:20px;padding:3px 8px; font-size:12px; }
+#chat-directions .reply { color:var(--sub);background:transparent;border:1px solid var(--line);border-radius:20px;padding:3px 8px;font-size:12px; }
+#chat-directions .reply:hover, #chat-directions .tiny:hover { background:var(--soft); }
+#chat-directions .answer { margin:9px 0 0; }
+#chat-directions .answer strong { display:block;font-weight:650;margin-bottom:3px; }
+#chat-directions .muted { color:var(--sub); }
+#chat-directions .cursor { display:inline-block;width:5px;height:13px;background:var(--accent);vertical-align:middle;margin-left:3px; }
+#chat-directions .jump { display:flex;align-items:center;gap:6px; border:1px solid var(--line);background:var(--bg);border-radius:20px;padding:6px 10px;color:var(--accent);margin:0 0 18px auto; }
+#chat-directions .composer { border:1px solid var(--line);border-radius:14px;padding:10px 12px;background:var(--bg); }
+#chat-directions textarea { display:block;width:100%;resize:vertical;min-height:48px;border:0;outline:0;background:transparent; }
+#chat-directions .composefoot { display:flex;justify-content:space-between;align-items:center;gap:8px; }
+#chat-directions .send, #chat-directions .choice { border:0;background:var(--ink);color:var(--bg);border-radius:9px;padding:7px 11px; }
+#chat-directions .target { color:var(--accent);font-size:12px; }
+#chat-directions .disambiguate { margin-top:10px;padding:11px;background:var(--soft);border-radius:10px; }
+#chat-directions .choices { display:flex;flex-wrap:wrap;gap:7px;margin-top:8px; }
+#chat-directions .choice { background:var(--bg);color:var(--ink);border:1px solid var(--line); }
+#chat-directions .chips { display:none;gap:4px;flex-wrap:wrap; }
+#chat-directions .debug .chips { display:flex; }
+#chat-directions .chip { font-size:11px;border-radius:10px;padding:2px 6px;background:color-mix(in srgb,var(--one) 14%,transparent);color:var(--one); }
+#chat-directions .chip.three { background:color-mix(in srgb,var(--three) 14%,transparent);color:var(--three); }
+#chat-directions .chip.two { background:color-mix(in srgb,var(--two) 14%,transparent);color:var(--two); }
+#chat-directions .debug .chain-one { border-left:3px solid var(--one);padding-left:10px; }
+#chat-directions .debug .chain-two { border-left:3px solid var(--two);padding-left:10px; }
+#chat-directions .debug .chain-three { border-left:3px solid var(--three);padding-left:10px; }
+#chat-directions .debug .chain-both { border-left:3px solid var(--one);border-image:linear-gradient(var(--one) 50%,var(--two) 50%) 1;padding-left:10px; }
+#chat-directions .split { display:none; }
+#chat-directions .debug .split { display:inline-block; }
+#chat-directions .fragments { margin-top:9px;padding:10px 12px;background:var(--soft);border-radius:9px;font-size:12px; }
+#chat-directions .fragments div+div { margin-top:6px; }
+#chat-directions .rail { display:none; }
+#chat-directions .sections .answer { border-top:1px solid var(--line);padding:12px 0 2px;display:grid;grid-template-columns:120px 1fr;gap:12px; }
+#chat-directions .sections .answer strong { color:var(--sub);font-size:12px; }
+#chat-directions .sections .assistanttext { padding-left:0; }
+#chat-directions .activity .layout { grid-template-columns:190px minmax(0,1fr); }
+#chat-directions .activity .rail { display:block;background:var(--soft);padding:20px 14px;border-right:1px solid var(--line); }
+#chat-directions .railitem { padding:10px 0;border-bottom:1px solid var(--line); }
+#chat-directions .activity .thread { padding:20px; }
+#chat-directions .activity .usertext { background:transparent;border-left:2px solid var(--line);border-radius:0;padding:3px 12px; }
+#chat-directions .activity .jump { margin-left:0; }
+@media(max-width:560px) { #chat-directions .activity .layout { display:block; } #chat-directions .activity .rail { display:flex;gap:16px;padding:10px 16px;border-right:0;border-bottom:1px solid var(--line); } #chat-directions .railitem { border:0;padding:0; } #chat-directions .thread { padding:16px; } #chat-directions .sections .answer { grid-template-columns:1fr;gap:2px; } }
+</style>
+<script>
+(() => {
+ const root = document.getElementById('chat-directions');
+ const saved = window.openai?.widgetState?.privateContent || {};
+ root.querySelectorAll('.mock').forEach((mock, index) => {
+  const state = {debug: false, split: false, target: '', disambiguate: false, sent: '', ...(saved[index] || {})};
+  function persist() { const all = Array.from(root.querySelectorAll('.mock')).map(m => m._state || {}); window.openai?.setWidgetState?.({modelContent:null,privateContent:all}).catch(()=>{}); }
+  function render() {
+   mock.classList.toggle('debug', state.debug);
+   mock.innerHTML = `<div class="bar"><div><span class="brand">Committee</span> <span class="sub"> / Simulated conversation</span></div><button type="button" data-action="debug" aria-pressed="${state.debug}">Debug ${state.debug ? 'on' : 'off'}</button></div>
+   <div class="layout"><aside class="rail"><div class="sub">ACTIVITY</div><div class="railitem"><b>Sky + menu</b><div class="sub">Working · 2 parts</div></div><div class="railitem"><b>Weekend packing</b><div class="sub">Complete</div></div></aside><main class="thread">
+   <div class="message chain-both" data-pending><div class="meta"><span class="who">You</span><span>10:41</span><span class="status">● ${state.tick ? 'Drafting answers' : 'Researching'}</span><span class="chips"><span class="chip">Sky</span><span class="chip two">Menu</span></span><button type="button" class="tiny split" data-action="split">${state.split ? 'Hide split' : 'Inspect split'}</button></div><div class="usertext">Why is the sky blue? Also, translate “sopa de verduras” into English. Keep both answers brief.</div>${state.split ? '<div class="fragments"><div><b>Sky:</b> Explain why the sky is blue.</div><div><b>Menu:</b> Translate “sopa de verduras” into English.</div><div><b>Shared requirement:</b> Keep each answer brief.</div></div>' : ''}</div>
+   <div class="message chain-both"><div class="meta"><span class="who">Committee</span><span class="status">Responding</span><span class="chips"><span class="chip">Sky</span><span class="chip two">Menu</span></span><button class="reply" type="button" data-target="Sky + menu">↩ Reply to Sky + menu</button></div><div class="assistanttext"><div class="answer chain-one"><strong>Why the sky is blue <span class="sub">· writing</span></strong><div>Air molecules scatter shorter blue wavelengths more strongly than red light.<span class="cursor"></span></div></div><div class="answer chain-two"><strong>Menu translation <span class="sub">· complete</span></strong><div>“Sopa de verduras” means <b>vegetable soup</b>.</div></div></div></div>
+   <div class="message chain-three"><div class="meta"><span class="who">You</span><span>10:42</span></div><div class="usertext">What should I pack for a weekend hike?</div></div>
+   <div class="message chain-three"><div class="meta"><span class="who">Committee</span><span class="sub">Complete</span><button class="reply" type="button" data-target="Weekend packing">↩ Reply to Weekend packing</button><span class="chips"><span class="chip three">Packing</span></span></div><div class="assistanttext">Pack water, weather-ready layers, sturdy shoes, snacks, a map, and a small first-aid kit.</div></div>
+   <button type="button" class="jump" data-action="jump">↑ Earlier request still responding</button>
+   ${state.sent ? `<div class="message"><div class="meta"><span class="who">You</span><span class="sub">Replying to ${escapeText(state.target || 'both conversations')}</span></div><div class="usertext">${escapeText(state.sent)}</div></div>` : ''}
+   <div class="composer">${state.target ? `<div class="target">Replying to ${escapeText(state.target)} <button class="tiny" type="button" data-action="clear" aria-label="Clear reply target">×</button></div>` : ''}<textarea aria-label="Message" placeholder="Ask a follow-up…">${escapeText(state.draft || '')}</textarea><div class="composefoot"><span class="sub">${state.target ? 'Target selected' : 'No reply target selected'}</span><button class="send" type="button" data-action="send">Send ↑</button></div>
+   ${state.disambiguate ? '<div class="disambiguate" role="status"><b>Which response is this about?</b><div class="choices"><button class="choice" type="button" data-choice="Sky + menu">Sky + menu</button><button class="choice" type="button" data-choice="Weekend packing">Weekend packing</button><button class="choice" type="button" data-choice="both conversations">Both</button></div></div>' : ''}</div>
+   </main></div>`;
+   mock._state = state;
+  }
+  function escapeText(s) { const el=document.createElement('span');el.textContent=s;return el.innerHTML; }
+  mock.addEventListener('input',e=>{if(e.target.matches('textarea')) state.draft=e.target.value;});
+  mock.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;const action=b.dataset.action;if(b.dataset.target){state.target=b.dataset.target;state.disambiguate=false;}else if(b.dataset.choice){state.target=b.dataset.choice;state.sent=state.draft || 'Can you expand on that?';state.draft='';state.disambiguate=false;}else if(action==='debug')state.debug=!state.debug;else if(action==='split')state.split=!state.split;else if(action==='clear')state.target='';else if(action==='jump'){mock.querySelector('[data-pending]').scrollIntoView({behavior:'smooth',block:'center'});return;}else if(action==='send'){state.draft=mock.querySelector('textarea').value.trim() || 'Can you expand on that?';if(!state.target)state.disambiguate=true;else{state.sent=state.draft;state.draft='';}} render();persist();});
+  render();
+  setInterval(()=>{state.tick=!state.tick;const badge=mock.querySelector('[data-pending] .status');if(badge) badge.textContent='● '+(state.tick?'Drafting answers':'Researching');},4500);
+ });
+})();
+</script>
