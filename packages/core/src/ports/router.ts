@@ -109,6 +109,8 @@ export interface CandidateSection {
   readonly request: string
   /** Opening of the answer text so far; empty while pending. */
   readonly excerpt: string
+  /** Characters of the whole answer text so far: what the decision cost guard reads an answer's size from. */
+  readonly answerLength: number
   readonly state: SectionState
   readonly chainId: ChainId
   readonly nodeId: NodeId

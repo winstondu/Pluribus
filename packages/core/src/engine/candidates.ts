@@ -3,6 +3,7 @@ import type { CandidateChain, CandidateGroup, CandidateSection, CandidateWork, R
 import {
   activeMembers,
   chainBusy,
+  chainLabel,
   chainHead,
   chainTip,
   groupLabel,
@@ -10,6 +11,7 @@ import {
   nodeParents,
   sectionDropped,
   sectionState,
+  sectionTitle,
 } from './queries'
 import type { ConversationState } from './state'
 
@@ -32,9 +34,11 @@ export function routingCandidates(state: ConversationState): RoutingCandidates {
       sectionId: section.id,
       directiveId: d.id,
       messageId: d.messageId,
-      title: section.title,
+      // The name every projection shows: the directive's current label (`sectionTitle`), not the title stored when the section opened.
+      title: sectionTitle(state, section),
       request: d.instruction,
       excerpt: latest ? (state.attemptText[latest] ?? '').slice(0, 280) : '',
+      answerLength: latest ? (state.attemptText[latest] ?? '').length : 0,
       state: sectionState(state, section.id),
       chainId: d.chainId,
       nodeId: d.nodeId,
@@ -47,7 +51,7 @@ export function routingCandidates(state: ConversationState): RoutingCandidates {
     const chain = state.chains[id]
     const tip = chainTip(state, id)
     if (!chain || tip === null) continue
-    chains.push({ chainId: id, kind: chain.kind, label: chain.label, headNodeId: chainHead(state, id), tipNodeId: tip, busy: chainBusy(state, id) })
+    chains.push({ chainId: id, kind: chain.kind, label: chainLabel(state, chain), headNodeId: chainHead(state, id), tipNodeId: tip, busy: chainBusy(state, id) })
   }
 
   const work: CandidateWork[] = []

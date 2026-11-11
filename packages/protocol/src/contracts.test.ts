@@ -107,7 +107,7 @@ describe('settings', () => {
 
   test('the referent strategy and its decision budget are settings: merged key by key, validated, and filled in for settings stored before they existed', () => {
     const next = applySettingsPatch(DEFAULT_SETTINGS, { routing: { referentStrategy: 'one-pass', referentBudget: { requests: 2 } } })
-    expect(next.routing).toEqual({ referentStrategy: 'one-pass', referentBudget: { ...DEFAULT_SETTINGS.routing.referentBudget, requests: 2 } })
+    expect(next.routing).toEqual({ ...DEFAULT_SETTINGS.routing, referentStrategy: 'one-pass', referentBudget: { ...DEFAULT_SETTINGS.routing.referentBudget, requests: 2 } })
     expect(next.thresholds).toEqual(DEFAULT_SETTINGS.thresholds)
     expect(applySettingsPatch(DEFAULT_SETTINGS, { routing: {} })).toBe(DEFAULT_SETTINGS)
     expect(validateSettingsPatch({ routing: { referentStrategy: 'guess' as never } })).toMatch(/referent strategy/)
@@ -116,6 +116,27 @@ describe('settings', () => {
     expect(validateSettingsPatch({ routing: { referentStrategy: 'tree-walk', referentBudget: { requests: 0 } } })).toBeNull()
     const { routing: _dropped, ...stored } = { ...DEFAULT_SETTINGS, retryPolicy: 'manual' as const }
     expect(normalizeSettings(stored)).toEqual({ ...DEFAULT_SETTINGS, retryPolicy: 'manual' })
+  })
+
+  test('the tree walk\'s two switches, its search size and the price guard are settings: independent, validated, and defaulted for settings stored before they existed', () => {
+    expect(DEFAULT_SETTINGS.routing.treeWalk).toEqual({ startAtTrunkBase: false, hopBetweenBranchPoints: false, searchRunsOverTokens: 1_500 })
+    const trunk = applySettingsPatch(DEFAULT_SETTINGS, { routing: { treeWalk: { startAtTrunkBase: true } } })
+    expect(trunk.routing.treeWalk).toEqual({ startAtTrunkBase: true, hopBetweenBranchPoints: false, searchRunsOverTokens: 1_500 })
+    const both = applySettingsPatch(trunk, { routing: { treeWalk: { hopBetweenBranchPoints: true } } })
+    expect(both.routing.treeWalk).toEqual({ startAtTrunkBase: true, hopBetweenBranchPoints: true, searchRunsOverTokens: 1_500 })
+    expect(both.routing.referentStrategy).toBe(DEFAULT_SETTINGS.routing.referentStrategy)
+    expect(validateSettingsPatch({ routing: { treeWalk: { searchRunsOverTokens: 0 } } })).toMatch(/whole number/)
+    expect(validateSettingsPatch({ routing: { treeWalk: { searchRunsOverTokens: 800, hopBetweenBranchPoints: true } } })).toBeNull()
+    expect(validateSettingsPatch({ routing: { costGuard: { maxAnswerCostRatio: -1 } } })).toMatch(/maxAnswerCostRatio/)
+    expect(applySettingsPatch(DEFAULT_SETTINGS, { routing: { costGuard: { maxAnswerCostRatio: 1 } } }).routing.costGuard).toEqual({ ...DEFAULT_SETTINGS.routing.costGuard, maxAnswerCostRatio: 1 })
+    // Stored by the version that had only the strategy and its budget.
+    const old = { ...DEFAULT_SETTINGS, routing: { referentStrategy: 'one-pass', referentBudget: { requests: 1, questions: 10, inputTokens: 500 } } } as unknown as typeof DEFAULT_SETTINGS
+    expect(normalizeSettings(old).routing).toEqual({
+      referentStrategy: 'one-pass',
+      referentBudget: { requests: 1, questions: 10, inputTokens: 500 },
+      treeWalk: DEFAULT_SETTINGS.routing.treeWalk,
+      costGuard: DEFAULT_SETTINGS.routing.costGuard,
+    })
   })
 })
 

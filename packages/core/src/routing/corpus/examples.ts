@@ -219,6 +219,276 @@ const longConversation = (() => {
   return s.build()
 })()
 
+/**
+ * Long runs (docs/build/dependency-decisioning.md · "Long runs"): 200
+ * answer sections, far more than the pipeline lists, as one chain that
+ * never splits and as 200 unrelated one-answer lines; and a tree whose
+ * branches are long runs of only children.
+ */
+const GUIDE_TOPICS = [
+  'the sky being blue',
+  'vaccines',
+  'tides',
+  'cats purring',
+  'refrigerators',
+  'inflation',
+  'autumn leaves',
+  'airplanes',
+  'black holes',
+  'sea salt',
+  'Wi-Fi',
+  'photosynthesis',
+  'yawning',
+  'rainbows',
+  'the speed of light',
+  'onions',
+  'honey bees',
+  'prime numbers',
+  'floating ice',
+  'magnets',
+  'earthquakes',
+  'Pluto',
+  'GPS',
+  'DNA',
+  'dreams',
+  'volcanoes',
+  'sourdough bread',
+  'the stock market',
+  'compound interest',
+  'chess openings',
+  'the Roman Empire',
+  'the French Revolution',
+  'jazz harmony',
+  'guitar tuning',
+  'oil painting',
+  'watercolor',
+  'marathon training',
+  'sleep cycles',
+  'caffeine',
+  'vitamin D',
+  'antibiotics',
+  'the immune system',
+  'blood pressure',
+  'cholesterol',
+  'solar panels',
+  'wind turbines',
+  'nuclear fusion',
+  'batteries',
+  'electric cars',
+  'jet engines',
+  'sonar',
+  'lighthouses',
+  'suspension bridges',
+  'skyscrapers',
+  'concrete',
+  'glass making',
+  'steel',
+  'plastic recycling',
+  'composting',
+  'coral reefs',
+  'rainforests',
+  'deserts',
+  'glaciers',
+  'hurricanes',
+  'tornadoes',
+  'lightning',
+  'fog',
+  'the ozone layer',
+  'carbon dating',
+  'fossils',
+  'dinosaurs',
+  'mammoths',
+  'evolution',
+  'bacteria',
+  'viruses',
+  'mushrooms',
+  'yeast',
+  'cheese making',
+  'wine',
+  'coffee roasting',
+  'tea',
+  'chocolate',
+  'spices',
+  'knife sharpening',
+  'cast iron pans',
+  'pressure cookers',
+  'microwave ovens',
+  'induction stoves',
+  'dishwashers',
+  'vacuum cleaners',
+  'sewing machines',
+  'zippers',
+  'velcro',
+  'ballpoint pens',
+  'paper',
+  'the printing press',
+  'typewriters',
+  'keyboards',
+  'touch screens',
+  'LCD displays',
+  'lasers',
+  'fiber optics',
+  'radio',
+  'television',
+  'podcasts',
+  'search engines',
+  'encryption',
+  'passwords',
+  'blockchains',
+  'neural networks',
+  'compilers',
+  'operating systems',
+  'databases',
+  'spreadsheets',
+  'version control',
+  'open source',
+  'copyright',
+  'patents',
+  'trademarks',
+  'contracts',
+  'juries',
+  'elections',
+  'parliaments',
+  'central banks',
+  'taxes',
+  'insurance',
+  'mortgages',
+  'pensions',
+  'trade unions',
+  'supply chains',
+  'container ships',
+  'canals',
+  'railways',
+  'subways',
+  'traffic lights',
+  'roundabouts',
+  'bicycles',
+  'helmets',
+  'running shoes',
+  'tennis rackets',
+  'golf balls',
+  'the offside rule',
+  'cricket',
+  'baseball statistics',
+  'the Olympics',
+  'sumo',
+  'origami',
+  'bonsai',
+  'haiku',
+  'sonnets',
+  'the novel',
+  'film editing',
+  'animation',
+  'photography',
+  'darkrooms',
+  'telescopes',
+  'microscopes',
+  'thermometers',
+  'barometers',
+  'clocks',
+  'calendars',
+  'time zones',
+  'leap years',
+  'the metric system',
+  'pi',
+  'zero',
+  'infinity',
+  'probability',
+  'statistics',
+  'game theory',
+  'logic puzzles',
+  'sudoku',
+  'crosswords',
+  'Rubik’s cubes',
+  'kites',
+  'hot air balloons',
+  'parachutes',
+  'rockets',
+  'satellites',
+  'the Moon',
+  'Mars',
+  'Jupiter',
+  'comets',
+  'eclipses',
+  'auroras',
+  'constellations',
+  'the Big Bang',
+  'dark matter',
+  'quantum computers',
+  'superconductors',
+  'semiconductors',
+  'transistors',
+  'LEDs',
+  'thermostats',
+  'heat pumps',
+  'insulation',
+  'plumbing',
+  'septic tanks',
+  'wells',
+] as const
+
+const guideEntry = (topic: string): string => `**${topic.charAt(0).toUpperCase()}${topic.slice(1)}.** A short entry for the guide: what ${topic} are, how they work in plain words, and one thing a curious reader can try or look for.`
+
+/** One chain: a brief, then 199 entries of a guide, each a follow-up on the same line of work. */
+const longChain = (() => {
+  const s = scene()
+    .chain('guide', 'root', 'I’m writing a pocket guide to…')
+    .add('brief', {
+      chain: 'guide',
+      on: null,
+      label: 'I’m writing a pocket guide to…',
+      request: 'I’m writing a pocket guide to science and everyday technology for curious teenagers. I’ll name a topic each time; write a short entry for it.',
+      answer: 'Happy to help. Name the first topic and I’ll write a short, friendly entry: what it is, how it works, and something to try.',
+    })
+  GUIDE_TOPICS.forEach((topic, i) => {
+    s.add(`E${i}`, { chain: 'guide', on: i === 0 ? 'brief' : `E${i - 1}`, label: `Next entry: ${topic}`, request: `Next entry: ${topic}`, answer: guideEntry(topic) })
+  })
+  return s.build()
+})()
+
+/** The same 199 topics as unrelated questions: every answer is a root. */
+const longRoots = (() => {
+  const s = scene()
+  GUIDE_TOPICS.forEach((topic, i) => {
+    const question = `What should I know about ${topic}?`
+    s.chain(`r${i}`, 'root', question).add(`R${i}`, { chain: `r${i}`, on: null, label: question, request: question, answer: guideEntry(topic) })
+  })
+  return s.build()
+})()
+
+/** The closed trip and its itinerary, continued day by day on the base chain; the neighborhoods branch into a run about cheaper stays. */
+const deepRuns = (() => {
+  const s = liveTrip(false).add('J', {
+    chain: 'trip',
+    on: 'jb_G',
+    label: 'Use those recommendations to make a…',
+    request: 'Use those recommendations to make a five-day itinerary.',
+    answer: '**Day 1:** arrive, settle into Gion, evening walk through Pontocho. **Day 2:** Kiyomizu-dera and the Higashiyama lanes. **Day 3 (rain plan):** Kyoto National Museum, then a tea ceremony.',
+    consumed: ['brief', 'A', 'B'],
+  })
+  const days = [
+    'Check in by 15:00, then a slow first evening: Yasaka Shrine at dusk, dinner on Pontocho, an early night.',
+    'An early start at Kiyomizu-dera, the Sannenzaka lanes before the crowds, lunch near Kodai-ji, Philosopher’s Path in the afternoon.',
+    'The rain plan: Kyoto National Museum in the morning, Nishiki Market for lunch, a tea ceremony in Gion at four.',
+    'A day trip: Fushimi Inari at sunrise, sake tasting in Fushimi, back for an evening in Kawaramachi.',
+    'Arashiyama: the bamboo grove early, Tenryu-ji, the river, and a last dinner near the station.',
+  ]
+  days.forEach((answer, i) => {
+    s.add(`D${i + 1}`, { chain: 'trip', on: i === 0 ? 'J' : `D${i}`, label: `Plan day ${i + 1} hour by hour`, request: `Plan day ${i + 1} hour by hour`, answer })
+  })
+  s.chain('stay', 'branch', 'Which of those is cheapest?')
+  const stays: readonly (readonly [string, string])[] = [
+    ['Which of those is cheapest?', 'The Kyoto Station area: business hotels there run well below Gion prices in November.'],
+    ['Find hostels around there', 'Three well-reviewed hostels within ten minutes of the station, each with private rooms as well as dorms.'],
+    ['Any capsule hotels?', 'Yes: two capsule hotels near the station and one in Kawaramachi, all with luggage storage.'],
+    ['Compare their prices for November', 'Hostel dorms are the cheapest, capsules next, private hostel rooms about the price of a business hotel.'],
+  ]
+  stays.forEach(([request, answer], i) => {
+    s.add(`H${i + 1}`, { chain: 'stay', on: i === 0 ? 'A' : `H${i}`, label: request, request, answer })
+  })
+  return s.build()
+})()
+
 // ───────────────────────────── examples ─────────────────────────────
 
 const SKY_MENU = 'Explain why the sky is blue, and separately translate this menu into French: soup, bread. Keep both accessible to a beginner.'
@@ -837,5 +1107,64 @@ export const ROUTING_CORPUS: readonly CorpusExample[] = [
     scene: liveMixed,
     text: 'Explain how volcanoes form',
     expect: { composition: 'atomic', parts: [{ kind: 'unit', relation: 'new', placement: 'new-chain' }] },
+  },
+  // ── long runs (docs/build/dependency-decisioning.md · "Long runs") ──
+  {
+    id: 'long-chain-old-section',
+    covers: ['targets', 'placement'],
+    note: '05, Q20: the entry on tides is the target although 190 sections were written after it on the same chain. Only a strategy that reaches beyond the pipeline\u2019s window can find it.',
+    scene: longChain,
+    text: 'Make the entry on tides shorter',
+    beyondWindow: true,
+    expect: { composition: 'atomic', parts: [{ kind: 'unit', targets: ['E2'], placement: { continue: 'E2' } }] },
+  },
+  {
+    id: 'long-chain-latest-section',
+    covers: ['targets', 'placement'],
+    note: '05 edge case "Make that shorter": in a long chain a reply to the latest answer continues from the tip, whether the section is inferred as its target or the line is chosen as its handling chain.',
+    scene: longChain,
+    text: 'Make that last entry about wool a bit longer',
+    expect: { composition: 'atomic', parts: [{ kind: 'unit', relation: 'addition', chain: 'guide', placement: { continue: 'E198' } }] },
+  },
+  {
+    id: 'long-chain-unrelated',
+    covers: ['placement'],
+    note: '05: new work unrelated to a 200-section chain starts a new chain.',
+    scene: longChain,
+    text: 'What is the capital of Australia?',
+    expect: { composition: 'atomic', parts: [{ kind: 'unit', relation: 'new', placement: 'new-chain' }] },
+  },
+  {
+    id: 'long-roots-old-section',
+    covers: ['targets', 'placement'],
+    note: '05, Q20: one of 199 unrelated answers, far older than the window, is the target; the reply continues that line.',
+    scene: longRoots,
+    text: 'Go back to the answer about honey bees and add a diagram',
+    beyondWindow: true,
+    expect: { composition: 'atomic', parts: [{ kind: 'unit', targets: ['R16'], placement: { continue: 'R16' } }] },
+  },
+  {
+    id: 'deep-run-middle-section',
+    covers: ['targets', 'placement'],
+    note: '05: a reply to a section in the middle of a run of only children targets that section, not the end of the run; the work branches from it.',
+    scene: deepRuns,
+    text: 'Make the day 2 plan less packed',
+    expect: { composition: 'atomic', parts: [{ kind: 'unit', targets: ['D2'], placement: { continue: 'D2' } }] },
+  },
+  {
+    id: 'deep-run-end-section',
+    covers: ['targets', 'placement'],
+    note: '05: a reply to the last section of a run continues from it.',
+    scene: deepRuns,
+    text: 'Add a farewell dinner to the day 5 plan',
+    expect: { composition: 'atomic', parts: [{ kind: 'unit', targets: ['D5'], placement: { continue: 'D5' } }] },
+  },
+  {
+    id: 'deep-run-other-branch',
+    covers: ['targets', 'placement'],
+    note: '05: a reply to a section inside the other branch\u2019s run targets it; the day plans are not walked into for it.',
+    scene: deepRuns,
+    text: 'Which of those hostels has private rooms with a bathroom?',
+    expect: { composition: 'atomic', parts: [{ kind: 'unit', targets: ['H2'], placement: { continue: 'H2' } }] },
   },
 ]

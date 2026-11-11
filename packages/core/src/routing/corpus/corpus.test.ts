@@ -31,6 +31,20 @@ describe('routing corpus', () => {
     })
   })
 
+  // The tree walk's two switches, alone and together: with decisions as labelled every example is still routed as labelled.
+  describe.each([
+    ['start at the trunk base', { startAtTrunkBase: true }],
+    ['hops between branch points', { hopBetweenBranchPoints: true }],
+    ['trunk base and hops', { startAtTrunkBase: true, hopBetweenBranchPoints: true }],
+  ] as const)('referents by tree-walk, %s', (_name, switches) => {
+    const settings = { ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, ...switches } } }
+    test.each(ROUTING_CORPUS.map((e) => [e.id, e] as const))('corpus · with decisions as labelled, the pipeline routes %s as labelled', async (_id, example) => {
+      const input = corpusInput(example, settings)
+      const router = createRouter({ decisionProvider: oracleDecisionProvider(example, input), decomposer: referenceDecomposer(example) })
+      expect(compare(example, await router.route(input, NEVER_CANCELLED))).toEqual([])
+    })
+  })
+
   test('corpus · the evaluator reports per topic, and a provider that always says no fails the labels it should', async () => {
     const no = {
       async decide(request: { questions: Record<string, { type: string; options?: Record<string, string> }> }) {

@@ -389,6 +389,22 @@ const REFERENT_STRATEGIES: readonly { value: ReferentStrategyName; label: string
   },
 ]
 
+/** The tree walk's two switches. A run that is too long to ask about answer by answer is searched whichever way they are set. */
+const TREE_WALK_SWITCHES: readonly { key: 'startAtTrunkBase' | 'hopBetweenBranchPoints'; label: string; description: string }[] = [
+  {
+    key: 'startAtTrunkBase',
+    label: 'Start at the trunk base',
+    description:
+      'Asks about a line of work where it first splits, not about every answer before that. Fewer questions; a reply to an earlier answer of the trunk takes one more decision request.',
+  },
+  {
+    key: 'hopBetweenBranchPoints',
+    label: 'Hop between branch points',
+    description:
+      'Below a split, asks about the end of each branch’s run, not about every answer in it. Fewer questions; a reply to an answer in the middle of a run takes one more decision request.',
+  },
+]
+
 function ReferentSettings({ settings }: { settings: Settings }) {
   const change = useChangeSettings()
   const label = useId()
@@ -403,6 +419,17 @@ function ReferentSettings({ settings }: { settings: Settings }) {
           className="sm:grid-cols-2"
         />
       </Row>
+      {settings.routing.referentStrategy === 'tree-walk'
+        ? TREE_WALK_SWITCHES.map((entry) => (
+            <DebugRow
+              key={entry.key}
+              label={entry.label}
+              description={entry.description}
+              checked={settings.routing.treeWalk[entry.key]}
+              onChange={(checked) => void change({ routing: { treeWalk: { [entry.key]: checked } } })}
+            />
+          ))
+        : null}
     </Panel>
   )
 }

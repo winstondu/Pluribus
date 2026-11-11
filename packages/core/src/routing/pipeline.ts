@@ -1,4 +1,5 @@
 import {
+  type DecisionBudget,
   provisionalLabel,
   providerError,
   type Decided,
@@ -19,6 +20,7 @@ import {
 } from '@committee/protocol'
 import type {
   CancelSignal,
+  DecisionProvider,
   CoreDependencies,
   DecomposedFragment,
   Decomposition,
@@ -39,7 +41,7 @@ import type {
 import { Batch, ask, type Answers } from './batch'
 import { AMBIGUITY_FLOOR, derivePlacement, neededWork, placedWithoutTarget, referentCovered, resolveUnitTargets, selected, validatePlan, type TargetMode } from './derive'
 import { askUnit, readUnit, sectionNumbers, withReferents, type UnitScope, type UnitSignals } from './questions'
-import { createReferentAsk, referentStrategyFor, type ReferentSpend } from './referents'
+import { createReferentAsk, decisionAllowance, estimateRequestTokens, referentStrategyFor, type ReferentSpend } from './referents'
 import { describeState, numberedAnswerSections, supply, type Supplied } from './supply'
 
 /**
@@ -102,6 +104,14 @@ class Record {
   model: string | null = null
   /** What the referent strategy did beyond the pipeline's own calls, for the decision's explanation. Empty when nothing. */
   referentNote = ''
+  /** Estimated input tokens of the pipeline's own decision requests so far: the price guard counts them first. */
+  pipelineTokens = 0
+
+  /** One of the pipeline's own decision requests. */
+  ask(provider: DecisionProvider, model: string, stateText: string, batch: Batch, signal: CancelSignal): ReturnType<typeof ask> {
+    if (batch.size > 0) this.pipelineTokens += estimateRequestTokens(stateText, batch.questions)
+    return ask(provider, model, stateText, batch, signal)
+  }
 
   add(answers: Answers): void {
     this.model ??= answers.model
@@ -158,7 +168,7 @@ async function routeMessage(deps: Deps, input: RoutingInput, signal: CancelSigna
   // Explicit and chosen targets are used as given: nothing is asked about the message's referents.
   const referentRequest = referentRequestFor(input, supplied, given ? [] : [{ key: 'm', name: 'the new message' }], stateText, subject)
   addReferentQuestions(gate, strategy, referentRequest)
-  const gateResult = await ask(deps.decisionProvider, input.settings.models.decision, stateText, gate, signal)
+  const gateResult = await record.ask(deps.decisionProvider, input.settings.models.decision, stateText, gate, signal)
   if (!gateResult.ok) return failed(gateResult.error)
   const g = gateResult.answers
   record.add(g)
@@ -215,7 +225,7 @@ async function routeMessage(deps: Deps, input: RoutingInput, signal: CancelSigna
           `Does the user explicitly say that the requirement "${r.text}" applies to the whole conversation from now on, rather than only to this request?`,
         )
       })
-      const result = await ask(deps.decisionProvider, input.settings.models.decision, describeState(input, supplied, subject), batch, signal)
+      const result = await record.ask(deps.decisionProvider, input.settings.models.decision, describeState(input, supplied, subject), batch, signal)
       if (!result.ok) return failed(result.error)
       record.add(result.answers)
       tagged.forEach((r, i) => {
@@ -373,7 +383,7 @@ async function routeComposite(deps: Deps, input: RoutingInput, signal: CancelSig
   const stateText = describeState(input, supplied, subject)
   const referentRequest = referentRequestFor(input, supplied, scopes.map((scope) => ({ key: scope.key, name: scope.name })), stateText, subject)
   addReferentQuestions(batch, c.strategy, referentRequest)
-  const result = await ask(deps.decisionProvider, input.settings.models.decision, stateText, batch, signal)
+  const result = await record.ask(deps.decisionProvider, input.settings.models.decision, stateText, batch, signal)
   if (!result.ok) return failed(result.error)
   const a = result.answers
   record.add(a)
@@ -568,6 +578,7 @@ function referentRequestFor(
     stateText,
     subject,
     relevance: { clear: input.settings.thresholds.targetChoice, floor: AMBIGUITY_FLOOR },
+    treeWalk: input.settings.routing.treeWalk,
   }
 }
 
@@ -600,7 +611,7 @@ async function resolveReferents(
   const asker = createReferentAsk({
     provider: deps.decisionProvider,
     model: input.settings.models.decision,
-    budget: input.settings.routing.referentBudget,
+    budget: guardedBudget(input, request.units.length, record.pipelineTokens),
     signal,
     onAnswers: (a) => record.add(a),
   })
@@ -616,6 +627,21 @@ async function resolveReferents(
     }
   }
   return { ok: true, units, fallback: result.fallback }
+}
+
+/**
+ * What the strategy may add to this routing: its budget, with the input
+ * tokens cut to what the price guard leaves after the pipeline's own
+ * requests. The request and question caps stand as they are.
+ */
+function guardedBudget(input: RoutingInput, units: number, pipelineTokens: number): DecisionBudget {
+  const budget = input.settings.routing.referentBudget
+  const allowance = decisionAllowance(input.settings.routing.costGuard, {
+    messageLength: input.text.length,
+    answerLengths: input.candidates.sections.filter((s) => s.state === 'completed' && !s.asksElicitationId).map((s) => s.answerLength),
+    units,
+  })
+  return { ...budget, inputTokens: Math.max(0, Math.min(budget.inputTokens, allowance - pipelineTokens)) }
 }
 
 function clamp01(value: number): number {
@@ -746,7 +772,7 @@ async function affectedWork(
   })
   if (batch.size === 0) return { ok: true, revisions: [...revisions] }
   const subject = `Corrections in the new message "${input.text}":\n${revisions.map((r, i) => `C${i + 1}. ${JSON.stringify(r.correction)}`).join('\n')}`
-  const result = await ask(deps.decisionProvider, input.settings.models.decision, describeState(input, supplied, subject), batch, signal)
+  const result = await record.ask(deps.decisionProvider, input.settings.models.decision, describeState(input, supplied, subject), batch, signal)
   if (!result.ok) return result
   record.add(result.answers)
   return {

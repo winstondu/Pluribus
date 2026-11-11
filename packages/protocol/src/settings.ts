@@ -40,7 +40,8 @@ export interface DecisionThresholds {
  *   anyway. No further request.
  * - `tree-walk`: breadth-first over the context tree from each root, pruned
  *   where a line of work is not relevant, one further request per branching
- *   level, within `referentBudget`.
+ *   level, within `referentBudget` and `costGuard`. Long runs of only
+ *   children are searched (`treeWalk`).
  */
 export type ReferentStrategyName = 'one-pass' | 'tree-walk'
 
@@ -61,9 +62,67 @@ export interface DecisionBudget {
   readonly inputTokens: number
 }
 
+/**
+ * How the tree walk treats a run of only children: the answers of one line
+ * of work between two places where it splits. Read by the `tree-walk`
+ * strategy only (docs/build/dependency-decisioning.md · "Long runs").
+ */
+export interface TreeWalkSettings {
+  /**
+   * Start at the trunk base. The trunk of a root is the run from the root
+   * down to the first answer where the line splits, or to its last answer
+   * when it never splits. On: only the base is asked about by itself; the
+   * answers above it are searched (asked about in chunks, and one by one
+   * only inside a chunk that is relevant). Off: they are asked about one by
+   * one, unless the run is longer than `searchRunsOverTokens`.
+   */
+  readonly startAtTrunkBase: boolean
+  /**
+   * Hop between branch points. Below a branch point, on: of each branch's
+   * run only its end (the next branch point, or the leaf) is asked about by
+   * itself and the answers skipped are searched. Off: every answer of the
+   * run is asked about, unless the run is longer than `searchRunsOverTokens`.
+   */
+  readonly hopBetweenBranchPoints: boolean
+  /**
+   * The size above which a run is searched whatever the two switches say,
+   * and the size of a chunk small enough to ask about answer by answer:
+   * the estimated input tokens of listing the answers one by one (about
+   * 125 for a full-length answer). Whole number ≥ 1.
+   */
+  readonly searchRunsOverTokens: number
+}
+
+/**
+ * The price guard on decision work: what routing one message may cost in
+ * decision requests, as a multiple of what answering it costs. The
+ * allowance is `maxAnswerCostRatio` × the price of one answer run per piece
+ * of work routed (its least input, the message itself, and its expected
+ * output), converted to decision input tokens. The pipeline's own requests
+ * are counted first; what is left, and at most `referentBudget`, is what a
+ * referent strategy may add. Prices are US dollars per million tokens and
+ * default to the cheapest answer model offered, so the bound holds on any
+ * dearer one (docs/build/dependency-decisioning.md · "The guard").
+ */
+export interface DecisionCostGuard {
+  /** Decision cost of one routing ÷ cost of the answer it routes, at most. 0 turns the price guard off. */
+  readonly maxAnswerCostRatio: number
+  readonly answerInputPrice: number
+  readonly answerOutputPrice: number
+  readonly decisionInputPrice: number
+  /**
+   * Output tokens an answer is expected to have when the conversation has
+   * too few completed answers to go by. With five or more, the median
+   * length of its completed answers is used.
+   */
+  readonly expectedOutputTokens: number
+}
+
 export interface RoutingSettings {
   readonly referentStrategy: ReferentStrategyName
   readonly referentBudget: DecisionBudget
+  readonly treeWalk: TreeWalkSettings
+  readonly costGuard: DecisionCostGuard
 }
 
 /** Views behind debug toggles (Q87, Q94). Margin rails, Focus and the split link are always on and have no toggle. */
@@ -109,6 +168,12 @@ export const DEFAULT_SETTINGS: Settings = {
     // Chosen on the routing corpus and on cost (docs/build/dependency-decisioning.md).
     referentStrategy: 'tree-walk',
     referentBudget: { requests: 4, questions: 96, inputTokens: 12_000 },
+    // Both switches cost a further request whenever a skipped answer is referred to and save little inside the
+    // pipeline's window; a long run is searched anyway. Measured in docs/build/dependency-decisioning.md.
+    treeWalk: { startAtTrunkBase: false, hopBetweenBranchPoints: false, searchRunsOverTokens: 1_500 },
+    // Twice an answer priced on the cheapest answer model (0.10 in, 0.50 out per million); decisions cost 0.042 per
+    // million input. 1,700 output tokens is the shortest of the answer runs measured live.
+    costGuard: { maxAnswerCostRatio: 2, answerInputPrice: 0.1, answerOutputPrice: 0.5, decisionInputPrice: 0.042, expectedOutputTokens: 1_700 },
   },
   debug: {
     miniMap: false,
@@ -125,7 +190,12 @@ export interface SettingsPatch {
   readonly concurrencyLimit?: number
   readonly models?: Partial<ModelSettings>
   readonly thresholds?: Partial<DecisionThresholds>
-  readonly routing?: { readonly referentStrategy?: ReferentStrategyName; readonly referentBudget?: Partial<DecisionBudget> }
+  readonly routing?: {
+    readonly referentStrategy?: ReferentStrategyName
+    readonly referentBudget?: Partial<DecisionBudget>
+    readonly treeWalk?: Partial<TreeWalkSettings>
+    readonly costGuard?: Partial<DecisionCostGuard>
+  }
   readonly debug?: Partial<DebugToggles>
 }
 
@@ -140,6 +210,8 @@ export function applySettingsPatch(settings: Settings, patch: SettingsPatch): Se
     routing: {
       referentStrategy: patch.routing?.referentStrategy ?? settings.routing.referentStrategy,
       referentBudget: { ...settings.routing.referentBudget, ...definedOnly(patch.routing?.referentBudget) },
+      treeWalk: { ...settings.routing.treeWalk, ...definedOnly(patch.routing?.treeWalk) },
+      costGuard: { ...settings.routing.costGuard, ...definedOnly(patch.routing?.costGuard) },
     },
     debug: { ...settings.debug, ...definedOnly(patch.debug) },
   }
@@ -171,6 +243,13 @@ export function validateSettingsPatch(patch: SettingsPatch): string | null {
       return `Decision budget "${name}" must be a whole number of at least 0`
     }
   }
+  const searchOver = patch.routing?.treeWalk?.searchRunsOverTokens
+  if (searchOver !== undefined && (!Number.isInteger(searchOver) || searchOver < 1)) {
+    return 'The run size above which the tree walk searches must be a whole number of at least 1'
+  }
+  for (const [name, value] of Object.entries(patch.routing?.costGuard ?? {})) {
+    if (typeof value === 'number' && !(value >= 0 && Number.isFinite(value))) return `Decision cost guard "${name}" cannot be negative`
+  }
   for (const [role, model] of Object.entries(patch.models ?? {})) {
     if (typeof model === 'string' && model.trim() === '') return `Model for "${role}" cannot be empty`
   }
@@ -190,6 +269,8 @@ export function normalizeSettings(stored: Partial<Settings>): Settings {
     routing: {
       referentStrategy: stored.routing?.referentStrategy ?? DEFAULT_SETTINGS.routing.referentStrategy,
       referentBudget: { ...DEFAULT_SETTINGS.routing.referentBudget, ...stored.routing?.referentBudget },
+      treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, ...stored.routing?.treeWalk },
+      costGuard: { ...DEFAULT_SETTINGS.routing.costGuard, ...stored.routing?.costGuard },
     },
     debug: { ...DEFAULT_SETTINGS.debug, ...stored.debug },
   }

@@ -1,4 +1,4 @@
-import type { DecisionBudget, ProviderError, ReferentStrategyName, SectionId } from '@committee/protocol'
+import type { DecisionBudget, ProviderError, ReferentStrategyName, SectionId, TreeWalkSettings } from '@committee/protocol'
 import type { NoulQuestion } from './decision-provider'
 import type { CandidateSection, RoutingCandidates } from './router'
 
@@ -66,6 +66,8 @@ export interface ReferentRequest {
     /** At or above this a section is still plausible: worth descending into, and worth asking the user about. */
     readonly floor: number
   }
+  /** `settings.routing.treeWalk`: how a walk treats runs of only children. A strategy that does not walk ignores it. */
+  readonly treeWalk: TreeWalkSettings
 }
 
 /** The answers to the questions that rode in the pipeline's request. */
@@ -121,6 +123,8 @@ export type ReferentResult =
        * would have been exceeded: what it did instead.
        * - `one-pass`: asked the one-pass questions in one request;
        * - `partial`: kept what it had scored, because not even that request was affordable.
+       * Either way, the sections of a relevant chunk that a search could not finish are reported below the
+       * target-choice threshold, so the user is asked about them rather than one being taken.
        */
       readonly fallback: { readonly limit: keyof DecisionBudget; readonly to: 'one-pass' | 'partial' } | null
     }

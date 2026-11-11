@@ -85,6 +85,64 @@ Breadth-first from every root, pruned where a line of work is not relevant:
 
 It also reaches sections older than the pipeline's window: they are numbered after the listed ones and shown in the walk's own state texts.
 
+### Long runs: search, the trunk base, hops
+
+Added 2026-11-11 on three requests from the user:
+
+> add a setting to our treewalk algorithm: For very long flat conversations, we should just start at the context for the node at the base of the 'trunk' (first place it splits), and for each branch do fast forward 'hops' to the next branching point instead of walking one child down and down at a time. This can be two singular settings.
+>
+> For long parts of a trunk (some threshold of amount of node context), we can even implement something like binary search too.
+>
+> the guard is that for up to a 1 million tokens conversation, for various reasonable assumptions of turns and shape structure, we should not cost more than two times haiku.
+
+A **run** is a segment's only children: the answers of one line of work between two places where it splits. The **trunk** of a root is its first run, from the root to the first branch point, or to the tip when the line never splits; its **base** is that last node. The sections of a run are now either **listed** (asked about one by one, as before) or **searched**.
+
+**Search.** The sections are put into chunks, each as many as can be listed within `searchRunsOverTokens` (1,500 estimated input tokens, about 12 full-length sections). A chunk is one question that names its sections by the request each answered (at most 80 characters): "Does the new message refer to one of these earlier answer sections, each named by the request it answered: S25 ("…"), S26 ("…"), …: reply to it, build on it, compare or combine it with another answer, or correct it?". Then:
+
+- every chunk at or above the floor (0.25) is followed: its sections are listed in the next request, with their full lines, and scored one by one. Two relevant chunks are both followed in that one request; no relevant chunk ends the search and nothing in the run is a referent;
+- a run with more than 24 chunks (`SEARCH_FANOUT`) is first asked about in 24 groups of chunks, and a relevant group is split again. Requests grow with log₂₄ of the run's length: one round of chunks up to about 290 sections, two up to about 7,000;
+- a request with chunk questions also shows the most recent answer and asks about it (`m_recent`, not read). Without that alternative the model has nothing to prefer;
+- a relevant chunk counts for its segment like a relevant node: the walk descends below the run's end;
+- a section is **never taken as a referent from a chunk's score**. It is asked about by itself first. When the budget ends a search between the chunk and its sections, every section of the relevant chunk is reported at just under the target-choice threshold, so the pipeline's own rule asks the user which one is meant (05: "It never guesses silently"; 11: "Below the target-choice confidence threshold, Committee elicits the target").
+
+Which sections are searched:
+
+| Setting (`settings.routing.treeWalk`) | Default | What it does |
+|---|---|---|
+| `searchRunsOverTokens` | 1,500 | A run is searched when listing the sections of it that the pipeline's request does not already list would cost more than this. Roots older than the window that nothing was built on (a long conversation of unrelated answers) count as one run. Also the size of a chunk that is listed. Always in force |
+| `startAtTrunkBase` | off | Of every trunk only the base is asked about by itself; the sections above it are searched, however few (two or more). Those the pipeline lists ride in its request as chunk questions; older ones are a further request |
+| `hopBetweenBranchPoints` | off | Below a branch point, of every branch's run only its end (the next branch point, or the leaf) is asked about by itself; the sections skipped (two or more) are searched and their lines are not sent |
+
+The two switches are independent. Neither changes what happens below the end of a run, at sibling groups (a group node is always asked about by itself, so C9 and C19 are untouched), or after the strategy (thresholds, no subset bypass, acyclicity, leaf repair, ancestor removal).
+
+**Evidence for the design** (live, `typesafe/jev-1.13`, 2026-11-11; 200 sections, one of them the referent):
+
+| Question | Measured | Decision |
+|---|---|---|
+| What names a section in a chunk? | Title only: the itinerary's chunk scored 0.31 (its live title is cut before the word "itinerary"). The request: 0.72. Request and answer opening: 0.87, at twice the tokens. Unrelated chunks ≤ 0.07 with each | The request, ≤ 80 characters: 17 tokens a section against 125 for a line and a question |
+| Does a chunk question find one section among 200? | Yes at every chunk size: 0.89–0.97 at 12 and 25 sections, 0.85–0.97 at 50, 0.77–0.96 at 100, 0.65–0.93 with all 200 in one question; unrelated messages ≤ 0.04 | One section among many does not dilute the question |
+| Bisection or many chunks? | The tokens of a round are the sections it names, whatever the fan-out: 3,819 tokens for 17 chunks of 12, 3,051 for one of 200. Halving shows every section log₂ times, and costs a request each time | k-ary, as many chunks as one request needs (≤ 24), so a run up to 290 sections is two further requests: chunks, then one chunk's sections. Chunks of 12 rather than 25: with the latest answer beside them a correction of the brief scored 0.80 in a chunk of 12 and 0.46 in one of 25 |
+| What when the message is about the latest answer? | Chunks alone: "Make that shorter" scored 0.37–0.49 on **all 17** chunks, "Which of those is the most important?" 0.52. With the most recent answer shown and asked about in the same request: ≤ 0.09 on every chunk, 0.93 on the answer | The most recent answer rides in every request that has chunk questions |
+| Is the end of a hop judged well without the run above it? | No. "Which of those hostels has private rooms with a bathroom?" (about the second of four sections) scored the run's end at or above the threshold when only the end's line was shown; the end is built on the section meant, so ancestor removal placed the reply on the end | When a chunk's sections are listed, the run's end is asked about again beside them and that score replaces the first (`Chunk.beside`). The corpus example `deep-run-other-branch` went from the hop's end to the right section |
+
+**What each gives up.**
+
+- *Search* (always on, by size): nothing inside the window. Beyond it, a referent is found only if its chunk reaches the floor on the request alone; a reply that can only be recognised from the answer text ("the one that mentioned sake") is missed, and the message is then placed as if nothing old were referred to. It costs one request more than listing would when listing fits the budget (two further requests instead of one, from about 13 to 90 older sections).
+- *Start at the trunk base*: inside the window it replaces up to 23 questions by two chunk questions (709 fewer tokens on a 200-section chain), and a reply to any trunk section but the base then needs a further request (about 1,900 tokens, 0.15 s) that the listed walk does not. A correction of the brief is found through its chunk and kept as before. On the corpus it changed no result.
+- *Hop between branch points*: saves the lines and questions of the skipped sections (639 tokens, 18%, when nothing in the run is referred to) and costs a further request when a skipped section is (277 tokens more than without hops, and 0.15 s). The end of a run is first judged without its neighbours, which is what the re-ask corrects.
+
+**Mis-placement is prevented in three ways**: a chunk's score never becomes a section's score; the end of a hop is asked about again beside the sections it was built on; and an unfinished search elicits. The remaining silent failure is the one named under *Search*: a chunk below the floor.
+
+**Departures from the request as worded.**
+
+| Asked | Built | Why |
+|---|---|---|
+| "start at the context for the node at the base of the trunk" | The base's own line, and one question per chunk for the sections above it, by their requests | The context of the base is every exchange of the trunk in full: 1,750 tokens each (see "Formulae"). The chunk question stands for it at 17 tokens a section |
+| A setting for long flat conversations | A long run is searched with both switches off; the switches extend that to short runs | The size threshold needs no accuracy trade inside the window, so it is always on and fixes the known gap by default. The switches cost a request whenever a skipped section is meant and are the user's to turn on |
+| Trunk base: skip the trunk | With the switch off, sections the pipeline lists are still asked about one by one | Their lines are in the pipeline's request anyway. A question each is 40 tokens; searching them saves 23 tokens a section and costs a 1,900-token request whenever one is referred to |
+| "binary search" | k-ary, up to 24 chunks a request | See the table: the same tokens, fewer round trips |
+| The trunk of each root | Old one-answer roots are pooled into one run | 200 unrelated answers are 200 trunks of one node. Without pooling, the first known gap ("the walk's request for the older roots exceeds the budget") would remain |
+
 ### Where this differs from the algorithm as proposed, and why
 
 | Proposed | Built | Reason (measured) |
@@ -124,7 +182,21 @@ The pipeline's own request costs F + P + ℓ·min(N, W) whichever strategy runs,
 | **Tree walk**, worst: every segment relevant | D − 1 (one more when roots lie beyond the window) | N + branch points + groups + 1 | Σₖ [F + σ + (ℓ + q)·nₖ + u·Bₖ + g·Gₖ], every node once; nₖ = n₀·(ρ·b)ᵏ in a regular tree |
 | *As proposed*: full context, one request per visited node | V, the nodes visited | V | Σᵥ [F + q + c·depth(v)] |
 
-The last row is why full context is not sent. Its token count is the sum of the depths of the visited nodes times a whole exchange. For a conversation that continued one chain for n turns that is 1,750·n(n + 1)/2 + 302·n: 51,100 tokens at n = 7, which is already more than a tenth of an answer, for every message routed. The spec's own trip tree (brief, A, B, the join-back, J: depths 1, 2, 2, 3, 4) costs 22,500 tokens, 4.9% of an answer. One line per node costs 125 tokens however deep the node is.
+With long runs (added symbols: L, the sections of a run that are not already listed in the pipeline's request; s, the sections a hop skips; t, the trunk sections above the base that the pipeline lists; m ≈ 12, the sections of one chunk, `searchRunsOverTokens` ÷ (ℓ + q); K = 24, the most chunks per request; d ≈ 17, a section named in a chunk question by a request of average length, 8 to 27 from a short request to one cut at 80 characters; c ≈ 47, a chunk question's fixed part; a ≈ 130, the most recent answer shown beside chunk questions):
+
+| | Further requests | Questions | Input tokens added |
+|---|---|---|---|
+| **Run listed** (before; still the rule up to `searchRunsOverTokens`) | 1 | L | F + σ + (ℓ + q)·L ≈ 305 + 125·L |
+| **Run searched**, nothing in it relevant | h = ⌈log_K(L ÷ m)⌉, 1 up to L = 288 | ⌈L ÷ m⌉ + 1 (K + 1 per round beyond one) | F + σ + a + d·L + c·⌈L ÷ m⌉ ≈ 435 + 21·L |
+| **Run searched**, one section referred to (typical) | h + 1 | + m, + 1 when the run's end is asked again | + F + σ + (ℓ + q)·(m + 1) ≈ + 1,930; in all ≈ 2,365 + 21·L. Each round beyond the first adds F + σ + a + d·L ÷ K |
+| **Run searched**, r chunks relevant | h + 1 | + r·m | ≈ 435 + 21·L + 305 + 125·r·m |
+| **Run searched**, worst: every chunk plausible | h + 1 | ⌈L ÷ m⌉ + L | ≈ 740 + 146·L: a search never costs less than listing when everything is relevant |
+| **Trunk base**, t listed sections above the base | 0, or 1 when one of them is referred to | −t + ⌈t ÷ m⌉ in the pipeline's request | −(q − d)·t + c·⌈t ÷ m⌉ ≈ −23·t + 47·⌈t ÷ m⌉; + 1,930 when one is referred to |
+| **Hop** over s sections of a branch | 0 more, or 1 when one of them is referred to and nothing below the run is asked anyway | −s + 1 | −(ℓ + q)·s + c + d·s ≈ −108·s + 47; + 305 + 125·(s + 1) when one is referred to |
+
+Searching beats listing from L = 3 when nothing in the run is relevant and from L = 20 when one section is; the threshold of 1,500 tokens (12 sections) sits between, because listing 12 is one request and searching them is two. Bisection in place of K-ary chunks would name every section once per round, 2·d·L in all instead of d·L·(1 + 1/K + …), over ⌈log₂(L ÷ m)⌉ requests instead of h: 5 rounds instead of 1 for 200 sections.
+
+The last row of the first table is why full context is not sent. Its token count is the sum of the depths of the visited nodes times a whole exchange. For a conversation that continued one chain for n turns that is 1,750·n(n + 1)/2 + 302·n: 51,100 tokens at n = 7, which is already more than a tenth of an answer, for every message routed. The spec's own trip tree (brief, A, B, the join-back, J: depths 1, 2, 2, 3, 4) costs 22,500 tokens, 4.9% of an answer. One line per node costs 125 tokens however deep the node is.
 
 ### Money, measured per routing
 
@@ -140,23 +212,111 @@ The last row is why full context is not sent. Its token count is the sum of the 
 
 On the corpus the tree walk costs 25% more requests and 12% more tokens than one pass. Both cost about a third of one percent of the cheapest answer they route.
 
+With long runs (62 examples: the 55 above, four in 200-section conversations and three in a tree whose branches are runs; live, 2026-11-11, one run each; tokens are the provider's `usage`). The last column prices the same cheapest answer run (35 in, 1,917 out) on `anthropic/claude-haiku-5.5` at $0.10 in and $0.50 out per million: **$0.00096**, a twentieth of its price on the default answer model.
+
+| Corpus mean per routing, 62 examples | Score | Requests | Tokens | $ | Of the cheapest answer | Of that answer on Haiku |
+|---|---|---|---|---|---|---|
+| One pass | 58/62 | 1.19 | 1,493 | $0.000063 | 0.33% | 6.5% |
+| Tree walk, runs always listed (as before this change) | 59/62 | 1.52 | 1,687 | $0.000071 | 0.37% | 7.4% |
+| **Tree walk, long runs searched (the default)** | **61/62** | 1.61 | 1,939 | $0.000081 | 0.42% | 8.5% |
+| + start at the trunk base | 61/62 | 1.61 | 1,907 | $0.000080 | 0.42% | 8.3% |
+| + hop between branch points | 61/62 | 1.65 | 1,936 | $0.000081 | 0.42% | 8.5% |
+| + both | 61/62 | 1.65 | 1,903 | $0.000080 | 0.42% | 8.3% |
+
+| Case (requests, tokens; ✗ = not routed as labelled) | One pass | Runs listed | Default | + trunk base | + hops | + both |
+|---|---|---|---|---|---|---|
+| 200 sections on one chain, reply to the 3rd (`long-chain-old-section`) | ✗ 1, 3,256: continues the tip | ✗ 1, 3,256: budget, falls back | 3, 8,043 | 3, 7,431 | 3, 8,043 | 3, 7,431 |
+| The same chain, reply to the latest section | 1, 3,259 | 1, 3,259 | 2, 6,086 | 2, 5,377 | 2, 6,086 | 2, 5,377 |
+| The same chain, unrelated message | 1, 3,256 | 1, 3,256 | 2, 6,080 | 2, 5,371 | 2, 6,080 | 2, 5,371 |
+| 199 unrelated answers, reply to the 17th (`long-roots-old-section`) | ✗ 1, 4,474: new chain | ✗ 1, 4,474: budget, falls back | 3, 9,699 | 3, 9,699 | 3, 9,699 | 3, 9,699 |
+| 30 sections, referent older than the window | ✗ 1, 3,813 | 3, 5,251 | 3, 5,251 | 3, 5,251 | 3, 5,251 | 3, 5,251 |
+| Branch runs of 4 and 6, reply to the middle of a run | 1, 2,369 | 2, 3,534 | 2, 3,534 | 2, 3,534 | 3, 3,811 | 3, 3,811 |
+| The same, reply to the end of a run | 1, 2,371 | 2, 3,538 | 2, 3,538 | 2, 3,538 | 2, 2,899 | 2, 2,899 |
+| The same, reply to the 2nd section of the other run | 1, 2,372 | 2, 3,540 | 2, 3,540 | 2, 3,540 | 3, 3,675 | 3, 3,675 |
+
+- The search finds what listing could not afford: both 200-section referents, at 8,043 and 9,699 tokens ($0.00034 and $0.00041; 1.8% and 2.1% of the cheapest answer, 35% and 42% of it on Haiku). It also costs every message in such a conversation one request of chunks (about 2,800 tokens here), whether or not it refers to anything old.
+- The trunk switch saves 709 tokens (12%) per message on the 200-section chain and nothing elsewhere on the corpus: no other example has a trunk of three or more.
+- Hops save 639 tokens (18%) when the reply is to the end of a run and cost one more request and 135 to 277 tokens when it is to a section inside one.
+- The J request on both siblings, five runs of five cases, and the follow-up naming two sections, five runs of two: **25/25 and 10/10 with every one of the six configurations.** Through the whole backend (`j-request.smoke.test.ts`): 4/4.
+- The one miss of every tree-walk configuration is `split-correction-and-new-work`, as before.
+
 ### Where each would reach 10% of an answer
 
 - **One pass** cannot: it is bounded by the window. At 24 full-length sections its request is about 5,000 tokens, 1.1% of an answer. Without the window it would reach 10% at about 360 sections.
 - **Tree walk**, unguarded, in the worst case (every line of work relevant, every node asked once): about 965 + 155·N tokens, so 10% at about 290 sections. With the guard it cannot: see below.
 - **Full context per node**, as first proposed: 10% at a 7-turn conversation.
 
+The same figures against an answer priced on Haiku. The cheapest measured answer is $0.00096 there, which buys 22,900 decision tokens; twice that is 45,700 tokens, the same number as 10% of that answer on the default model, because the default answer model costs twenty times Haiku. So "10% of an answer" above reads "twice a Haiku answer", and decision cost **exceeds one Haiku answer at half of each figure**:
+
+| | Exceeds one Haiku answer (22,900 tokens) | Exceeds two (45,700) = 10% of the answer on the default model |
+|---|---|---|
+| One pass | never: ≤ 5,400 tokens, 0.24 of a Haiku answer | never |
+| Tree walk, runs listed, worst case, unguarded | about 140 sections | about 290 |
+| Run searched, one section referred to (≈ 3,300 for the pipeline + 2,365 + 21·L), unguarded | L ≈ 820 older sections | L ≈ 1,900 |
+| Run searched, worst case (≈ 3,300 + 740 + 146·L), unguarded | L ≈ 130 | L ≈ 285 |
+| Trunk base or hops | no earlier than the row they modify: both only remove questions unless a skipped section is referred to, and then add 1,930 tokens once | |
+| Any of them with the guard | never, for an answer of 250 tokens or more: see the grid below | never |
+
 ## The guard
 
 `settings.routing.referentBudget` is the most decision work a strategy may add to one routing beyond the pipeline's own requests. Default: **4 requests, 96 questions, 12,000 estimated input tokens**.
 
 - Every further request goes through `createReferentAsk` (`routing/referents/ask.ts`). It counts requests, questions and estimated tokens, and **refuses** a request that would pass a limit: nothing is sent. This holds for any strategy, an injected one included; the pipeline, not the strategy, owns the counter. Tokens are estimated from the request's size, so the decision is deterministic and made before sending.
-- The tree walk checks before each level that the level **and its fallback** both fit. When a level does not fit, it stops walking and asks the one-pass questions it has not asked yet in one request over the pipeline's state text (bounded by the window). When not even that fits, the referents are the relevant nodes it has reached. The routing decision's explanation says which happened and which limit was reached.
+- The tree walk checks before each level that the level **and its fallback** both fit. When a level does not fit, it stops walking and asks the one-pass questions it has not asked yet in one request over the pipeline's state text (bounded by the window). When the fallback is what does not fit and the level does, the walk goes on without the reserve (this arises under the price guard below, where what is left is less than one request over the pipeline's state text). When neither fits, the referents are the relevant nodes it has reached, and the sections of a relevant chunk whose search was cut short are reported below the target-choice threshold, so the user is asked about them. The routing decision's explanation says which happened and which limit was reached.
 - One pass adds no request, and at most one question per listed section and per group.
 
-Ceiling with the defaults: the pipeline's request (≤ 5,000 tokens) plus 12,000 is 17,000 tokens, $0.00071, **3.7% of the cheapest measured answer**, at any tree size. The budget that would allow 10% is 45,700 tokens; the default is a quarter of that.
+Ceiling with the defaults: the pipeline's request (≤ 5,400 tokens) plus 12,000 is 17,400 tokens, $0.00073, **3.8% of the cheapest measured answer**, at any tree size. The budget that would allow 10% is 45,700 tokens; the default is a quarter of that. Priced on Haiku the same ceiling is 76% of that answer.
 
-In a flat conversation far larger than the window the walk's first further request (the older roots) does not fit, and it falls back at no cost: the one-pass questions were all asked in the pipeline's request already.
+### The price guard: at most twice a Haiku answer
+
+The fixed budget bounds decision cost against one measured answer. The user's rule is about any answer: "for up to a 1 million tokens conversation, for various reasonable assumptions of turns and shape structure, we should not cost more than two times haiku."
+
+**Reading.** For a conversation whose recorded context is up to 1,000,000 tokens, the decision requests of routing one message cost at most twice the answer run that message gets, priced on `anthropic/claude-haiku-5.5` ($0.10 in, $0.50 out per million; decisions $0.042 per million input, output free). The other reading, twice what Haiku would charge to read the tokens the decision model reads, holds for every request there can be: the decision model costs 0.42 of Haiku's input price. The first reading binds, and it is the one built.
+
+**Built** (`settings.routing.costGuard`, `decisionAllowance` in `routing/referents/ask.ts`, applied in `routing/pipeline.ts`):
+
+- The allowance of one routing, in decision input tokens, is `maxAnswerCostRatio` (2) × the price of the answer × the pieces of work routed, ÷ the decision price. The answer is priced at its **least input**, the message itself (a message that starts a new chain reads nothing else; one that continues a chain reads more and costs more, so the bound only gets looser), and its **expected output**.
+- Expected output is the median length of the conversation's completed answers once there are five (`CandidateSection.answerLength` was added for this), never taken below 250 tokens; with fewer than five, `expectedOutputTokens` (1,700, the shortest of the answer runs measured). An answer is not known before it is written, so this is an estimate, and it is deterministic: it is read from the candidates, not from a clock or a provider.
+- The pipeline's own requests are estimated and counted first (`estimateRequestTokens`). What is left, and never more than `referentBudget.inputTokens`, is the strategy's token budget for this routing. The request and question caps stay as backstops that hold whatever the prices.
+- The prices are settings and default to Haiku's, the cheapest answer model among the role defaults. On a dearer answer model the bound is looser by that model's price; to hold "twice the answer" on another model, set its prices. Stored settings without the group get the defaults (`normalizeSettings`).
+
+With 1,700 expected output tokens the allowance is 40,500 tokens and the fixed 12,000 binds first. With answers of 250 tokens it is about 6,100, the pipeline's request takes 3,300 to 5,100 of it, and the strategy gets what is left.
+
+**The grid** (`routing/referents/cost-grid.ts`; `cost-grid.test.ts` asserts the bound on all 180 cells; `pnpm smoke` prints them). Conversations of 50, 500 and 3,300 sections with exchanges of 300, 2,000 and 10,000 tokens, every cell at most a million tokens, in five shapes: flat (one chain), an early split with two long branches, bushy (two parallel answers joined back, one answer on the join-back, repeated), nested forks (every answer continued twice, one continuation going on), and many roots. Each cell routes the message that costs most: every yes/no is answered 0.5, so every line is walked into and every chunk followed. Tokens are the guard's estimate over every decision request of the routing. The Haiku answer is the conversation's own answer length (85% of the exchange) on a new chain. Worst shape per size, the switches shown where they differ:
+
+| Sections × tokens per exchange | Strategy | Worst shape | Unguarded: requests / questions / tokens | $ | ÷ Haiku answer | Guarded: requests / questions / tokens | $ | ÷ Haiku answer |
+|---|---|---|---|---|---|---|---|---|
+| 50 × 300 | one pass | bushy | 1 / 41 / 5,041 | $0.00021 | 1.64× | the same | | 1.64× |
+| 50 × 300 | tree walk, any setting | nested forks | 26 / 82 / 21,684 | $0.00091 | 7.07× | 4 / 17 / 5,682 | $0.00024 | 1.85× |
+| 50 × 300 | tree walk, any setting | bushy | 18 / 90 / 19,120 | $0.00080 | 6.23× | 4 / 21 / 6,032 | $0.00025 | 1.97× |
+| 50 × 2,000 | one pass | bushy | 1 / 41 / 5,334 | $0.00022 | 0.26× | the same | | 0.26× |
+| 50 × 2,000 | tree walk, any setting | nested forks | 26 / 82 / 22,585 | $0.00095 | 1.11× | 5 / 41 / 10,421 | $0.00044 | 0.51× |
+| 50 × 2,000 | default (flat) | flat | 3 / 63 / 10,548 | $0.00044 | 0.52× | the same | | 0.52× |
+| 50 × 2,000 | + trunk base (flat) | flat | 3 / 67 / 14,049 | $0.00059 | 0.69× | 3 / 40 / 9,711 | $0.00041 | 0.48× |
+| 50 × 10,000 | tree walk, any setting | nested forks | 26 / 82 / 22,585 | $0.00095 | 0.22× | 5 / 41 / 10,421 | $0.00044 | 0.10× |
+| 500 × 300 | one pass | bushy | 1 / 41 / 5,066 | $0.00021 | 1.65× | the same | | 1.65× |
+| 500 × 300 | tree walk, any setting | nested forks | 251 / 757 / 191,417 | $0.00804 | 62.4× | 4 / 17 / 5,698 | $0.00024 | 1.86× |
+| 500 × 2,000 | runs listed | flat | 2 / 509 / 83,854 | $0.00352 | 4.14× | 1 / 33 / 4,766 | $0.00020 | 0.24× |
+| 500 × 2,000 | default | flat | 4 / 588 / 110,025 | $0.00462 | 5.43× | 1 / 33 / 4,766 | $0.00020 | 0.24× |
+| 500 × 2,000 | + trunk base | flat | 4 / 592 / 113,529 | $0.00477 | 5.60× | 2 / 36 / 8,526 | $0.00036 | 0.42× |
+| 500 × 2,000 | tree walk, any setting | bushy | 168 / 840 / 170,486 | $0.00716 | 8.41× | 5 / 53 / 11,146 | $0.00047 | 0.55× |
+| 500 × 2,000 | tree walk, any setting | nested forks | 251 / 757 / 197,741 | $0.00831 | 9.76× | 5 / 41 / 10,447 | $0.00044 | 0.52× |
+| 3,300 × 300 | one pass | bushy | 1 / 41 / 5,077 | $0.00021 | 1.66× | the same | | 1.66× |
+| 3,300 × 300 | default | flat | 4 / 3,699 / 678,341 | $0.02849 | 221× | 1 / 33 / 4,473 | $0.00019 | 1.46× |
+| 3,300 × 300 | tree walk, any setting | bushy | 1,101 / 5,505 / 1,072,469 | $0.04504 | 350× | 4 / 21 / 6,066 | $0.00025 | **1.98×** |
+| 3,300 × 300 | tree walk, any setting | nested forks | 1,651 / 4,957 / 1,254,249 | $0.05268 | 409× | 4 / 17 / 5,712 | $0.00024 | 1.86× |
+
+Guarded, the worst cell of the whole grid is **1.98×** (the tree walk in a bushy conversation of 3,300 sections and 300-token exchanges: the pipeline's request and three small levels, which use the allowance up), and the worst for one pass is 1.66× (the pipeline's own request, which no strategy controls). Unguarded, the worst message in a million-token conversation costs up to 409 Haiku answers.
+
+**Where the guard cuts the walk short, and what that costs.**
+
+- *Short answers.* In a conversation whose answers are about 250 tokens the allowance (about 6,100 tokens) is mostly used by the pipeline's request. What is left (1,000 to 2,800 tokens) is less than the walk's fallback request costs, so the walk does not keep room for it: it goes on level by level for as long as each fits (three levels of a branching tree in the grid's worst case; a level with one relevant branch point is about 600 tokens) and then keeps what it has scored. A search of a long run does not fit: its first request alone is 2,800 tokens for 176 sections. Old referents beyond the window are then out of reach, as with one pass: the message is placed as if it referred to nothing old. This is the price of the bound and it is not a guess about a section: nothing is placed on a section that was not asked about.
+- *Below 250 tokens an answer* the pipeline's own request (3,300 to 5,400 tokens with a full window) already costs more than twice the answer, with any strategy, one pass included. The bound cannot hold there without shrinking the pipeline's window of 24 listed sections, which this change does not do. The floor of 250 keeps the guard from then also cutting the strategy to nothing. **Open.**
+- *Long runs.* With answers of normal length the fixed 12,000 tokens bind before the price does. A search's first request names every section of the run: about 21 tokens a section (12 to 27 with the length of the requests). A referent is found up to about 360 to 800 older sections; from there to about 430 to 930 the chunks are asked but the relevant chunk can no longer be listed, so **its sections are put to the user**; beyond that the chunk request itself does not fit and the walk falls back to the one-pass questions, so the old section is not reached (the 500 × 2,000 flat row). Raising `referentBudget.inputTokens` towards the price allowance (40,500 for answers of 1,700 tokens) moves all three points up in proportion, to about 1,200 to 2,700 sections; it is left at 12,000 because that also triples what the worst message may cost.
+- *Bushy and nested trees.* The request cap (4) ends a walk at the fourth branching level below the roots, and the walk then asks the one-pass questions, which cover the window. A referent deeper than that and older than the window is not reached.
+- *What it never does:* exceed a cap, send a request it has not counted, or take a section as a referent without having asked about it.
+
+The pipeline's later requests (the question which dependents a revision affects) are not reserved for; a revision also re-runs its dependents, whose answers are not in the allowance either.
 
 ## Evidence and the default
 
@@ -174,17 +334,35 @@ Live, `typesafe/jev-1.13`, reference decompositions, 2026-11-11. The corpus grew
 - A follow-up naming two sections, five runs of two cases: **10/10** with each strategy. "Compare the itinerary with the sky explanation" (the corpus's older example of this) went from the target-ambiguity prompt to a join chain after the section question was reworded to "…reply to it, build on it, compare or combine it with another answer, or correct it?": the sky section rose from 0.50–0.61 to above the threshold.
 - Misses. `split-correction-and-new-work` under both: the new part ("also suggest some day trips") gets a handling chain below the threshold; it also missed before, and it is not a referent question. `live-referent-beyond-window` under one pass: the itinerary is older than the 24 listed sections, so it is never asked about and the message silently starts a new chain.
 
+**Defaults of the long-run settings** (2026-11-11):
+
+- `searchRunsOverTokens`: **1,500**, always in force. It is the only one of the three that finds something the walk could not find before (the two 200-section referents: 59/62 → 61/62), and it changes nothing inside the window. A chunk of 12 was more accurate than one of 25 for a correction, and 12 sections are what one request lists for 1,500 tokens.
+- `startAtTrunkBase`: **off**. On the corpus it changes no result and saves 1.7% of the tokens, all of it on the 200-section chain (12% there). Inside the window it trades 23 tokens a trunk section for a further request whenever a trunk section other than the base is referred to, and a conversation that continues one chain is exactly where replies to earlier sections of the trunk are the normal case.
+- `hopBetweenBranchPoints`: **off**. Same score, 0.2% fewer tokens, 2% more requests on the corpus. It pays when replies go to the ends of runs (−18% on that example) and costs a request when they go inside one (+4% to +8%). It also needs the end of a hop asked twice to be right. Turn it on for trees with long branch runs where follow-ups address the latest state of each branch.
+- No size trigger was added to the switches: the size trigger is the third setting, which the user asked for in its own right ("some threshold of amount of node context").
+
 **Default: tree walk.** Within the window the two are equal on every example. The difference is the conversation longer than the window, where one pass loses the referent without asking, which is the kind of silent wrong placement this change exists to remove. The price is 12% more decision tokens on the corpus (0.32% of an answer instead of 0.28%) and one more request of about 0.15 s when a message refers into a branched line of work; an unrelated message, or one in a conversation that does not branch, costs the same or less. The guard bounds the worst case at 3.7%. One pass stays selectable (Settings → Routing → Referents) for anyone who prefers a single request.
 
 ## Tests
 
 - `routing/referents/referents.test.ts`: the tree; for both strategies C19, C9, C20, ancestor removal and its exception; one pass asks everything once; the walk's levels, state text, pruning, descent below an irrelevant branch point, linear runs; the guard (request, question and token budgets, the partial fallback, a strategy that keeps asking, one pass bounded); the strategy swap and a strategy that names an unsupplied section.
 - `routing/acceptance/referents.test.ts`: the J request end to end on a backend with each strategy: C19 (continues from the join-back on the base chain and reads both), C9 twice (two of three running siblings wait for the third; a weak second sibling with a relevant group), C20 (join chain over leaves).
-- `routing/corpus/corpus.test.ts`: every example with decisions as labelled, once per strategy.
-- `providers/src/referents.smoke.test.ts` (`pnpm smoke`): the corpus per strategy with its decision cost, and the J and two-section cases five times per strategy.
+- `routing/referents/referents.test.ts`, long runs: a section of a 200-section chain and of 200 unrelated roots found within the budget where listing falls back; a referent at the start, middle and end of a run; two referents in different chunks; no relevant chunk; the most recent answer beside chunk questions; a run split in two rounds; the budget ending a search (the chunk's sections are put to the user) and the guard under five budgets; the trunk base (what is asked, a mid-trunk reply resolved exactly, elicited with no budget, a correction keeping its ancestor, a trunk that never splits); hops (what is asked, a mid-run reply resolved exactly, the end of a hop asked again, the fallback, descent through a relevant chunk); and for each of the four combinations of the two switches C19, C9, C19 after a long trunk and among long branches, a mid-run reply in trunk and branch, a correction keeping its ancestor, and the guard with a deterministic fallback.
+- `routing/referents/cost-grid.test.ts`: the price guard on 180 cells of conversations up to a million tokens.
+- `protocol/src/contracts.test.ts`: the three tree-walk settings and the price guard merge key by key, validate, and are defaulted for stored settings that lack them.
+- `web/src/app/app.test.tsx`: the two switches in Settings → Routing, independent, shown only for the tree walk.
+- `routing/corpus/corpus.test.ts`: every example with decisions as labelled, once per strategy and once per combination of the two switches.
+- `providers/src/referents.smoke.test.ts` (`pnpm smoke`): the corpus for six configurations (one pass, runs always listed, the default, each switch, both) with its decision cost and the cost of every long example; the J and two-section cases five times per configuration; and the cost grid, printed.
 - `providers/src/j-request.smoke.test.ts` (`pnpm smoke`): the brief, A, B and J through a real backend with the live providers, J sent during and after the siblings' runs.
 
 ## Left open
+
+- A referent in a searched run that only its answer text identifies: the chunk question names sections by their requests. Not measured how often this happens.
+- Conversations whose answers are shorter than 250 tokens: the pipeline's own request exceeds twice a Haiku answer. Holding the bound there means a price-aware window in the pipeline.
+- Beyond about 430 to 930 older sections (by request length) the first chunk request exceeds 12,000 tokens and old referents are again out of reach. Asking the newest chunks that fit, or raising the token cap towards the price allowance, would extend it.
+- Whether to raise `referentBudget.inputTokens` now that the price guard exists is the user's call; see "Long runs" under the price guard.
+- The reach figures (360 to 800, 430 to 930) are derived from the formulae and the measured tokens per section, not measured end to end.
+- Context summaries for decisioning are designed in `docs/build/context-summaries.md`.
 
 - `split-correction-and-new-work`: see above.
 - A join chain appears in the tree under its first parent only (`CandidateWork.startNodeId` is one node), so a walk reaches it through that parent's line.

@@ -412,6 +412,12 @@ export function oracleDecisionProvider(example: CorpusExample, input: RoutingInp
       if (expect.ambiguous?.some((h) => below.includes(h))) return noul('unsure')
       return noul(below.some((h) => targets?.includes(h) ?? false))
     }
+    // A chunk of a run being searched: yes when it names a section the part refers to.
+    if (/^c\d+_\d+$/.test(question)) {
+      const named = [...instructions.matchAll(/S(\d+) \(/g)].map((m) => sectionHandle(Number(m[1])))
+      if (expect.ambiguous?.some((h) => named.includes(h))) return noul('unsure')
+      return noul(named.some((h) => targets?.includes(h) ?? false))
+    }
     const work = /^w(\d+)$/.exec(question)
     if (work) {
       const w = supplied.inFlight[Number(work[1]) - 1]

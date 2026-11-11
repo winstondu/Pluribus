@@ -13,7 +13,8 @@ export { createRouter } from './pipeline'
 export { validatePlan, topological, resolveUnitTargets, derivePlacement, AMBIGUITY_FLOOR, type Validation, type TargetResolution } from './derive'
 export { routingModule, clarificationInstruction, answerClarification } from './module'
 export { MAX_SECTIONS, MAX_DEPENDENCIES, MAX_CHAINS } from './supply'
-export { REFERENT_STRATEGIES, referentStrategyFor, onePassStrategy, treeWalkStrategy, estimateDecisionTokens } from './referents'
+export { REFERENT_STRATEGIES, referentStrategyFor, onePassStrategy, treeWalkStrategy, estimateDecisionTokens, estimateRequestTokens, decisionAllowance } from './referents'
+export { COST_GRID_SIZES, costGridRows, formatCostGrid, decisionDollars, type CostGridRow } from './referents/cost-grid'
 export * from './corpus'
 
 registerCoreModule(routingModule)
