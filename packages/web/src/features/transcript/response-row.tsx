@@ -1,11 +1,12 @@
-import type { MessageId, ResponseId, ResponseReason, ResponseView, SectionId } from '@committee/protocol'
+import type { MessageId, ResponseId, ResponseReason, ResponseView, SectionCounts, SectionId } from '@committee/protocol'
 import { RotateCwIcon } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { memo } from 'react'
 import { useMessage, useResponse, useSection } from '@/backend'
 import { Button } from '@/components/ui/button'
-import { ChainRail, useFocusedChainId, useSectionsFocus } from '@/features/association'
+import { ChainRail, useFocusedChainId, useSectionFocus, useSectionsFocus } from '@/features/association'
 import { cn } from '@/lib/utils'
+import { FocusTag } from './focus-style'
 import { StatusLine } from './marks'
 import { ENTER, EXIT, MOVE, useEntrance, useKept } from './motion'
 import { SectionBlock } from './section'
@@ -36,7 +37,10 @@ function ResponseBody({ response }: { response: ResponseView }) {
   const focused = useFocusedChainId() !== null
   const dimHeader = focused && (response.sectionIds.length === 0 || headerFocus === 'dimmed')
   const reasonLabel = REASON_LABEL[response.reason]
-  const soleSectionId = !response.grouped && response.reason !== 'answer' ? response.sectionIds[0] : undefined
+  // A single answer is named here, so a queue item, a note or a reply chip that names it by its label can be matched to it.
+  const soleSectionId = response.grouped ? undefined : response.sectionIds[0]
+
+  const countText = response.header && isMixed(response.header.counts) ? response.header.countText : null
 
   return (
     <article
@@ -56,11 +60,12 @@ function ResponseBody({ response }: { response: ResponseView }) {
         <span className="font-medium text-muted-foreground">Committee</span>
         {reasonLabel ? <span className="text-faint-foreground">{reasonLabel}</span> : null}
         {soleSectionId ? <SoleTitle sectionId={soleSectionId} /> : null}
-        {response.header?.countText ? (
+        {countText ? (
           <span data-slot="group-count" className="tabular text-faint-foreground">
-            {response.header.countText}
+            {countText}
           </span>
         ) : null}
+        {soleSectionId ? <SoleFocusTag sectionId={soleSectionId} /> : null}
       </header>
 
       {response.routing ? <RoutingBubble response={response} dimmed={focused} /> : null}
@@ -103,7 +108,26 @@ function SectionSlot({ id, index, grouped, ref }: { id: SectionId; index: number
 
 function SoleTitle({ sectionId }: { sectionId: SectionId }) {
   const title = useSection(sectionId)?.title
-  return title ? <span className="text-faint-foreground">· {title}</span> : null
+  return title ? (
+    <span data-slot="section-title" className="min-w-0 truncate text-faint-foreground">
+      · {title}
+    </span>
+  ) : null
+}
+
+/** The "in context" tag of a single answer. Its space is always there, so previewing Focus moves nothing. */
+function SoleFocusTag({ sectionId }: { sectionId: SectionId }) {
+  return <FocusTag relation={useSectionFocus(sectionId)} reserve />
+}
+
+/**
+ * The header count is for mixed results only (03, Q50): at least two
+ * different outcomes. One outcome alone, such as "2 failed", would read as
+ * a failed label for the whole request, which a request never shows.
+ */
+function isMixed(counts: SectionCounts): boolean {
+  const outcomes = [counts.done, counts.failed, counts.stopped, counts.interrupted, counts.cancelled, counts.inProgress]
+  return outcomes.filter((count) => count > 0).length >= 2
 }
 
 /**

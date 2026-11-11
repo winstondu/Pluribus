@@ -56,10 +56,11 @@ function SectionBody({ section, grouped }: { section: SectionView; grouped: bool
     >
       <ChainRail chainIds={[section.chainId]} />
       <div className="flex min-w-0 flex-1 flex-col gap-1.5 py-0.5">
-        {grouped || relation === 'inherited' ? (
+        {/* An ungrouped section is named, and tagged under Focus, in its reply's header line (response-row). */}
+        {grouped ? (
           <div className="flex items-baseline gap-2">
-            {grouped ? <h3 className="text-[0.8125rem] font-medium">{section.title}</h3> : null}
-            <FocusTag relation={relation} />
+            <h3 className="min-w-0 text-[0.8125rem] font-medium">{section.title}</h3>
+            <FocusTag relation={relation} reserve />
           </div>
         ) : null}
 
@@ -257,8 +258,23 @@ function AttemptBody({ attempt, current, sectionState, historyOpen, directiveId 
   )
 }
 
-function excerpt(text: string): string {
-  const line = text.replace(/\s+/g, ' ').trim()
+/** One plain line of a collapsed text: Markdown syntax is dropped, since the line is not rendered as Markdown. */
+export function excerpt(text: string): string {
+  const line = text
+    .replace(/^\s*(`{3,}|~{3,}).*$/gm, ' ') // code fences
+    .replace(/^\s{0,3}#{1,6}\s+/gm, '') // headings
+    .replace(/^\s{0,3}>\s?/gm, '') // quotes
+    .replace(/^\s*([-*+]|\d+[.)])\s+/gm, '') // list bullets
+    .replace(/^\s*([-*_]\s*){3,}$/gm, ' ') // rules
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1') // links and images
+    .replace(/(\*\*|__)(?=\S)(.+?)(?<=\S)\1/g, '$2') // strong
+    .replace(/(?<![\w*])\*(?=\S)([^*]+?)(?<=\S)\*(?![\w*])/g, '$1') // emphasis
+    .replace(/(?<![\w_])_(?=\S)([^_]+?)(?<=\S)_(?![\w_])/g, '$1')
+    .replace(/~~(.+?)~~/g, '$1')
+    .replace(/`([^`]+)`/g, '$1') // inline code
+    .replace(/\*\*|__|`/g, '') // a marker left open by a stream that stopped
+    .replace(/\s+/g, ' ')
+    .trim()
   return line.length > 96 ? `${line.slice(0, 96)}…` : line
 }
 

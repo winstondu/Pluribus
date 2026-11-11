@@ -1,7 +1,9 @@
-import type { QueueItemView, RecoveryView } from '@committee/protocol'
+import type { QueueItemView, RecoveryView, SectionId } from '@committee/protocol'
 import { ClockIcon, PauseIcon } from 'lucide-react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import { useQueue } from '@/backend'
+import { useStore } from 'zustand'
+import { useUiState } from '@/app/ui-state'
+import { useBackendStore, useQueue } from '@/backend'
 import { Button } from '@/components/ui/button'
 import { ENTER, EXIT, revealMessage, useCommand } from '@/features/transcript'
 import { cn } from '@/lib/utils'
@@ -23,13 +25,13 @@ export function QueueItems() {
   const reduce = useReducedMotion()
   const closed = { opacity: 0, height: 0 }
   return (
-    <ul aria-label="Waiting messages" data-slot="queue" className="relative flex flex-col">
+    <ul aria-label="Waiting messages" data-slot="queue" className="scroll-quiet relative flex max-h-[32dvh] flex-col overflow-y-auto">
       <AnimatePresence initial={false}>
         {items.map((item) => (
           <motion.li
             key={item.id}
             // Clipped while its space opens and closes. No padding here: a closed item must take no height at all.
-            className="overflow-clip"
+            className="shrink-0 overflow-clip"
             initial={reduce ? false : closed}
             animate={{ opacity: 1, height: 'auto' }}
             exit={reduce ? { opacity: 0, height: 0, transition: { duration: 0 } } : { ...closed, transition: EXIT }}
@@ -45,9 +47,32 @@ export function QueueItems() {
   )
 }
 
+/**
+ * The section of what the item waits for, so that its name leads somewhere:
+ * the paused item's cause, or the current section of the first directive
+ * still unfinished behind a wait target. Null when it has no section yet.
+ */
+function usePrerequisiteSectionId(item: QueueItemView): SectionId | null {
+  return useStore(useBackendStore(), (state): SectionId | null => {
+    const sections = state.conversation?.transcript.sections
+    if (!sections) return null
+    if (item.recovery) return sections[item.recovery.retry.sectionId] ? item.recovery.retry.sectionId : null
+    const waiting = new Set(item.waitingFor.flatMap((target) => target.directiveIds))
+    let found: SectionId | null = null
+    for (const section of Object.values(sections)) {
+      // A directive's superseded sections stay in the transcript; the one it waits for is the current one.
+      if (waiting.has(section.directiveId) && section.state !== 'superseded') found ??= section.id
+    }
+    return found
+  })
+}
+
 function QueueItem({ item }: { item: QueueItemView }) {
   const paused = item.state === 'paused'
   const Icon = paused ? PauseIcon : ClockIcon
+  const revealSection = useUiState((state) => state.revealSection)
+  const prerequisiteSectionId = usePrerequisiteSectionId(item)
+  const names = item.recovery ? item.recovery.cause.label : item.waitingFor.map((target) => target.label).join(', ')
   return (
     <div
       data-queue-item={item.id}
@@ -57,19 +82,35 @@ function QueueItem({ item }: { item: QueueItemView }) {
         paused ? 'border-warning/35 bg-warning-tint' : 'border-border',
       )}
     >
-      <button
-        type="button"
-        onClick={() => revealMessage(item.messageId)}
-        aria-label={`${item.label}: ${item.text}. Show its message`}
-        className="pressable group/link flex min-w-0 flex-1 basis-56 items-center gap-2 rounded-md text-left"
-      >
+      <div className="flex min-w-0 flex-1 basis-56 items-center gap-2">
         <Icon aria-hidden className={cn('size-3.5 flex-none', paused ? 'text-warning' : 'text-faint-foreground')} />
         <span className="min-w-0">
-          <span className="font-medium text-foreground underline-offset-4 group-hover/link:underline">{item.label}</span>
-          <span className="text-muted-foreground"> · {item.text}</span>
+          <button
+            type="button"
+            onClick={() => revealMessage(item.messageId)}
+            aria-label={`${item.label}. Show its message`}
+            className="pressable rounded-sm text-left font-medium text-foreground underline-offset-4 hover:underline"
+          >
+            {item.label}
+          </button>
+          <span className="text-muted-foreground"> · </span>
+          {prerequisiteSectionId ? (
+            // What it waits for is named by a label; the name leads to the section that carries it.
+            <button
+              type="button"
+              data-slot="queue-prerequisite"
+              onClick={() => revealSection(prerequisiteSectionId)}
+              aria-label={`${item.text}. Show ${names} in the transcript`}
+              className="pressable rounded-sm text-left text-muted-foreground underline decoration-border-strong underline-offset-4 hover:text-foreground hover:decoration-foreground"
+            >
+              {item.text}
+            </button>
+          ) : (
+            <span className="text-muted-foreground">{item.text}</span>
+          )}
           {item.heldByBarrier ? <span className="text-faint-foreground"> · held with the rest of its request</span> : null}
         </span>
-      </button>
+      </div>
       {item.recovery ? <RecoveryChoice item={item} recovery={item.recovery} /> : null}
     </div>
   )

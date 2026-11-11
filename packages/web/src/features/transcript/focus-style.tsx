@@ -18,11 +18,23 @@ export function focusClass(relation: FocusRelation): string {
   }
 }
 
-/** Says why an item of another chain is lit: the focused chain's runs read it. */
-export function FocusTag({ relation }: { relation: FocusRelation }) {
-  if (relation !== 'inherited') return null
+/**
+ * Says why an item of another chain is lit: the focused chain's runs read it.
+ *
+ * With `reserve`, the tag always takes its space and only its visibility
+ * changes. A preview starts on hover, so a tag that added a row, or wrapped
+ * its line, would move the rail out from under the pointer and end the
+ * preview that drew it.
+ */
+export function FocusTag({ relation, reserve = false }: { relation: FocusRelation; reserve?: boolean }) {
+  const shown = relation === 'inherited'
+  if (!shown && !reserve) return null
   return (
-    <span data-slot="focus-tag" className="text-2xs text-faint-foreground">
+    <span
+      data-slot="focus-tag"
+      aria-hidden={shown ? undefined : true}
+      className={shown ? 'text-2xs whitespace-nowrap text-faint-foreground' : 'invisible text-2xs whitespace-nowrap'}
+    >
       in context
     </span>
   )

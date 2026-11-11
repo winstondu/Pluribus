@@ -4,6 +4,7 @@ import { expect, test } from 'vitest'
 import { fx, getFixture, type Fixture } from '@/fixtures'
 import { renderWithBackend } from '@/test/render'
 import { TranscriptPane } from './index'
+import { excerpt } from './section'
 import { byId, drawnOrder, play } from './test-helpers'
 
 const m = (name: string) => `m:${fx.id('message', name)}`
@@ -412,4 +413,77 @@ test('request controls · Stop and Retry sit in the message header line, so they
   const controls = message.querySelector('[data-slot="request-controls"]')
   expect(controls).not.toBeNull()
   expect(controls?.parentElement?.tagName).toBe('HEADER')
+})
+
+test('Focus · previewing a chain adds and removes no element, so nothing moves under the pointer', async () => {
+  const view = await open('trip')
+  const shape = () => [...view.container.querySelectorAll('[data-slot="transcript-scroller"] *, [data-section-id] *')].map((element) => element.tagName).join(' ')
+  const tagOf = (name: string) => {
+    const own = section(view.container, name).querySelector<HTMLElement>('[data-slot="focus-tag"]')
+    return own ?? section(view.container, name).closest('article')?.querySelector<HTMLElement>('header [data-slot="focus-tag"]') ?? null
+  }
+  const before = shape()
+  // The tag's space is there before any Focus: hidden, and out of the accessibility tree.
+  expect(tagOf('brief')?.className).toContain('invisible')
+  expect(tagOf('brief')?.getAttribute('aria-hidden')).toBe('true')
+
+  fireEvent.pointerEnter(within(section(view.container, 'B2')).getByRole('button', { name: 'Focus cheaper alternatives' }))
+  expect(section(view.container, 'brief').dataset.focus).toBe('inherited')
+  expect(tagOf('brief')?.className).not.toContain('invisible')
+  expect(tagOf('brief')?.hasAttribute('aria-hidden')).toBe(false)
+  expect(tagOf('B')?.className).not.toContain('invisible')
+  expect(tagOf('A')?.className).toContain('invisible')
+  expect(shape()).toBe(before)
+})
+
+test('reply group · a group whose sections all ended the same way has no header count: never an overall failed or cancelled label', async () => {
+  const base = getFixture('reply-group-mixed')!
+  const responseId = fx.id('response', 'ask')
+  const withCounts = (counts: Partial<Record<'done' | 'failed' | 'stopped' | 'interrupted' | 'cancelled' | 'inProgress', number>>, countText: string): Fixture => ({
+    ...base,
+    steps: [],
+    initial: {
+      ...base.initial,
+      transcript: {
+        ...base.initial.transcript,
+        responses: {
+          ...base.initial.transcript.responses,
+          [responseId]: {
+            ...base.initial.transcript.responses[responseId]!,
+            header: { counts: { done: 0, failed: 0, stopped: 0, interrupted: 0, cancelled: 0, inProgress: 0, ...counts }, countText },
+          },
+        },
+      },
+    },
+  })
+  for (const [counts, text] of [
+    [{ failed: 2 }, '2 failed'],
+    [{ cancelled: 3 }, '3 cancelled'],
+  ] as const) {
+    const view = renderWithBackend(<TranscriptPane />, { fixture: withCounts(counts, text) })
+    await act(() => view.ready)
+    expect(response(view.container, 'ask').querySelector('[data-slot="group-count"]')).toBeNull()
+    expect(response(view.container, 'ask').querySelector('header')?.textContent).toBe('Committee')
+    view.unmount()
+  }
+  // Mixed results keep the count.
+  const mixed = renderWithBackend(<TranscriptPane />, { fixture: withCounts({ failed: 1, cancelled: 1 }, '1 failed · 1 cancelled') })
+  await act(() => mixed.ready)
+  expect(response(mixed.container, 'ask').querySelector('[data-slot="group-count"]')?.textContent).toBe('1 failed · 1 cancelled')
+})
+
+test('section title · a single answer is named in its reply header, where a queue item or a note that names it can be matched', async () => {
+  const view = await open('queue-waiting')
+  const sectionA = section(view.container, 'A')
+  const title = sectionA.getAttribute('aria-label')
+  expect(title).toBeTruthy()
+  expect(sectionA.closest('article')?.querySelector('header [data-slot="section-title"]')?.textContent).toBe(`· ${title}`)
+})
+
+test('collapsed text · the one-line excerpt is plain text, without Markdown syntax', () => {
+  expect(excerpt('**The Hour Returned**\n\nElias Vance had *repaired* clocks.')).toBe('The Hour Returned Elias Vance had repaired clocks.')
+  expect(excerpt('## Day one\n- Fushimi Inari\n- `Nishiki` market\n1. [Gion](https://example.com)')).toBe('Day one Fushimi Inari Nishiki market Gion')
+  expect(excerpt('```ts\nconst a = 2 * 3 * 4\n```\nsnake_case_name stays, 5 * 3 too')).toBe('const a = 2 * 3 * 4 snake_case_name stays, 5 * 3 too')
+  // A marker the stream left open.
+  expect(excerpt('The **unfinished')).toBe('The unfinished')
 })

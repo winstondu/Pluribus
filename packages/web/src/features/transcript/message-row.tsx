@@ -45,7 +45,7 @@ function MessageBody({ message }: { message: MessageView }) {
             <time dateTime={new Date(message.submittedAt).toISOString()} className="tabular text-faint-foreground">
               {TIME.format(message.submittedAt)}
             </time>
-            <FocusTag relation={relation} />
+            <FocusTag relation={relation} reserve />
             <RequestControls message={message} />
           </header>
           {message.replyingTo ? <ReplyingTo replyingTo={message.replyingTo} /> : null}

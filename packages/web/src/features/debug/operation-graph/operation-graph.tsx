@@ -45,7 +45,9 @@ export function OperationGraphDrawer() {
   const selected = selectedId ? graph.operations[selectedId] : undefined
 
   return (
-    <div className="flex max-h-[48dvh] flex-col shell:max-h-[40dvh]" data-testid="operation-graph">
+    // Below the shell breakpoint the drawer shares a short column with the transcript and the composer dock, so it
+    // is capped lower and may be squeezed further by the shell; its graph and its detail scroll inside it.
+    <div className="flex max-h-[min(34dvh,18rem)] min-h-0 flex-1 flex-col shell:max-h-[40dvh]" data-testid="operation-graph">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 pt-2.5 pb-1.5">
         <h2 className="eyebrow">Operation graph</h2>
         <p className="tabular text-xs text-muted-foreground">
@@ -97,7 +99,7 @@ export function OperationGraphDrawer() {
       ) : null}
       <div className="flex min-h-0 flex-1 flex-col border-t border-border shell:flex-row">
         <GraphCanvas graph={graph} selectedId={selectedId} onSelect={(id) => selectOperation(selectedId === id ? null : id)} />
-        <div className="scroll-quiet max-h-36 min-h-0 shrink overflow-y-auto border-t border-border shell:max-h-none shell:w-[19rem] shell:border-t-0 shell:border-l">
+        <div className="scroll-quiet max-h-24 min-h-0 shrink overflow-y-auto border-t border-border shell:max-h-none shell:w-[19rem] shell:border-t-0 shell:border-l">
           {selected ? (
             <OperationDetail operation={selected} graph={graph} />
           ) : (
@@ -323,7 +325,7 @@ function GraphCanvas(props: {
 
   return (
     <div
-      className="scroll-quiet min-h-32 min-w-0 flex-1 overflow-auto"
+      className="scroll-quiet min-h-16 min-w-0 flex-1 overflow-auto shell:min-h-32"
       role="group"
       aria-label="Live operations by dependency depth"
       tabIndex={0}

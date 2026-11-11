@@ -111,7 +111,8 @@ function ShellLayout() {
               <div className="min-h-0 flex-1" aria-busy="true" />
             ) : (
               <>
-                <section aria-label="Transcript" className="flex min-h-0 flex-1 flex-col">
+                {/* The transcript is the primary view: the dock and the drawer below it can never take all of it. */}
+                <section aria-label="Transcript" className="flex min-h-36 flex-1 flex-col">
                   {TranscriptPane ? <TranscriptPane /> : <TranscriptStandIn />}
                 </section>
                 <section aria-label="Composer" className="shrink-0">
@@ -120,7 +121,7 @@ function ShellLayout() {
               </>
             )}
             {drawerWanted && OperationGraphDrawer ? (
-              <section aria-label="Operation graph" className="shrink-0 border-t border-border bg-surface">
+              <section aria-label="Operation graph" className="flex min-h-24 shrink flex-col overflow-hidden border-t border-border bg-surface">
                 <OperationGraphDrawer />
               </section>
             ) : null}

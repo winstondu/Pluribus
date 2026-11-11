@@ -60,6 +60,24 @@ test('queue item · links to its message in the transcript', async () => {
   expect(message.hasAttribute('data-revealed')).toBe(true)
 })
 
+test('queue item · what it waits for is a link to that section in the transcript', async () => {
+  const view = await open('queue-waiting', true)
+  const item = byId(view.container, 'data-queue-item', fx.id('queueItem', 'J'))
+  const link = item.querySelector<HTMLElement>('[data-slot="queue-prerequisite"]')
+  expect(link?.textContent).toContain('neighborhoods + activities')
+  fireEvent.click(link!)
+  const revealed = view.ui.getState().reveal?.sectionId
+  expect([fx.id('section', 'A'), fx.id('section', 'B')]).toContain(revealed)
+
+  // A paused item leads to the section that failed or was stopped.
+  const paused = await open('queue-paused', true)
+  const pausedItem = byId(paused.container, 'data-queue-item', fx.id('queueItem', 'J'))
+  fireEvent.click(pausedItem.querySelector<HTMLElement>('[data-slot="queue-prerequisite"]')!)
+  const cause = paused.backend?.current.queue.items[0]?.recovery?.retry.sectionId
+  expect(cause).toBeTruthy()
+  expect(paused.ui.getState().reveal?.sectionId).toBe(cause)
+})
+
 test('queue item · a paused request names the cause and carries Retry, Continue without and Cancel', async () => {
   const view = await open('queue-paused')
   const item = byId(view.container, 'data-queue-item', fx.id('queueItem', 'J'))
