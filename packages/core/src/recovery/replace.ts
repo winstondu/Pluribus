@@ -10,7 +10,7 @@ import type {
   SupersessionCause,
 } from '@committee/protocol'
 import { NOT_STARTED_STATES } from '@committee/protocol'
-import { assembleContext, notStartedInSection, queries, settleWait, supersedeSection, type ConversationState, type DirectiveRow, type Reaction, type StepContext } from '../engine'
+import { assembleContext, queries, settleWait, supersedeSection, type ConversationState, type DirectiveRow, type Reaction, type StepContext } from '../engine'
 
 /**
  * Replacing a directive's work (PLAN §2 "Directive, section, attempt"): the
@@ -138,7 +138,9 @@ export const waitForInFlightReads: Reaction = (_state, event, ctx) => {
 
 function waitForReads(ctx: StepContext, directiveId: DirectiveId): void {
   const d = ctx.state.directives[directiveId]
-  if (!d || d.kind !== 'answer' || d.state !== 'ready' || !notStartedInSection(ctx.state, d)) return
+  // Work ready again for a retry (its section already holds attempts) is held the same way: its next
+  // run would otherwise read a replacement's request without its answer (R3, R4).
+  if (!d || d.kind !== 'answer' || d.state !== 'ready') return
   const node = ctx.state.nodes[d.nodeId]
   if (!node) return
   const context = assembleContext(ctx.state, d.id, d.nodeId, queries.resolvePlannedParents(ctx.state, node))

@@ -1,4 +1,4 @@
-import { correctionText, notStartedInSection, queries, settleWait, formJoinBack, type CommandHandlers, type ConversationState, type DirectiveRow, type PlanApplier, type Reaction, type StartupReaction, type StepContext, type TimerHandler } from '../engine'
+import { correctionText, notStartedInSection, startedInSection, queries, settleWait, formJoinBack, type CommandHandlers, type ConversationState, type DirectiveRow, type PlanApplier, type Reaction, type StartupReaction, type StepContext, type TimerHandler } from '../engine'
 import type { PlannedRevision } from '../ports'
 import type { DirectiveId, ElicitationId, MessageId, RedoOption } from '@committee/protocol'
 import { revisionTargetState, replaceWork, waitForReplacedInputs } from './replace'
@@ -109,7 +109,9 @@ function followDependents(ctx: StepContext, targetId: DirectiveId, messageId: Me
     } else if (d.state === 'paused' && d.pause?.cause.directiveId === targetId) {
       // The prerequisite that did not finish is being replaced: the recovery choice no longer applies.
       settleWait(ctx, id, true)
-    } else if (queries.isStartedUnsettled(d.state) && read) {
+    } else if (startedInSection(ctx.state, d) && read) {
+      // Started work that has not settled, including work ready again for a retry that waits for a
+      // slot: its next run would read the target without the replacement's answer (R3, R4, F5).
       restartDependent(ctx, id, targetId, messageId)
     }
   }
@@ -196,9 +198,11 @@ function carryOut(ctx: StepContext, elicitationId: ElicitationId, redo: readonly
     if (!d || d.state === 'superseded' || queries.isInFlightState(d.state)) continue
     if (replaceWork(ctx, id, { cause: { kind: 'redo', elicitationId }, nodeReason: 'redo', responseReason: 'redo', messageId: d.messageId })) redone.push(id)
   }
+  // Held work: what waits for the answer alone, and queued work held beside its own wait. A paused
+  // directive stays paused with its recovery choice; the lapsed hold no longer counts.
   const held = ctx.state.directiveOrder.filter((id) => {
     const d = ctx.state.directives[id]
-    return d?.state === 'awaiting-elicitation' && d.heldBy?.elicitationId === elicitationId
+    return (d?.state === 'awaiting-elicitation' || d?.state === 'dependency-queued') && d.heldBy?.elicitationId === elicitationId
   })
   for (const id of [...held, ...redone]) {
     waitForReplacedInputs(ctx, id)

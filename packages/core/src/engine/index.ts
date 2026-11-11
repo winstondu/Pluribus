@@ -43,6 +43,7 @@ export {
   computeWait,
   settleWait,
   notStartedInSection,
+  startedInSection,
   formJoinBack,
   placeSection,
   supersedeSection,

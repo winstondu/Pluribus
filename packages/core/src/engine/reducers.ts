@@ -11,6 +11,7 @@ import type {
   SectionId,
   TranscriptItemRef,
 } from '@committee/protocol'
+import { IN_FLIGHT_STATES } from '@committee/protocol'
 import type {
   AttemptRow,
   ConversationState,
@@ -296,6 +297,19 @@ const REDUCERS: ReducerTable = {
     }
     if (e.replacesNodeId !== null) {
       next = withNode(next, e.replacesNodeId, (n) => ({ ...n, replacedByNodeId: e.nodeId }))
+      // Redone work (Regenerate, redo, a restart for a revised prerequisite, its own revision) is
+      // redone against the new version of what it depends on (06, R8): a "Continue without" waiver
+      // of work that is running again no longer applies, so the new run waits for that work's new
+      // version and never reads its failure marker in place of it (F5).
+      if (e.directiveId !== null) {
+        next = withDirective(next, e.directiveId, (d) => {
+          const waived = d.waived.filter((id) => {
+            const other = next.directives[id]
+            return !other || !IN_FLIGHT_STATES.includes(other.state)
+          })
+          return waived.length === d.waived.length ? d : { ...d, waived }
+        })
+      }
     }
     // Where it sits along its chain.
     if (e.reason === 'retry-after-closure') {
@@ -506,7 +520,9 @@ const REDUCERS: ReducerTable = {
       heldByBarrier: e.heldByBarrier,
       revised: e.revised,
       pause: null,
-      heldBy: null,
+      // A choice-with-default hold outlives a change of what the work waits for (07); it lapses
+      // once the elicitation is no longer open.
+      heldBy: d.heldBy && state.elicitations[d.heldBy.elicitationId]?.status === 'open' ? d.heldBy : null,
     })),
 
   'directive-paused': (state, e) =>
@@ -519,14 +535,18 @@ const REDUCERS: ReducerTable = {
     })),
 
   'directive-held': (state, e) =>
-    withDirective(state, e.directiveId, (d) => ({
-      ...d,
-      state: 'awaiting-elicitation',
-      heldBy: { elicitationId: e.elicitationId, reason: e.reason },
-      queueItemId: null,
-      waitingFor: [],
-      heldByBarrier: false,
-    })),
+    withDirective(state, e.directiveId, (d): DirectiveRow => {
+      const heldBy = { elicitationId: e.elicitationId, reason: e.reason }
+      // Queued work that a choice with default holds keeps its queue item, what it waits for, and a
+      // pause with its recovery choice (07 · "affected queued work holds", P6): the hold is recorded
+      // beside them. It is held for the answer alone once nothing else is left to wait for (a second
+      // hold for the same elicitation, from `settleWait`).
+      const queued = d.state === 'paused' || (d.state === 'dependency-queued' && d.queueItemId !== null && d.heldBy?.elicitationId !== e.elicitationId)
+      if (e.reason === 'choice-with-default' && queued) {
+        return { ...d, heldBy }
+      }
+      return { ...d, state: 'awaiting-elicitation', heldBy, queueItemId: null, waitingFor: [], heldByBarrier: false }
+    }),
 
   'directive-ready': (state, e) =>
     withDirective(state, e.directiveId, (d) => ({

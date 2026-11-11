@@ -145,6 +145,13 @@ export function settleWait(ctx: StepContext, directiveId: DirectiveId, force = f
   if (!d) return
   const decision = computeWait(ctx.state, d)
   if (decision.kind === 'ready') {
+    // Held for an elicitation still open: it waits for the answer alone (07).
+    if (d.heldBy && ctx.state.elicitations[d.heldBy.elicitationId]?.status === 'open') {
+      if (d.state !== 'awaiting-elicitation') {
+        ctx.emit({ type: 'directive-held', directiveId, elicitationId: d.heldBy.elicitationId, reason: d.heldBy.reason })
+      }
+      return
+    }
     if (force || d.state !== 'ready') ctx.emit({ type: 'directive-ready', directiveId })
     return
   }
