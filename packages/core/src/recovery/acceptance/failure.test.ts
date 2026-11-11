@@ -65,6 +65,36 @@ describe('failure, stopping and recovery', () => {
     expect(s.d('sky').state).toBe('completed')
   })
 
+  test('F2 (request) · stopping a whole request stops its running sections and cancels its queued part; work outside it is paused, never cancelled', async () => {
+    const s = await recoveryScenario()
+    await s.ask('Recommend a laptop', { label: 'laptop' }, [say(10, 'A ThinkPad'), say(5_000, ' …')])
+    const text = 'Summarize that recommendation, and separately translate this menu'
+    s.t.model.script('translate this menu', [say(10, 'Soupe'), say(5_000, ' …')])
+    s.t.router.when(text, (input) =>
+      independent(input, [
+        { label: 'summary', spans: spanOf(text, 'Summarize that recommendation'), placement: s.on('laptop'), prerequisites: [s.needs('laptop')] },
+        { label: 'translation', spans: spanOf(text, 'translate this menu') },
+      ]),
+    )
+    const messageId = await s.t.submit(s.c, text)
+    await s.ask('Make the translation formal', { label: 'formal', placement: s.on('translation'), prerequisites: [s.needs('translation')] })
+    await s.t.advance(50)
+    expect(s.d('summary').state).toBe('dependency-queued')
+    expect(s.d('translation').state).toBe('running')
+    await s.t.send({ type: 'stop', conversationId: s.c, target: { kind: 'request', messageId } })
+    expect(s.d('translation').state).toBe('stopped')
+    expect(s.d('summary').state).toBe('cancelled')
+    expect(s.d('laptop').state).toBe('running')
+    expect(s.d('formal').state).toBe('paused')
+    const snap = await s.snap()
+    expect(snap.queue.items.map((i) => i.text)).toEqual(['Paused — translation stopped'])
+    const response = snap.transcript.responses[sectionOf(snap, s, 'translation').responseId]
+    expect(response?.header?.countText).toBe('1 stopped · 1 cancelled')
+    expect(sectionOf(snap, s, 'summary').state).toBe('cancelled')
+    const cancelled = (await s.events()).find((e) => e.type === 'directive-cancelled')
+    expect(cancelled?.type === 'directive-cancelled' && cancelled.cause).toBe('request-stopped')
+  })
+
   test('F3 · transient failures retry per the retry setting (Standard by default) with status text only; non-retryable errors go straight to failed', async () => {
     const s = await recoveryScenario()
     s.t.model.script('Explain caching', [fail(10, 'bad-gateway')])

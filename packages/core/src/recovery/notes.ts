@@ -21,7 +21,8 @@ import { queries, type ConversationState, type Reaction } from '../engine'
  */
 export function supersededInputs(state: ConversationState, directiveId: DirectiveId): SupersededInput[] {
   const d = state.directives[directiveId]
-  if (!d || d.state !== 'completed' || d.resultAttemptId === null) return []
+  // A clarification question is not work a superseded input could change: its answer was given.
+  if (!d || d.kind !== 'answer' || d.state !== 'completed' || d.resultAttemptId === null) return []
   const attempt = state.attempts[d.resultAttemptId]
   if (!attempt) return []
   const out: SupersededInput[] = []
