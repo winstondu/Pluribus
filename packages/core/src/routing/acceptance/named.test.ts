@@ -204,6 +204,28 @@ describe('routing, as the reviews found it', () => {
 })
 
 describe('routing outcomes', () => {
+  test('clarification · a question for work on a join chain is written by the answer model, the blocked work by the synthesis model', async () => {
+    const s = await routingScenario()
+    s.t.model.script('Why is the sky blue?', answer('Scattering.', 10, 20))
+    s.t.model.script('Why is the sea salty?', answer('Minerals.', 10, 20))
+    await s.send('Why is the sky blue?')
+    await s.send('Why is the sea salty?')
+    await s.t.advance(50)
+    await s.send('Compare those two for my presentation', {
+      message: { relation: 'addition', several: 0.9, targets: { 'Why is the sky blue': 0.9, 'Why is the sea salty': 0.9 }, clarify: 0.9 },
+    })
+    await s.t.advance(50)
+    const blocked = s.d('Compare those two for my presentation')
+    expect(s.state().chains[blocked.chainId]?.kind).toBe('join')
+    const question = s.d('question about Compare those two for my presentation')
+    expect(s.state().attempts[question.attemptIds[0] ?? '']?.model).toBe(s.state().attempts[s.d('Why is the sky blue').attemptIds[0] ?? '']?.model)
+    expect(s.state().attempts[question.attemptIds[0] ?? '']?.modelRole).toBe('answer')
+    await s.send('It is for ten-year-olds', {}, { replyTo: ['question about Compare those two for my presentation'] })
+    await s.t.advance(50)
+    expect(s.state().attempts[s.directive(blocked.id).attemptIds[0] ?? '']?.modelRole).toBe('synthesis')
+  })
+
+
   test('target ambiguity · the reply waits for the user, routes with the chosen sections, and keeps them across a restart', async () => {
     const s = await routingScenario()
     s.t.model.script('Why is the sky blue?', answer('Scattering.', 10, 20))

@@ -617,7 +617,8 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
     if (!d || !node) return null
     const parents = resolvePlannedParents(state, node)
     const context = assembleContext(state, directiveId, d.nodeId, parents)
-    const modelRole = state.chains[d.chainId]?.kind === 'join' ? 'synthesis' : 'answer'
+    // Synthesis is for answers on a join chain; a clarification question is always the answer model's (PLAN §2).
+    const modelRole = state.chains[d.chainId]?.kind === 'join' && d.kind === 'answer' ? 'synthesis' : 'answer'
     const request: ModelRequest = {
       model: settings.models[modelRole],
       messages: context.messages.map((message) => ({ role: message.role, content: message.content })),
