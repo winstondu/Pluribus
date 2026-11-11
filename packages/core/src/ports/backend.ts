@@ -3,6 +3,7 @@ import type { Clock, Timers } from './clock'
 import type { DecisionProvider } from './decision-provider'
 import type { Decomposer } from './decomposer'
 import type { ModelProvider } from './model-provider'
+import type { ReferentStrategy } from './referent-strategy'
 import type { Router } from './router'
 import type { EventStore, ProjectionCache, SecretsStore } from './stores'
 
@@ -28,6 +29,11 @@ export interface CoreDependencies {
    * that supplies one, `createBackend` throws.
    */
   readonly router?: Router
+  /**
+   * Replaces the referent strategy the routing pipeline would take from
+   * `settings.routing.referentStrategy`. Left out by the application.
+   */
+  readonly referentStrategy?: ReferentStrategy
 }
 
 /** Tunables that are build choices, not user settings. */

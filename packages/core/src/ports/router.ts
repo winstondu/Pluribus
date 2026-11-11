@@ -80,7 +80,7 @@ export interface RoutingInput {
   readonly candidates: RoutingCandidates
   /** Requirements already session-wide in this conversation (Q17). */
   readonly sessionRequirements: readonly Requirement[]
-  readonly settings: Pick<Settings, 'models' | 'thresholds'>
+  readonly settings: Pick<Settings, 'models' | 'thresholds' | 'routing'>
   /** Mints the IDs the plan needs: directives, fragments, requirements. */
   readonly ids: IdFactory
 }
@@ -176,6 +176,12 @@ export interface CandidateGroup {
   readonly startNodeId: NodeId
   /** In submission order. Members withdrawn by Undo split are not listed. */
   readonly memberDirectiveIds: readonly DirectiveId[]
+  /**
+   * The node of its current join-back, once it has closed: what work that
+   * continues from the group as a whole builds on (`CandidateWork.startNodeId`
+   * of that work). Null while the group is open.
+   */
+  readonly joinBackNodeId: NodeId | null
   /** "neighborhoods + activities". */
   readonly label: string
 }

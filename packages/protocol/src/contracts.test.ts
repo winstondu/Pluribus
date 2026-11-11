@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest'
 import { COMMAND_TYPES } from './commands'
 import { APP_EVENT_TYPES, APP_LOG, CONVERSATION_EVENT_TYPES, EVENT_SCHEMA_VERSION, upcastEvent } from './events'
 import { IN_FLIGHT_STATES, NOT_STARTED_STATES, PROVIDER_ERROR_CLASS, providerError, providerErrorCodeForStatus } from './model'
-import { DEFAULT_SETTINGS, RETRY_POLICIES, applySettingsPatch, validateSettingsPatch } from './settings'
+import { DEFAULT_SETTINGS, RETRY_POLICIES, applySettingsPatch, normalizeSettings, validateSettingsPatch } from './settings'
 import { groupCountText, pausedText, provisionalLabel, recoveryLabels, redoneByDefaultText, supersededInputText, waitingText } from './wording'
 
 describe('commands', () => {
@@ -103,6 +103,19 @@ describe('settings', () => {
     expect(validateSettingsPatch({ thresholds: { targetChoice: 1.2 } })).toMatch(/targetChoice/)
     expect(validateSettingsPatch({ models: { answer: ' ' } })).toMatch(/answer/)
     expect(validateSettingsPatch({ concurrencyLimit: 2, defaultChoiceWaitMs: 0 })).toBeNull()
+  })
+
+  test('the referent strategy and its decision budget are settings: merged key by key, validated, and filled in for settings stored before they existed', () => {
+    const next = applySettingsPatch(DEFAULT_SETTINGS, { routing: { referentStrategy: 'one-pass', referentBudget: { requests: 2 } } })
+    expect(next.routing).toEqual({ referentStrategy: 'one-pass', referentBudget: { ...DEFAULT_SETTINGS.routing.referentBudget, requests: 2 } })
+    expect(next.thresholds).toEqual(DEFAULT_SETTINGS.thresholds)
+    expect(applySettingsPatch(DEFAULT_SETTINGS, { routing: {} })).toBe(DEFAULT_SETTINGS)
+    expect(validateSettingsPatch({ routing: { referentStrategy: 'guess' as never } })).toMatch(/referent strategy/)
+    expect(validateSettingsPatch({ routing: { referentBudget: { inputTokens: -1 } } })).toMatch(/inputTokens/)
+    expect(validateSettingsPatch({ routing: { referentBudget: { requests: 1.5 } } })).toMatch(/requests/)
+    expect(validateSettingsPatch({ routing: { referentStrategy: 'tree-walk', referentBudget: { requests: 0 } } })).toBeNull()
+    const { routing: _dropped, ...stored } = { ...DEFAULT_SETTINGS, retryPolicy: 'manual' as const }
+    expect(normalizeSettings(stored)).toEqual({ ...DEFAULT_SETTINGS, retryPolicy: 'manual' })
   })
 })
 

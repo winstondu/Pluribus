@@ -89,5 +89,12 @@ export interface CorpusExample {
   /** Section handles the user replied to with "Reply to this". */
   readonly replyTo?: readonly Handle[]
   readonly decomposition?: ReferenceDecomposition
+  /**
+   * The work the message refers to is older than the pipeline's window of
+   * listed sections (`MAX_SECTIONS`): only a referent strategy that reaches
+   * beyond the window can route it as labelled. The label is still what
+   * routing should conclude.
+   */
+  readonly beyondWindow?: true
   readonly expect: CorpusExpectation
 }

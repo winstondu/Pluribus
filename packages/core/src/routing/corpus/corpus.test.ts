@@ -1,3 +1,4 @@
+import { DEFAULT_SETTINGS, REFERENT_STRATEGY_NAMES } from '@committee/protocol'
 import { describe, expect, test } from 'vitest'
 import { ROUTING_CORPUS } from './examples'
 import { compare, corpusInput, evaluateCorpus, formatCorpusReport, oracleDecisionProvider, referenceDecomposer } from './evaluate'
@@ -18,11 +19,16 @@ describe('routing corpus', () => {
     for (const t of ['targets', 'placement', 'revision', 'splits', 'dependencies']) expect(topics.has(t as never)).toBe(true)
   })
 
-  test.each(ROUTING_CORPUS.map((e) => [e.id, e] as const))('corpus · with decisions as labelled, the pipeline routes %s as labelled', async (_id, example) => {
-    const input = corpusInput(example)
-    const router = createRouter({ decisionProvider: oracleDecisionProvider(example, input), decomposer: referenceDecomposer(example) })
-    const outcome = await router.route(input, NEVER_CANCELLED)
-    expect(compare(example, outcome)).toEqual([])
+  describe.each(REFERENT_STRATEGY_NAMES)('referents by %s', (referentStrategy) => {
+    const settings = { ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, referentStrategy } }
+    test.each(ROUTING_CORPUS.map((e) => [e.id, e] as const))('corpus · with decisions as labelled, the pipeline routes %s as labelled', async (_id, example) => {
+      const input = corpusInput(example, settings)
+      const router = createRouter({ decisionProvider: oracleDecisionProvider(example, input), decomposer: referenceDecomposer(example) })
+      const outcome = await router.route(input, NEVER_CANCELLED)
+      // One pass asks only about the sections the pipeline lists: a referent beyond the window is out of its reach.
+      if (example.beyondWindow && referentStrategy === 'one-pass') expect(compare(example, outcome)).not.toEqual([])
+      else expect(compare(example, outcome)).toEqual([])
+    })
   })
 
   test('corpus · the evaluator reports per topic, and a provider that always says no fails the labels it should', async () => {

@@ -3,6 +3,7 @@ import {
   RETRY_POLICIES,
   type DebugToggles,
   type DecisionThresholds,
+  type ReferentStrategyName,
   type RetryPolicy,
   type Settings,
   type SettingsPatch,
@@ -82,7 +83,10 @@ export function SettingsDialog() {
                 <ModelSettingsPanel settings={app.settings} />
               </TabsContent>
               <TabsContent value="routing">
-                <ThresholdSettings settings={app.settings} />
+                <div className="grid gap-8">
+                  <ReferentSettings settings={app.settings} />
+                  <ThresholdSettings settings={app.settings} />
+                </div>
               </TabsContent>
               <TabsContent value="key">
                 <KeySettings configured={app.key.configured} />
@@ -151,6 +155,51 @@ function Row({
   )
 }
 
+/** One of a few named options, each with a line saying what it does. */
+function ChoiceCards<T extends string>({
+  labelledBy,
+  options,
+  value,
+  onChoose,
+  className,
+}: {
+  labelledBy: string
+  options: readonly { value: T; label: string; description: string }[]
+  value: T
+  onChoose: (value: T) => void
+  className?: string
+}) {
+  return (
+    <div role="radiogroup" aria-labelledby={labelledBy} className={cn('grid gap-2', className)}>
+      {options.map((option) => {
+        const selected = value === option.value
+        return (
+          <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            onClick={() => (selected ? undefined : onChoose(option.value))}
+            className={cn(
+              'pressable relative rounded-lg border border-border bg-surface p-3 text-left hover:border-border-strong',
+              selected && 'border-primary/60 bg-accent/60 hover:border-primary/60',
+            )}
+          >
+            <span className="flex items-center justify-between gap-2 text-[0.8125rem] font-medium">
+              {option.label}
+              <CheckIcon
+                aria-hidden
+                className={cn('size-3.5 text-primary transition-opacity duration-(--duration-fast)', selected ? 'opacity-100' : 'opacity-0')}
+              />
+            </span>
+            <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">{option.description}</span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 // ───────────────────────── general ─────────────────────────
 
 const POLICIES: readonly { value: RetryPolicy; label: string; description: string }[] = [
@@ -175,33 +224,13 @@ function GeneralSettings({ settings }: { settings: Settings }) {
   return (
     <Panel title="General" description="How Committee retries failed work, how long it waits before acting on a default, and how much runs at once.">
       <Row label="Retry policy" labelId={policyLabel} stacked>
-        <div role="radiogroup" aria-labelledby={policyLabel} className="grid gap-2 sm:grid-cols-3">
-          {POLICIES.map((policy) => {
-            const selected = settings.retryPolicy === policy.value
-            return (
-              <button
-                key={policy.value}
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                onClick={() => (selected ? undefined : void change({ retryPolicy: policy.value }))}
-                className={cn(
-                  'pressable relative rounded-lg border border-border bg-surface p-3 text-left hover:border-border-strong',
-                  selected && 'border-primary/60 bg-accent/60 hover:border-primary/60',
-                )}
-              >
-                <span className="flex items-center justify-between gap-2 text-[0.8125rem] font-medium">
-                  {policy.label}
-                  <CheckIcon
-                    aria-hidden
-                    className={cn('size-3.5 text-primary transition-opacity duration-(--duration-fast)', selected ? 'opacity-100' : 'opacity-0')}
-                  />
-                </span>
-                <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">{policy.description}</span>
-              </button>
-            )
-          })}
-        </div>
+        <ChoiceCards
+          labelledBy={policyLabel}
+          options={POLICIES}
+          value={settings.retryPolicy}
+          onChoose={(value) => void change({ retryPolicy: value })}
+          className="sm:grid-cols-3"
+        />
       </Row>
       <Row
         label="Wait before a default choice runs"
@@ -346,6 +375,37 @@ const THRESHOLDS: readonly { key: keyof DecisionThresholds; label: string; descr
     description: 'At or above this, work is held until you answer a clarification question.',
   },
 ]
+
+const REFERENT_STRATEGIES: readonly { value: ReferentStrategyName; label: string; description: string }[] = [
+  {
+    value: 'tree-walk',
+    label: 'Tree walk',
+    description: 'Follows the lines of work a message is about, level by level. Reaches answers however old; one more decision request per branching level.',
+  },
+  {
+    value: 'one-pass',
+    label: 'One pass',
+    description: 'Asks about the most recent answers in the routing request itself. No further request; older answers are out of reach.',
+  },
+]
+
+function ReferentSettings({ settings }: { settings: Settings }) {
+  const change = useChangeSettings()
+  const label = useId()
+  return (
+    <Panel title="Referents" description="How routing decides which earlier answers a message refers to and waits for.">
+      <Row label="Strategy" labelId={label} stacked>
+        <ChoiceCards
+          labelledBy={label}
+          options={REFERENT_STRATEGIES}
+          value={settings.routing.referentStrategy}
+          onChoose={(value) => void change({ routing: { referentStrategy: value } })}
+          className="sm:grid-cols-2"
+        />
+      </Row>
+    </Panel>
+  )
+}
 
 function ThresholdSettings({ settings }: { settings: Settings }) {
   const change = useChangeSettings()

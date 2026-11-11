@@ -76,12 +76,14 @@ export function routingCandidates(state: ConversationState): RoutingCandidates {
   const groups: CandidateGroup[] = []
   for (const group of Object.values(state.groups)) {
     if (group.state === 'dissolved') continue
+    const joinBackId = group.joinBackIds[group.joinBackIds.length - 1]
     groups.push({
       groupId: group.id,
       open: group.state === 'open',
       baseChainId: group.baseChainId,
       startNodeId: group.startNodeId,
       memberDirectiveIds: activeMembers(group).map((m) => m.directiveId),
+      joinBackNodeId: group.state === 'closed' && joinBackId ? (state.joinBacks[joinBackId]?.nodeId ?? null) : null,
       label: groupLabel(state, group),
     })
   }

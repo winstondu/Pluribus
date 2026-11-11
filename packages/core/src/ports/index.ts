@@ -60,5 +60,18 @@ export type {
   RoutingOutcome,
   RoutingPlan,
 } from './router'
+export type {
+  ReferentAsk,
+  ReferentAskResult,
+  ReferentGate,
+  ReferentQuestions,
+  ReferentRequest,
+  ReferentResult,
+  ReferentSection,
+  ReferentStrategy,
+  ReferentUnit,
+  ScoredSection,
+  UnitReferents,
+} from './referent-strategy'
 export type { Backend, CoreDependencies, CoreOptions } from './backend'
 export { DEFAULT_CORE_OPTIONS } from './backend'

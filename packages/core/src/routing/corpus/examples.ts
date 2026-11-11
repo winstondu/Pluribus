@@ -109,6 +109,116 @@ const session = scene()
   .sessionRequirement('R1', 'Keep every answer under 100 words')
   .build()
 
+/**
+ * The trip as a live run records it: a section's title is the request's
+ * first words (`provisionalLabel`), not a tidy noun, and an answer's
+ * opening is 280 characters of markdown. The scenes above use short labels;
+ * the live decision model reads these.
+ */
+const LIVE_BRIEF = 'I’m planning a five-day trip to Kyoto in November on a moderate budget.'
+const LIVE_BRIEF_ANSWER =
+  'That sounds like a wonderful trip! Kyoto in November is at its best: the maple leaves usually peak in the second half of the month, days are mild and evenings are cool. Tell me what you would like help with: where to stay, what to do, or how to get around.'
+const LIVE_A_ANSWER =
+  'For five days in November on a moderate budget, three areas stand out.\n\n**Gion / Higashiyama** puts you within walking distance of Kiyomizu-dera and the old lanes. **Downtown Kawaramachi** is best for food and transit. **Kyoto Station area** is the cheapest and handy for day trips'
+const LIVE_B_ANSWER =
+  'November showers are common, so here are indoor options that still feel like Kyoto:\n\n1. **Kyoto National Museum** for a half day.\n2. **A tea ceremony in Gion.**\n3. **Nishiki Market**, which is covered.\n4. **The Railway Museum.**\n5. **Sake tasting in Fushimi.**'
+
+const liveTrip = (open: boolean) =>
+  scene()
+    .chain('trip', 'root', 'I’m planning a five-day trip to…')
+    .add('brief', { chain: 'trip', on: null, label: 'I’m planning a five-day trip to…', request: LIVE_BRIEF, answer: LIVE_BRIEF_ANSWER })
+    .chain('A', 'fork', 'Suggest neighborhoods to stay in')
+    .add('A', {
+      chain: 'A',
+      on: 'brief',
+      label: 'Suggest neighborhoods to stay in',
+      request: 'Suggest neighborhoods to stay in',
+      consumed: ['brief'],
+      ...(open ? { answer: 'For five days in November on a moderate budget, three areas', state: 'running' as const } : { answer: LIVE_A_ANSWER }),
+    })
+    .chain('B', 'fork', 'Suggest rainy-day activities')
+    .add('B', {
+      chain: 'B',
+      on: 'brief',
+      label: 'Suggest rainy-day activities',
+      request: 'Suggest rainy-day activities',
+      consumed: ['brief'],
+      ...(open ? { state: 'running' as const } : { answer: LIVE_B_ANSWER }),
+    })
+    .group('G', { base: 'trip', start: 'brief', members: ['A', 'B'], open })
+
+const liveTripClosed = liveTrip(false).build()
+const liveTripRunning = liveTrip(true).build()
+
+/** The closed trip beside two unrelated answers, so a follow-up has other sections to confuse the referents with. */
+const liveMixed = liveTrip(false)
+  .chain('sky', 'root', 'Why is the sky blue?')
+  .add('S', {
+    chain: 'sky',
+    on: null,
+    label: 'Why is the sky blue?',
+    request: 'Why is the sky blue?',
+    answer: 'Because of **Rayleigh scattering**. Sunlight is a mix of colours; air molecules scatter the short blue wavelengths far more strongly than the long red ones, so blue light reaches your eyes from every direction of the sky.',
+  })
+  .chain('menu', 'root', 'Translate this menu into French: soup,…')
+  .add('M', {
+    chain: 'menu',
+    on: null,
+    label: 'Translate this menu into French: soup,…',
+    request: 'Translate this menu into French: soup, bread, cheese',
+    answer: 'Here is the menu in French:\n\n- **Soupe** (soup)\n- **Pain** (bread)\n- **Fromage** (cheese)',
+  })
+  .build()
+
+/**
+ * A long conversation: the closed trip and its itinerary, then more
+ * unrelated questions than the pipeline lists (`MAX_SECTIONS` is 24), so
+ * the whole trip is older than the window.
+ */
+const TRIVIA = [
+  ['Why is the sky blue?', 'Because of Rayleigh scattering: air scatters short blue wavelengths far more than long red ones.'],
+  ['How do vaccines work?', 'They show the immune system a harmless piece or copy of a pathogen so that it learns to recognise the real one.'],
+  ['What causes tides?', 'Mostly the Moon’s gravity, which pulls the ocean into two bulges that the Earth rotates through each day.'],
+  ['Why do cats purr?', 'Rapid twitching of the laryngeal muscles; cats purr when content, and also to soothe themselves.'],
+  ['How does a refrigerator work?', 'A compressor circulates refrigerant that absorbs heat inside as it evaporates and releases it outside as it condenses.'],
+  ['What is inflation?', 'A sustained rise in the general price level, which lowers what a unit of money can buy.'],
+  ['Why do leaves change color?', 'Chlorophyll breaks down in autumn and unmasks the yellow and orange carotenoids; some trees add red anthocyanins.'],
+  ['How do airplanes stay up?', 'The wing deflects air downwards and the air pushes the wing up: lift, which balances weight.'],
+  ['What is a black hole?', 'A region where gravity is so strong that nothing, not even light, can escape from inside its event horizon.'],
+  ['Why is the sea salty?', 'Rivers carry dissolved minerals from rocks to the sea, and evaporation leaves the salts behind.'],
+  ['How does Wi-Fi work?', 'A router and your device exchange data as radio waves, usually in the 2.4 and 5 GHz bands.'],
+  ['What is photosynthesis?', 'Plants use light to turn carbon dioxide and water into sugar, releasing oxygen.'],
+  ['Why do we yawn?', 'Nobody is certain; the leading idea is that it cools the brain and raises alertness.'],
+  ['How are rainbows formed?', 'Sunlight is refracted, reflected inside raindrops and dispersed into its colours.'],
+  ['What is the speed of light?', 'About 299,792 kilometres per second in a vacuum.'],
+  ['Why do onions make you cry?', 'Cutting them releases a sulphur compound that irritates the eyes, which tear up to wash it away.'],
+  ['How do bees make honey?', 'They collect nectar, add enzymes, and fan it in the comb until most of the water has evaporated.'],
+  ['What is a prime number?', 'A whole number greater than 1 whose only divisors are 1 and itself.'],
+  ['Why does ice float?', 'Water expands as it freezes, so ice is less dense than liquid water.'],
+  ['How do magnets work?', 'The magnetic moments of their atoms are aligned, which adds up to a field that attracts or repels.'],
+  ['What causes earthquakes?', 'Stress built up along faults between tectonic plates is released suddenly as the rock slips.'],
+  ['Why is Pluto not a planet?', 'It has not cleared its orbit of other bodies, one of the three criteria set in 2006.'],
+  ['How does GPS work?', 'A receiver times signals from several satellites and solves for its own position.'],
+  ['What is DNA?', 'The molecule that carries genetic instructions, as a sequence of four bases along a double helix.'],
+  ['Why do we dream?', 'Possibly to consolidate memories and process emotions; there is no settled answer.'],
+  ['How do volcanoes form?', 'Magma rises where plates pull apart or one sinks beneath another, and erupts through the crust.'],
+] as const
+
+const longConversation = (() => {
+  const s = liveTrip(false).add('J', {
+    chain: 'trip',
+    on: 'jb_G',
+    label: 'Use those recommendations to make a…',
+    request: 'Use those recommendations to make a five-day itinerary.',
+    answer: '**Day 1:** arrive, settle into Gion, evening walk through Pontocho. **Day 2:** Kiyomizu-dera and the Higashiyama lanes. **Day 3 (rain plan):** Kyoto National Museum, then a tea ceremony.',
+    consumed: ['brief', 'A', 'B'],
+  })
+  TRIVIA.forEach(([question, answer], i) => {
+    s.chain(`t${i}`, 'root', question).add(`T${i}`, { chain: `t${i}`, on: null, label: question, request: question, answer })
+  })
+  return s.build()
+})()
+
 // ───────────────────────────── examples ─────────────────────────────
 
 const SKY_MENU = 'Explain why the sky is blue, and separately translate this menu into French: soup, bread. Keep both accessible to a beginner.'
@@ -631,5 +741,101 @@ export const ROUTING_CORPUS: readonly CorpusExample[] = [
       ],
     },
     expect: { composition: 'atomic', sessionWide: true, parts: [{ kind: 'unit', relation: 'new', placement: 'new-chain' }] },
+  },
+  // ── referents with live-style titles (docs/build/dependency-decisioning.md) ──
+  {
+    id: 'live-j-those-recommendations',
+    covers: ['placement', 'targets'],
+    note: '04, the running example’s J ("Use those recommendations to make a five-day itinerary."), C19: it needs both siblings, so it continues from their join-back and reads every member.',
+    scene: liveTripClosed,
+    text: 'Use those recommendations to make a five-day itinerary.',
+    expect: { composition: 'atomic', parts: [{ kind: 'unit', relation: 'addition', targets: ['A', 'B'], placement: { continue: 'group:G' }, prerequisites: [] }] },
+  },
+  {
+    id: 'live-j-named',
+    covers: ['placement', 'targets'],
+    note: '01, C19: J names the neighborhoods and the activities; it is a child of both siblings through their join-back, on the base chain.',
+    scene: liveTripClosed,
+    text: 'Make an itinerary from the neighborhoods and the activities',
+    expect: { composition: 'atomic', parts: [{ kind: 'unit', relation: 'addition', targets: ['A', 'B'], placement: { continue: 'group:G' }, prerequisites: [] }] },
+  },
+  {
+    id: 'live-j-those-recommendations-running',
+    covers: ['dependencies', 'placement'],
+    note: '04 edge case "J is requested while B is still streaming", Q30, C9, C15: J waits for the whole group, never for one member.',
+    scene: liveTripRunning,
+    text: 'Use those recommendations to make a five-day itinerary.',
+    expect: {
+      composition: 'atomic',
+      parts: [{ kind: 'unit', relation: 'result-dependent', targets: ['A', 'B'], placement: { continue: 'group:G' }, prerequisites: ['group:G'] }],
+    },
+  },
+  {
+    id: 'live-j-named-running',
+    covers: ['dependencies', 'placement'],
+    note: 'Q30, C9: work needing both running siblings depends on their full join-back.',
+    scene: liveTripRunning,
+    text: 'Make an itinerary from the neighborhoods and the activities',
+    expect: {
+      composition: 'atomic',
+      parts: [{ kind: 'unit', relation: 'result-dependent', targets: ['A', 'B'], placement: { continue: 'group:G' }, prerequisites: ['group:G'] }],
+    },
+  },
+  {
+    id: 'live-j-among-other-answers',
+    covers: ['placement', 'targets'],
+    note: '01, C19: with unrelated answers in the conversation, J still refers to both siblings and to nothing else.',
+    scene: liveMixed,
+    text: 'Use those recommendations to make a five-day itinerary.',
+    expect: { composition: 'atomic', parts: [{ kind: 'unit', relation: 'addition', targets: ['A', 'B'], placement: { continue: 'group:G' }, prerequisites: [] }] },
+  },
+  {
+    id: 'live-two-sections-siblings',
+    covers: ['targets', 'placement'],
+    note: '05: "Compare the two answers" about two siblings of one group is work on their join-back, not a join chain. The follow-up names both sections; both are inferred.',
+    scene: liveMixed,
+    text: 'Compare the neighborhoods answer with the rainy-day activities answer',
+    expect: { composition: 'atomic', parts: [{ kind: 'unit', relation: 'addition', targets: ['A', 'B'], placement: { continue: 'group:G' } }] },
+  },
+  {
+    id: 'live-two-sections-separate-trees',
+    covers: ['targets', 'placement'],
+    note: 'Q20, 05: a follow-up that names two sections of separate trees has both inferred and is a join chain over their leaves (Q86).',
+    scene: liveMixed,
+    text: 'Put the sky explanation and the menu translation into one handout',
+    expect: { composition: 'atomic', parts: [{ kind: 'unit', relation: 'addition', targets: ['S', 'M'], placement: { join: ['S', 'M'] } }] },
+  },
+  {
+    id: 'live-one-sibling-only',
+    covers: ['targets', 'placement'],
+    note: '01: a reply to one sibling branches from that sibling; the group as a whole is not what it refers to.',
+    scene: liveMixed,
+    text: 'Expand the neighborhoods answer with one more option',
+    expect: { composition: 'atomic', parts: [{ kind: 'unit', relation: 'addition', targets: ['A'], placement: { continue: 'A' } }] },
+  },
+  {
+    id: 'live-referent-beyond-window',
+    covers: ['targets', 'placement'],
+    note: '05, Q20: the itinerary is the target however long ago it was written. It is older than the 24 sections the pipeline lists, so only a strategy that walks the context tree can find it.',
+    scene: longConversation,
+    text: 'Swap days 2 and 3 of the Kyoto itinerary',
+    beyondWindow: true,
+    expect: { composition: 'atomic', parts: [{ kind: 'unit', targets: ['J'], placement: { continue: 'J' } }] },
+  },
+  {
+    id: 'live-unrelated-in-long-conversation',
+    covers: ['placement'],
+    note: '05: unrelated new work in a long conversation starts a new chain; nothing is walked into.',
+    scene: longConversation,
+    text: 'How do submarines dive and surface?',
+    expect: { composition: 'atomic', parts: [{ kind: 'unit', relation: 'new', placement: 'new-chain' }] },
+  },
+  {
+    id: 'live-unrelated-among-many',
+    covers: ['placement'],
+    note: '05: new work unrelated to everything in the conversation starts a new chain; no line of work is walked into.',
+    scene: liveMixed,
+    text: 'Explain how volcanoes form',
+    expect: { composition: 'atomic', parts: [{ kind: 'unit', relation: 'new', placement: 'new-chain' }] },
   },
 ]

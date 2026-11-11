@@ -18,6 +18,13 @@ export interface UnitRules {
   readonly targets?: { readonly [title: string]: number }
   /** Probability that the unit refers to several sections at once. */
   readonly several?: number
+  /** Section title → probability that the unit builds on the sibling group it is a member of, as a whole (the join-back as a candidate). */
+  readonly together?: { readonly [memberTitle: string]: number }
+  /**
+   * Section title → probability that the unit refers to something built on that section (what a tree
+   * walk descends on). Not stated: the highest `targets` probability among the answers the question names.
+   */
+  readonly under?: { readonly [title: string]: number }
   /** Line label the unit continues. */
   readonly chain?: string
   /** Work label, or a group label "a + b" → probability that the unit needs its result. */
@@ -94,6 +101,8 @@ export function answerFrom(rules: { readonly [text: string]: MessageRules }) {
         const u: UnitRules = (m?.[1] === 'm' ? r.message : r.parts?.[Number(m?.[2])]) ?? {}
         const question = m?.[3] ?? ''
         const n = Number(/\d+$/.exec(question)?.[0])
+        /** Titles of the sections an instruction names as S<n>, in order. */
+        const named = [...q.instructions.matchAll(/\bS(\d+)\b/g)].map((x) => sections.get(Number(x[1])) ?? '')
         if (question === 'corrective') answers[id] = noul(u.corrective)
         else if (question === 'shared') answers[id] = noul(u.shared)
         else if (question === 'several') answers[id] = noul(u.several)
@@ -105,6 +114,16 @@ export function answerFrom(rules: { readonly [text: string]: MessageRules }) {
           const n2 = [...lines].find(([, label]) => label === u.chain)?.[0]
           answers[id] = choice(options, n2 ? `L${n2}` : undefined)
         } else if (/^s\d+$/.test(question)) answers[id] = noul(u.targets?.[sections.get(n) ?? ''])
+        else if (/^j\d+$/.test(question)) answers[id] = noul(named.map((title) => u.together?.[title]).find((p) => p !== undefined))
+        else if (/^uj?\d+$/.test(question)) {
+          // "…built on S1: S2 ("…"), S3 ("…")": the branch point, or the group's members, come before the colon.
+          const head = q.instructions.slice(0, q.instructions.indexOf(':'))
+          const at = [...head.matchAll(/\bS(\d+)\b/g)].map((x) => sections.get(Number(x[1])) ?? '')
+          const below = [...q.instructions.matchAll(/\("([^"]*)"\)/g)].map((x) => x[1] ?? '')
+          const stated = at.map((title) => u.under?.[title]).find((p) => p !== undefined)
+          const implied = Math.max(0, ...below.map((title) => u.targets?.[title] ?? 0))
+          answers[id] = noul(stated ?? (implied > 0 ? implied : undefined))
+        }
         else if (/^w\d+$/.test(question)) answers[id] = noul(u.needs?.[work.get(n) ?? ''])
         else if (/^g\d+$/.test(question)) answers[id] = noul(u.needs?.[groups.get(n) ?? ''])
         else if (/^r\d+$/.test(question)) answers[id] = noul(u.requirements?.[n])

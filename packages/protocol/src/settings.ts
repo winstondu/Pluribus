@@ -31,6 +31,41 @@ export interface DecisionThresholds {
   readonly clarification: number
 }
 
+/**
+ * How routing decides which earlier work a message refers to and depends on
+ * (docs/build/dependency-decisioning.md). The strategies sit behind one
+ * interface in core (`ReferentStrategy`); the rest of the pipeline does not
+ * know which is in use.
+ * - `one-pass`: the questions ride in the routing request the pipeline sends
+ *   anyway. No further request.
+ * - `tree-walk`: breadth-first over the context tree from each root, pruned
+ *   where a line of work is not relevant, one further request per branching
+ *   level, within `referentBudget`.
+ */
+export type ReferentStrategyName = 'one-pass' | 'tree-walk'
+
+export const REFERENT_STRATEGY_NAMES: readonly ReferentStrategyName[] = ['one-pass', 'tree-walk']
+
+/**
+ * The most decision work a referent strategy may add to one routing, beyond
+ * the requests the pipeline sends anyway. A strategy checks it before every
+ * further request and falls back deterministically instead of exceeding it,
+ * so decision cost stays a small fraction of the answer it routes.
+ */
+export interface DecisionBudget {
+  /** Further decision requests per routing. Whole number ≥ 0. */
+  readonly requests: number
+  /** Questions in those requests, in total. Whole number ≥ 0. */
+  readonly questions: number
+  /** Estimated input tokens of those requests, in total. Whole number ≥ 0. */
+  readonly inputTokens: number
+}
+
+export interface RoutingSettings {
+  readonly referentStrategy: ReferentStrategyName
+  readonly referentBudget: DecisionBudget
+}
+
 /** Views behind debug toggles (Q87, Q94). Margin rails, Focus and the split link are always on and have no toggle. */
 export interface DebugToggles {
   readonly miniMap: boolean
@@ -48,6 +83,7 @@ export interface Settings {
   readonly concurrencyLimit: number
   readonly models: ModelSettings
   readonly thresholds: DecisionThresholds
+  readonly routing: RoutingSettings
   readonly debug: DebugToggles
 }
 
@@ -69,6 +105,11 @@ export const DEFAULT_SETTINGS: Settings = {
     dependency: 0.6,
     clarification: 0.75,
   },
+  routing: {
+    // Chosen on the routing corpus and on cost (docs/build/dependency-decisioning.md).
+    referentStrategy: 'tree-walk',
+    referentBudget: { requests: 4, questions: 96, inputTokens: 12_000 },
+  },
   debug: {
     miniMap: false,
     operationGraph: false,
@@ -84,6 +125,7 @@ export interface SettingsPatch {
   readonly concurrencyLimit?: number
   readonly models?: Partial<ModelSettings>
   readonly thresholds?: Partial<DecisionThresholds>
+  readonly routing?: { readonly referentStrategy?: ReferentStrategyName; readonly referentBudget?: Partial<DecisionBudget> }
   readonly debug?: Partial<DebugToggles>
 }
 
@@ -95,6 +137,10 @@ export function applySettingsPatch(settings: Settings, patch: SettingsPatch): Se
     concurrencyLimit: patch.concurrencyLimit ?? settings.concurrencyLimit,
     models: { ...settings.models, ...definedOnly(patch.models) },
     thresholds: { ...settings.thresholds, ...definedOnly(patch.thresholds) },
+    routing: {
+      referentStrategy: patch.routing?.referentStrategy ?? settings.routing.referentStrategy,
+      referentBudget: { ...settings.routing.referentBudget, ...definedOnly(patch.routing?.referentBudget) },
+    },
     debug: { ...settings.debug, ...definedOnly(patch.debug) },
   }
   return JSON.stringify(next) === JSON.stringify(settings) ? settings : next
@@ -117,10 +163,36 @@ export function validateSettingsPatch(patch: SettingsPatch): string | null {
       return `Threshold "${name}" must be between 0 and 1`
     }
   }
+  if (patch.routing?.referentStrategy !== undefined && !REFERENT_STRATEGY_NAMES.includes(patch.routing.referentStrategy)) {
+    return `Unknown referent strategy "${String(patch.routing.referentStrategy)}"`
+  }
+  for (const [name, value] of Object.entries(patch.routing?.referentBudget ?? {})) {
+    if (typeof value === 'number' && (!Number.isInteger(value) || value < 0)) {
+      return `Decision budget "${name}" must be a whole number of at least 0`
+    }
+  }
   for (const [role, model] of Object.entries(patch.models ?? {})) {
     if (typeof model === 'string' && model.trim() === '') return `Model for "${role}" cannot be empty`
   }
   return null
+}
+
+/**
+ * Settings as stored by an earlier version, completed with the defaults of
+ * every group it does not have yet.
+ */
+export function normalizeSettings(stored: Partial<Settings>): Settings {
+  return {
+    ...DEFAULT_SETTINGS,
+    ...stored,
+    models: { ...DEFAULT_SETTINGS.models, ...stored.models },
+    thresholds: { ...DEFAULT_SETTINGS.thresholds, ...stored.thresholds },
+    routing: {
+      referentStrategy: stored.routing?.referentStrategy ?? DEFAULT_SETTINGS.routing.referentStrategy,
+      referentBudget: { ...DEFAULT_SETTINGS.routing.referentBudget, ...stored.routing?.referentBudget },
+    },
+    debug: { ...DEFAULT_SETTINGS.debug, ...stored.debug },
+  }
 }
 
 function definedOnly<T extends object>(value: T | undefined): Partial<T> {

@@ -15,9 +15,11 @@ export {
   corpusInput,
   evaluateCorpus,
   formatCorpusReport,
+  meteredDecisionProvider,
   oracleDecisionProvider,
   referenceDecomposer,
   type CorpusReport,
   type CorpusResult,
   type CorpusRun,
+  type DecisionSpend,
 } from './evaluate'

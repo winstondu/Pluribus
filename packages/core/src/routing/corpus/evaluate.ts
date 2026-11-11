@@ -25,7 +25,8 @@ import type {
 } from '../../ports'
 import { NEVER_CANCELLED } from '../../ports'
 import { createRouter } from '../pipeline'
-import { supply } from '../supply'
+import { buildTree, type TreeNode } from '../referents/tree'
+import { numberedAnswerSections, supply } from '../supply'
 import { ROUTING_CORPUS } from './examples'
 import { ids } from './scene'
 import type { CorpusExample, CorpusTopic, PartExpectation, PlacementExpectation, ReferenceDecomposition } from './types'
@@ -35,7 +36,7 @@ export interface CorpusRun {
   /** Defaults to the examples' reference decompositions, so the decision model is evaluated on its own. */
   readonly decomposer?: Decomposer
   /** Models and thresholds; default `DEFAULT_SETTINGS`. */
-  readonly settings?: Pick<Settings, 'models' | 'thresholds'>
+  readonly settings?: Pick<Settings, 'models' | 'thresholds' | 'routing'>
   readonly examples?: readonly CorpusExample[]
   readonly signal?: CancelSignal
 }
@@ -49,17 +50,45 @@ export interface CorpusResult {
   readonly outcome: RoutingOutcome['kind']
   /** Every question asked and its answer, for threshold tuning. */
   readonly questions: readonly DecisionQuestionRecord[]
+  /** What routing the example cost in decision calls. */
+  readonly decisions: DecisionSpend
+}
+
+/** Decision calls made, and the input tokens the provider reported for them (0 where it reported none). */
+export interface DecisionSpend {
+  readonly requests: number
+  readonly questions: number
+  readonly inputTokens: number
+}
+
+/** A decision provider that counts what passes through it. */
+export function meteredDecisionProvider(provider: DecisionProvider): DecisionProvider & { spent(): DecisionSpend } {
+  let requests = 0
+  let questions = 0
+  let inputTokens = 0
+  return {
+    async decide<Q extends DecisionQuestions>(request: DecisionRequest<Q>, signal: CancelSignal): Promise<DecisionResult<Q>> {
+      requests += 1
+      questions += Object.keys(request.questions).length
+      const result = await provider.decide(request, signal)
+      if (result.ok) inputTokens += result.usage?.inputTokens ?? 0
+      return result
+    },
+    spent: () => ({ requests, questions, inputTokens }),
+  }
 }
 
 export interface CorpusReport {
   readonly results: readonly CorpusResult[]
   readonly passed: number
   readonly total: number
+  /** Decision calls over the whole run. */
+  readonly decisions: DecisionSpend
   readonly byTopic: { readonly [T in CorpusTopic]?: { readonly passed: number; readonly total: number } }
 }
 
 /** The routing input for an example, as the engine would build it. */
-export function corpusInput(example: CorpusExample, settings: Pick<Settings, 'models' | 'thresholds'> = DEFAULT_SETTINGS, idFactory?: IdFactory): RoutingInput {
+export function corpusInput(example: CorpusExample, settings: Pick<Settings, 'models' | 'thresholds' | 'routing'> = DEFAULT_SETTINGS, idFactory?: IdFactory): RoutingInput {
   return {
     conversationId: 'cnv_corpus' as RoutingInput['conversationId'],
     messageId: ids.message('new'),
@@ -70,7 +99,7 @@ export function corpusInput(example: CorpusExample, settings: Pick<Settings, 'mo
     forcedComposition: null,
     candidates: example.scene.candidates,
     sessionRequirements: example.scene.sessionRequirements,
-    settings: { models: settings.models, thresholds: settings.thresholds },
+    settings: { models: settings.models, thresholds: settings.thresholds, routing: settings.routing },
     ids: idFactory ?? createIdFactory(createUlidFactory(() => 0, createSeededRandom(11))),
   }
 }
@@ -121,7 +150,8 @@ export async function evaluateCorpus(run: CorpusRun): Promise<CorpusReport> {
   const results: CorpusResult[] = []
   for (const example of run.examples ?? ROUTING_CORPUS) {
     const input = corpusInput(example, run.settings)
-    const router = createRouter({ decisionProvider: run.decisionProvider, decomposer: run.decomposer ?? referenceDecomposer(example) })
+    const metered = meteredDecisionProvider(run.decisionProvider)
+    const router = createRouter({ decisionProvider: metered, decomposer: run.decomposer ?? referenceDecomposer(example) })
     const outcome = await router.route(input, run.signal ?? NEVER_CANCELLED)
     const mismatches = compare(example, outcome)
     results.push({
@@ -131,6 +161,7 @@ export async function evaluateCorpus(run: CorpusRun): Promise<CorpusReport> {
       mismatches,
       outcome: outcome.kind,
       questions: outcome.kind === 'plan' ? outcome.plan.decision.questions : [],
+      decisions: metered.spent(),
     })
   }
   const byTopic: { [T in CorpusTopic]?: { passed: number; total: number } } = {}
@@ -142,11 +173,18 @@ export async function evaluateCorpus(run: CorpusRun): Promise<CorpusReport> {
       byTopic[topic] = entry
     }
   }
-  return { results, passed: results.filter((r) => r.passed).length, total: results.length, byTopic }
+  const decisions = results.reduce<DecisionSpend>(
+    (sum, r) => ({ requests: sum.requests + r.decisions.requests, questions: sum.questions + r.decisions.questions, inputTokens: sum.inputTokens + r.decisions.inputTokens }),
+    { requests: 0, questions: 0, inputTokens: 0 },
+  )
+  return { results, passed: results.filter((r) => r.passed).length, total: results.length, decisions, byTopic }
 }
 
 export function formatCorpusReport(report: CorpusReport): string {
-  const lines = [`Routing corpus: ${report.passed}/${report.total} examples as labelled`]
+  const lines = [
+    `Routing corpus: ${report.passed}/${report.total} examples as labelled`,
+    `  decision calls: ${report.decisions.requests} requests, ${report.decisions.questions} questions, ${report.decisions.inputTokens} input tokens reported`,
+  ]
   for (const [topic, t] of Object.entries(report.byTopic)) lines.push(`  ${topic}: ${t.passed}/${t.total}`)
   for (const r of report.results) {
     if (r.passed) continue
@@ -300,7 +338,23 @@ export function oracleDecisionProvider(example: CorpusExample, input: RoutingInp
   const supplied = supply(input, input.explicitTargets)
   const parts = expect.parts ?? []
   const partFor = (key: string): PartExpectation | undefined => (key === 'm' ? (parts.length === 1 ? parts[0] : undefined) : parts[Number(key.slice(1))])
-  const sectionHandle = (n: number): string => example.scene.handles.get(supplied.sections[n - 1]?.sectionId ?? '') ?? ''
+  const answerSections = numberedAnswerSections(input, supplied)
+  /** The handle of S<n>: a listed section by its place in the state text, one beyond the window by the number it was given. */
+  const sectionHandle = (n: number): string =>
+    example.scene.handles.get(supplied.sections[n - 1]?.sectionId ?? answerSections.find((x) => x.n === n)?.section.sectionId ?? '') ?? ''
+  // The context tree as the referent strategies see it, for the questions about a group as a whole and about what is built on a node.
+  const tree = buildTree({ sections: answerSections, candidates: input.candidates })
+  const handlesBelow = (node: TreeNode | undefined): string[] => {
+    const out: string[] = []
+    const visit = (at: TreeNode): void => {
+      for (const child of at.children) {
+        if (child.kind === 'section') out.push(sectionHandle(child.n))
+        visit(child)
+      }
+    }
+    if (node) visit(node)
+    return out
+  }
   const relationOption = (p: PartExpectation | undefined): string =>
     p?.kind === 'unit' ? (p.relation === 'result-dependent' ? 'dependent' : (p.relation ?? 'addition')) : p?.kind === 'revision' || expect.ambiguous ? 'addition' : 'new'
 
@@ -343,6 +397,20 @@ export function oracleDecisionProvider(example: CorpusExample, input: RoutingInp
       if (expect.answers && h === expect.answers) return noul(true)
       if (expect.ambiguous?.includes(h)) return noul('unsure')
       return noul(targets?.includes(h) ?? false)
+    }
+    const together = /^j(\d+)$/.exec(question)
+    if (together) {
+      const node = [...tree.byGroup.values()].find((x) => x.index === Number(together[1]))
+      const members = node ? node.members.map((x) => sectionHandle(x.n)) : []
+      return noul(members.length >= 2 && members.every((h) => targets?.includes(h) ?? false))
+    }
+    const under = /^u(j?)(\d+)$/.exec(question)
+    if (under) {
+      const number = Number(under[2])
+      const node = under[1] === 'j' ? [...tree.byGroup.values()].find((x) => x.index === number) : tree.nodes.find((x) => x.kind === 'section' && x.n === number)
+      const below = handlesBelow(node)
+      if (expect.ambiguous?.some((h) => below.includes(h))) return noul('unsure')
+      return noul(below.some((h) => targets?.includes(h) ?? false))
     }
     const work = /^w(\d+)$/.exec(question)
     if (work) {

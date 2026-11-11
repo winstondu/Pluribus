@@ -1,4 +1,5 @@
 import {
+  normalizeSettings,
   APP_LOG,
   CONTEXT_WARNING_RATIO,
   DEFAULT_SETTINGS,
@@ -288,7 +289,7 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
         conversations = conversations.filter((c) => c.id !== event.conversationId)
         break
       case 'settings-changed':
-        settings = event.settings
+        settings = normalizeSettings(event.settings)
         break
       case 'key-status-changed':
         keyConfigured = event.configured
@@ -526,7 +527,7 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
       forcedComposition: routeOptions.forcedComposition ?? null,
       candidates: routingCandidates(state),
       sessionRequirements: sessionRequirementsInForce(state),
-      settings: { models: settings.models, thresholds: settings.thresholds },
+      settings: { models: settings.models, thresholds: settings.thresholds, routing: settings.routing },
       ids: deps.ids,
     }
   }

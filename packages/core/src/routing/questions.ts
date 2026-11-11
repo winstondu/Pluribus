@@ -1,5 +1,5 @@
 import type { ChainId, DirectiveId, RequirementId, SectionId, SiblingGroupId } from '@committee/protocol'
-import type { CandidateSection, RoutingInput } from '../ports'
+import type { CandidateSection, RoutingInput, UnitReferents } from '../ports'
 import type { Answers, Batch } from './batch'
 import type { Supplied } from './supply'
 
@@ -12,6 +12,11 @@ import type { Supplied } from './supply'
  * Question IDs are `<unit>_<question>`, with candidates named by their
  * number in the state text: `m_s3` asks whether the message refers to
  * section S3, `f1_w2` whether fragment F2 needs the result of W2.
+ *
+ * Which answer sections a unit refers to is not asked here: the referent
+ * strategy (`referents/`) adds those questions to the same request, with
+ * the same IDs (`m_s3`, `m_several`, and `m_j1` for a sibling group as a
+ * whole), and `withReferents` puts its scores into the unit's signals.
  */
 
 export type BaseRelation = 'new' | 'addition' | 'result-dependent'
@@ -33,7 +38,10 @@ export interface UnitScope {
   readonly key: string
   /** How questions name it: "the new message", "part F2". */
   readonly name: string
-  /** Sections to score as reply targets, with their number in the state text. */
+  /**
+   * Sections the unit may refer to, with their number in the state text. Open clarification
+   * questions among them are asked about here; answer sections by the referent strategy.
+   */
   readonly sections: readonly { readonly n: number; readonly section: CandidateSection }[]
   readonly corrective: boolean
   readonly relation: boolean
@@ -89,16 +97,10 @@ export function askUnit(batch: Batch, supplied: Supplied, input: RoutingInput, s
     )
   }
   if (scope.relation) batch.choice(`${k}_relation`, `How does ${it} relate to the existing work?`, RELATION_OPTIONS)
-  if (scope.sections.length >= 2) {
-    batch.noul(`${k}_several`, `Does ${it} plainly refer to more than one of the answer sections at once (for example "both", "compare", or two answers named)?`)
-  }
+  // Which answer sections the unit refers to is asked by the referent strategy (`referents/`), which
+  // adds its questions to the same request. Only an open clarification question is asked about here.
   for (const { n, section } of scope.sections) {
-    batch.noul(
-      `${k}_s${n}`,
-      section.asksElicitationId
-        ? `Does ${it} answer the question S${n}?`
-        : `Does ${it} refer to answer section S${n} ("${section.title}"): reply to it, build on it, or correct it?`,
-    )
+    if (section.asksElicitationId) batch.noul(`${k}_s${n}`, `Does ${it} answer the question S${n}?`)
   }
   if (scope.chain && supplied.chains.length > 0) {
     const options: { [o: string]: string } = {}
@@ -160,8 +162,9 @@ export function readUnit(answers: Answers, supplied: Supplied, input: RoutingInp
     corrective: answers.noul(`${k}_corrective`),
     shared: answers.noul(`${k}_shared`),
     relation: relation ? { value: OPTION_RELATION[relation.choice] ?? 'addition', confidence: relation.confidence, probabilities } : null,
-    targets: scope.sections.flatMap(({ n, section }) => scored(section.sectionId, `${k}_s${n}`)),
-    several: answers.noul(`${k}_several`),
+    // Open clarification questions only; `withReferents` adds what the referent strategy scored.
+    targets: scope.sections.flatMap(({ n, section }) => (section.asksElicitationId ? scored(section.sectionId, `${k}_s${n}`) : [])),
+    several: null,
     chain: chain && chainCandidate ? { id: chainCandidate.chainId, confidence: chain.confidence } : null,
     needsWork: supplied.inFlight.flatMap((w, i) => scored(w.directiveId, `${k}_w${i + 1}`)),
     needsGroups: supplied.openGroups.flatMap((g, i) => scored(g.groupId, `${k}_g${i + 1}`)),
@@ -170,5 +173,16 @@ export function readUnit(answers: Answers, supplied: Supplied, input: RoutingInp
     clarify: answers.noul(`${k}_clarify`),
     clarifyReason: answers.choice(`${k}_why`)?.choice === 'conflict' ? 'incompatible-requirements' : 'missing-information',
     after: scope.after.flatMap((o) => scored(o.key, `${k}_after_${o.key}`)),
+  }
+}
+
+/** A unit's signals with the referent strategy's scores for answer sections. */
+export function withReferents(signals: UnitSignals, referents: UnitReferents | undefined): UnitSignals {
+  if (!referents) return signals
+  const asked = new Set(signals.targets.map((t) => t.id))
+  return {
+    ...signals,
+    targets: [...signals.targets, ...referents.sections.filter((s) => !asked.has(s.sectionId)).map((s) => ({ id: s.sectionId, confidence: s.confidence }))],
+    several: referents.several,
   }
 }

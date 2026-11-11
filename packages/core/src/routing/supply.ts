@@ -1,5 +1,5 @@
 import { IN_FLIGHT_STATES, type DirectiveId, type NodeId, type SectionId, type SiblingGroupId } from '@committee/protocol'
-import type { CandidateChain, CandidateGroup, CandidateSection, CandidateWork, RoutingInput } from '../ports'
+import type { CandidateChain, CandidateGroup, CandidateSection, CandidateWork, ReferentSection, RoutingInput } from '../ports'
 
 /**
  * Which candidates the decision model is asked about (12 · "Left to the
@@ -91,4 +91,22 @@ export function describeState(input: RoutingInput, supplied: Supplied, subject: 
   }
   lines.push('', subject)
   return lines.join('\n')
+}
+
+/**
+ * The answer sections a referent strategy may score, numbered as every
+ * state text of the routing names them: the listed ones by their place in
+ * the pipeline's state text, the ones beyond its window after them, in
+ * conversation order. Open clarification questions are not among them.
+ */
+export function numberedAnswerSections(input: RoutingInput, supplied: Supplied): ReferentSection[] {
+  const numbers = new Map(supplied.sections.map((s, i) => [s.sectionId, i + 1]))
+  let next = supplied.sections.length
+  const out: ReferentSection[] = []
+  for (const section of input.candidates.sections) {
+    if (section.asksElicitationId) continue
+    const n = numbers.get(section.sectionId)
+    out.push(n === undefined ? { n: (next += 1), section, listed: false } : { n, section, listed: true })
+  }
+  return out.sort((x, y) => x.n - y.n)
 }

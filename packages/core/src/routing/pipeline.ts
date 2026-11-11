@@ -12,6 +12,7 @@ import {
   type RequirementId,
   type RoutingDecision,
   type SectionId,
+  type SiblingGroupId,
   type TextSpan,
   type UnitRoutingDecision,
   type WholeRequestBarrier,
@@ -26,15 +27,20 @@ import type {
   PlannedRevision,
   PlannedSessionRequirement,
   PlannedUnit,
+  ReferentRequest,
+  ReferentResult,
+  ReferentStrategy,
   Router,
   RoutingInput,
   RoutingOutcome,
   RoutingPlan,
+  UnitReferents,
 } from '../ports'
 import { Batch, ask, type Answers } from './batch'
 import { AMBIGUITY_FLOOR, derivePlacement, neededWork, placedWithoutTarget, referentCovered, resolveUnitTargets, selected, validatePlan, type TargetMode } from './derive'
-import { askUnit, readUnit, sectionNumbers, type UnitScope, type UnitSignals } from './questions'
-import { describeState, supply, type Supplied } from './supply'
+import { askUnit, readUnit, sectionNumbers, withReferents, type UnitScope, type UnitSignals } from './questions'
+import { createReferentAsk, referentStrategyFor, type ReferentSpend } from './referents'
+import { describeState, numberedAnswerSections, supply, type Supplied } from './supply'
 
 /**
  * The default router: the routing pipeline of 11 · "Routing".
@@ -56,13 +62,19 @@ import { describeState, supply, type Supplied } from './supply'
  *    stage that assigns each fragment its chain and target.
  * 3. Deterministic validation (`validatePlan`).
  *
+ * Which answer sections a unit refers to is decided by a referent strategy
+ * (`referents/`, docs/build/dependency-decisioning.md): its questions ride
+ * in the calls above, and any further call it makes is counted against the
+ * routing's decision budget. The pipeline does not know which strategy it
+ * has; thresholds, placement and validation are the same after any of them.
+ *
  * Shared-requirement revisions take one more call over the brief's
  * consumers, to pre-select the work actually affected (Q44).
  *
  * The router never mints an ID except through `input.ids`, never reads the
  * clock, and never rejects: provider failures are a `failed` outcome.
  */
-export function createRouter(deps: Pick<CoreDependencies, 'decisionProvider' | 'decomposer'>): Router {
+export function createRouter(deps: Deps): Router {
   return {
     async route(input, signal) {
       try {
@@ -74,7 +86,7 @@ export function createRouter(deps: Pick<CoreDependencies, 'decisionProvider' | '
   }
 }
 
-type Deps = Pick<CoreDependencies, 'decisionProvider' | 'decomposer'>
+type Deps = Pick<CoreDependencies, 'decisionProvider' | 'decomposer' | 'referentStrategy'>
 
 const failed = (error: ProviderError): RoutingOutcome => ({ kind: 'failed', error })
 const malformed = (message: string): RoutingOutcome => failed(providerError('malformed-response', message))
@@ -88,6 +100,8 @@ interface Given {
 class Record {
   readonly questions: DecisionQuestionRecord[] = []
   model: string | null = null
+  /** What the referent strategy did beyond the pipeline's own calls, for the decision's explanation. Empty when nothing. */
+  referentNote = ''
 
   add(answers: Answers): void {
     this.model ??= answers.model
@@ -139,11 +153,17 @@ async function routeMessage(deps: Deps, input: RoutingInput, signal: CancelSigna
     `New message: "${input.text}"`,
     ...(given ? [`The user replied to ${given.sectionIds.map((id) => `S${numbers.get(id) ?? '?'}`).join(' and ')}.`] : []),
   ].join('\n')
-  const gateResult = await ask(deps.decisionProvider, input.settings.models.decision, describeState(input, supplied, subject), gate, signal)
+  const stateText = describeState(input, supplied, subject)
+  const strategy = deps.referentStrategy ?? referentStrategyFor(input.settings.routing.referentStrategy)
+  // Explicit and chosen targets are used as given: nothing is asked about the message's referents.
+  const referentRequest = referentRequestFor(input, supplied, given ? [] : [{ key: 'm', name: 'the new message' }], stateText, subject)
+  addReferentQuestions(gate, strategy, referentRequest)
+  const gateResult = await ask(deps.decisionProvider, input.settings.models.decision, stateText, gate, signal)
   if (!gateResult.ok) return failed(gateResult.error)
   const g = gateResult.answers
   record.add(g)
-  const m = readUnit(g, supplied, input, messageScope)
+  const gateSignals = readUnit(g, supplied, input, messageScope)
+  let m = gateSignals
   const composite = g.noul('composite')
   const sessionWide = (g.noul('sessionwide') ?? 0) >= t.clearlyCorrective
   // Replacing or withdrawing a session-wide requirement is a revision, and a revision needs
@@ -207,10 +227,13 @@ async function routeMessage(deps: Deps, input: RoutingInput, signal: CancelSigna
   const compositeDecided: Decided<'atomic' | 'composite'> = { value: 'atomic', confidence: composite }
 
   if (isComposite && decomposition && decomposition.fragments.length >= 2) {
-    return routeComposite(deps, input, signal, { supplied, given, record, decomposition, requirements, composite, m })
+    return routeComposite(deps, input, signal, { supplied, given, record, decomposition, requirements, composite, strategy })
   }
 
   // ── Atomic ──
+  const referents = await resolveReferents(deps, input, signal, strategy, referentRequest, g, [gateSignals], record)
+  if (!referents.ok) return failed(referents.error)
+  m = withReferents(gateSignals, referents.units['m'])
   const resolution = resolveUnitTargets(m, given, t, {
     fragment: false,
     mayBeReply: m.relation?.value !== 'new' || (m.corrective ?? 0) >= t.clearlyCorrective,
@@ -218,8 +241,9 @@ async function routeMessage(deps: Deps, input: RoutingInput, signal: CancelSigna
     covered: (accepted, weak) => referentCovered(supplied, accepted, weak),
   })
   if (resolution.kind === 'ambiguous') return { kind: 'target-ambiguity', candidates: resolution.candidates }
-  const targets = answerTargets(supplied, resolution.sectionIds)
-  const revision = revisionOf(m, targets, changedRequirements, input.text, null, supplied, t)
+  const referred = answerTargets(supplied, resolution.sectionIds)
+  const revision = revisionOf(m, referred, changedRequirements, input.text, null, supplied, t)
+  const targets = withNeededGroups(supplied, referred, selected(m.needsGroups, t.dependency))
   const units: PlannedUnit[] = []
   const decisions: UnitRoutingDecision[] = []
   const clarifications: PlannedClarification[] = []
@@ -296,7 +320,7 @@ interface CompositeContext {
   readonly decomposition: Decomposition
   readonly requirements: RequirementBook
   readonly composite: number | null
-  readonly m: UnitSignals
+  readonly strategy: ReferentStrategy
 }
 
 async function routeComposite(deps: Deps, input: RoutingInput, signal: CancelSignal, c: CompositeContext): Promise<RoutingOutcome> {
@@ -346,13 +370,19 @@ async function routeComposite(deps: Deps, input: RoutingInput, signal: CancelSig
     ...fragments.map((f, i) => `F${i + 1}. ${JSON.stringify(f.instruction)} (from ${JSON.stringify(f.sourceSpans.map((s) => input.text.slice(s.start, s.end)).join(' … '))})`),
     ...(given ? [`The user replied to ${given.sectionIds.map((id) => `S${numbers.get(id) ?? '?'}`).join(' and ')}.`] : []),
   ].join('\n')
-  const result = await ask(deps.decisionProvider, input.settings.models.decision, describeState(input, supplied, subject), batch, signal)
+  const stateText = describeState(input, supplied, subject)
+  const referentRequest = referentRequestFor(input, supplied, scopes.map((scope) => ({ key: scope.key, name: scope.name })), stateText, subject)
+  addReferentQuestions(batch, c.strategy, referentRequest)
+  const result = await ask(deps.decisionProvider, input.settings.models.decision, stateText, batch, signal)
   if (!result.ok) return failed(result.error)
   const a = result.answers
   record.add(a)
 
   // Targets, revisions and units per fragment.
-  const signals = scopes.map((scope) => readUnit(a, supplied, input, scope))
+  const fragmentSignals = scopes.map((scope) => readUnit(a, supplied, input, scope))
+  const referred = await resolveReferents(deps, input, signal, c.strategy, referentRequest, a, fragmentSignals, record)
+  if (!referred.ok) return failed(referred.error)
+  const signals = fragmentSignals.map((s) => withReferents(s, referred.units[s.key]))
   const ambiguous = new Map<SectionId, number>()
   const plans: (
     | { readonly kind: 'unit'; readonly directiveId: DirectiveId; readonly targets: SectionId[]; readonly mode: TargetMode; readonly alsoRevision: PlannedRevision | null }
@@ -382,7 +412,7 @@ async function routeComposite(deps: Deps, input: RoutingInput, signal: CancelSig
       // A part that only changes a session-wide requirement is still a request: it is planned as
       // work, and the requirement revision rides beside it without a fragment of its own.
       const alsoRevision = revision ? { ...revision, fragment: null } : null
-      plans.push({ kind: 'unit', directiveId: input.ids.next('directive'), targets, mode: resolution.mode, alsoRevision })
+      plans.push({ kind: 'unit', directiveId: input.ids.next('directive'), targets: withNeededGroups(supplied, targets, selected(s.needsGroups, t.dependency)), mode: resolution.mode, alsoRevision })
     }
     fragmentIds.set(f.key, fragment.fragmentId)
   }
@@ -515,6 +545,95 @@ async function routeComposite(deps: Deps, input: RoutingInput, signal: CancelSig
   return finish(input, plan)
 }
 
+// ───────────────────────────── referents ─────────────────────────────
+
+/**
+ * What a referent strategy is asked: the answer sections, numbered as the
+ * state text names them. Sections beyond the pipeline's window keep
+ * numbering after it and are marked as not listed; a strategy that reaches
+ * them shows them in a state text of its own.
+ */
+function referentRequestFor(
+  input: RoutingInput,
+  supplied: Supplied,
+  units: ReferentRequest['units'],
+  stateText: string,
+  subject: string,
+): ReferentRequest {
+  const sections = numberedAnswerSections(input, supplied)
+  return {
+    units: sections.length > 0 ? units : [],
+    sections,
+    candidates: input.candidates,
+    stateText,
+    subject,
+    relevance: { clear: input.settings.thresholds.targetChoice, floor: AMBIGUITY_FLOOR },
+  }
+}
+
+/** The strategy's questions ride in the pipeline's own request. A question never replaces one the pipeline asks itself. */
+function addReferentQuestions(batch: Batch, strategy: ReferentStrategy, request: ReferentRequest): void {
+  if (request.units.length === 0) return
+  for (const [id, question] of Object.entries(strategy.questions(request))) {
+    if (!batch.has(id)) batch.noul(id, question.instructions)
+  }
+}
+
+/**
+ * Runs the strategy over the answers of the pipeline's request. Further
+ * requests it makes go through the budget guard (`createReferentAsk`) and
+ * into the decision record. Only supplied sections come back (invariant 9).
+ */
+async function resolveReferents(
+  deps: Deps,
+  input: RoutingInput,
+  signal: CancelSignal,
+  strategy: ReferentStrategy,
+  request: ReferentRequest,
+  answers: Answers,
+  signals: readonly UnitSignals[],
+  record: Record,
+): Promise<ReferentResult> {
+  if (request.units.length === 0) return { ok: true, units: {}, fallback: null }
+  const clearlyCorrective = input.settings.thresholds.clearlyCorrective
+  const corrective = new Set(signals.filter((s) => (s.corrective ?? 0) >= clearlyCorrective).map((s) => s.key))
+  const asker = createReferentAsk({
+    provider: deps.decisionProvider,
+    model: input.settings.models.decision,
+    budget: input.settings.routing.referentBudget,
+    signal,
+    onAnswers: (a) => record.add(a),
+  })
+  const result = await strategy.resolve(request, { probability: (id) => answers.noul(id), corrective }, asker)
+  if (!result.ok) return result
+  record.referentNote = referentNote(strategy.name, asker.spent(), result.fallback)
+  const known = new Set(request.sections.map((s) => s.section.sectionId))
+  const units: { [key: string]: UnitReferents } = {}
+  for (const [key, unit] of Object.entries(result.units)) {
+    units[key] = {
+      several: unit.several === null ? null : clamp01(unit.several),
+      sections: unit.sections.filter((s) => known.has(s.sectionId)).map((s) => ({ sectionId: s.sectionId, confidence: clamp01(s.confidence) })),
+    }
+  }
+  return { ok: true, units, fallback: result.fallback }
+}
+
+function clamp01(value: number): number {
+  return Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0
+}
+
+function referentNote(name: string, spent: ReferentSpend, fallback: Extract<ReferentResult, { ok: true }>['fallback']): string {
+  if (spent.requests === 0 && !fallback) return ''
+  const requests = spent.requests === 1 ? 'one further decision request' : `${spent.requests} further decision requests`
+  const limit = fallback ? { requests: 'request', questions: 'question', inputTokens: 'input-token' }[fallback.limit] : ''
+  const stopped = !fallback
+    ? ''
+    : fallback.to === 'one-pass'
+      ? `; its ${limit} budget was reached, so the remaining candidates were asked about in one request`
+      : `; its ${limit} budget was reached, so it kept what it had scored`
+  return ` Referents by ${name}: ${requests}${stopped}.`
+}
+
 // ───────────────────────────── pieces ─────────────────────────────
 
 function firstStart(f: DecomposedFragment): number {
@@ -543,6 +662,22 @@ function checkDecomposition(text: string, d: Decomposition, candidates: readonly
 /** Answer sections among the resolved targets (a question section is answered, never built on). */
 function answerTargets(supplied: Supplied, ids: readonly SectionId[]): SectionId[] {
   return ids.filter((id) => !supplied.sectionById.get(id)?.asksElicitationId)
+}
+
+/**
+ * A unit that waits for a sibling group as a whole refers to every member of it: the targets name
+ * all of them, as its context will read all of them (Q30, C9), not only the ones scored on their own.
+ * For new work only: what a correction revises is what it refers to, not what that work waits for.
+ */
+function withNeededGroups(supplied: Supplied, targets: readonly SectionId[], groups: readonly SiblingGroupId[]): SectionId[] {
+  const out = [...targets]
+  for (const groupId of groups) {
+    for (const directiveId of supplied.groupById.get(groupId)?.memberDirectiveIds ?? []) {
+      const sectionId = supplied.workById.get(directiveId)?.sectionId
+      if (sectionId && supplied.sectionById.has(sectionId) && !supplied.sectionById.get(sectionId)?.asksElicitationId && !out.includes(sectionId)) out.push(sectionId)
+    }
+  }
+  return out
 }
 
 /**
@@ -652,7 +787,8 @@ function confidencesOf(s: UnitSignals, targets: readonly SectionId[], t: Routing
 function targetRecord(input: RoutingInput, s: UnitSignals, targets: readonly SectionId[], mode: TargetMode): UnitRoutingDecision['targets'] {
   return {
     sectionIds: targets,
-    mode: targets.length === 0 ? 'none' : mode,
+    // Targets that came only from a group the unit waits for were inferred, not given.
+    mode: targets.length === 0 ? 'none' : mode === 'none' ? 'inferred' : mode,
     candidates: s.targets.map((x) => ({ sectionId: x.id, confidence: x.confidence })),
     redirected: input.redirects.filter((r) => targets.includes(r.to)),
   }
@@ -733,7 +869,7 @@ function decisionRecord(
     composition,
     units,
     thresholds: { ...input.settings.thresholds, ambiguityFloor: AMBIGUITY_FLOOR },
-    explanation,
+    explanation: `${explanation}${record.referentNote}`,
     questions: record.questions,
   }
 }

@@ -201,6 +201,7 @@ export class SceneBuilder {
         baseChainId: ids.chain(g.base),
         startNodeId: ids.node(g.start),
         memberDirectiveIds: g.members.map(ids.directive),
+        joinBackNodeId: this.joinBacks.has(g.handle) ? ids.node(`jb_${g.handle}`) : null,
         label: g.members.map((m) => this.work.find((w) => w.handle === m)?.label ?? m).join(' + '),
       }
     })
