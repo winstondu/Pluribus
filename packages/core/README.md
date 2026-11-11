@@ -8,7 +8,32 @@ The deterministic core: event log, reducers, projections, context assembly, plac
 | `src/engine/` | core-engine | State, a reducer for every event, the four projections and the run inspection, context assembly, plan application and placement, the lifecycle reactions, the coordinator (`createBackend`) |
 | `src/testing/` | core-engine | Fakes for every port and `createTestBackend` (`@committee/core/testing`) |
 | `src/routing/` | core-routing | The routing pipeline, validation, clarification and target elicitation, Undo split, the routing corpus |
-| `src/recovery/` | core-recovery | Added by adding a module, not by editing `engine/` |
+| `src/recovery/` | core-recovery | Retry policies, paused dependents and the recovery choice, revisions, the choice with default, Regenerate, join-back re-formation, superseded-input notes |
+
+## Using it (the web integration)
+
+Import from the package root. Importing `@committee/core` registers the routing and recovery modules, so `createBackend` runs all three slices (engine, routing, recovery, in that order) and uses the routing pipeline as its router when `deps.router` is absent:
+
+```ts
+import { createBackend } from '@committee/core'
+const backend = createBackend({ modelProvider, decisionProvider, decomposer, eventStore, projectionCache, secretsStore, clock, timers, ids })
+await backend.start()   // folds every log, records lost attempts as interrupted (retried per policy), routes lost messages again, resumes timers
+```
+
+`Backend` (`src/ports/backend.ts`) is the whole surface: `send(command)` for every command of `protocol/commands.ts`, `subscribe(listener, filter?)` for `StreamFrame`s (events in their streamed form plus projection patches), `snapshot({ kind: 'app' | 'conversation' | 'run' | 'events' })`, `dispose()`. Commands and what answers them:
+
+| Command | Handled by | Effect |
+|---|---|---|
+| `submit-message` | engine | `message-submitted`, then routing. A pending choice with default is carried out first (recovery) |
+| `stop` | engine | One section or a whole request: live attempts stopped, started work between attempts stopped, unstarted work cancelled; dependents outside the scope are paused (recovery) |
+| `retry` | engine | A routing failure routes again; otherwise unfinished sections retry in their own bubble, or as a late retry after the join-back. A paused dependent of the retried work waits again (recovery) |
+| `regenerate` | recovery | Only on work with a superseded-input note; cancels the item's work still in progress, then redoes it in a new response |
+| `continue-without`, `cancel` | recovery | The recovery choice on a paused directive (its queue item's `recovery`) |
+| `answer-elicitation` | routing (target ambiguity), recovery (choice with default; `confirm: false` edits the selection) | |
+| `undo-split` | routing | While `SplitView.undoAvailable` |
+| app commands | engine | Conversations, settings, the key (secrets store only) |
+
+The client renders the four projections and `RunInspection` exactly; every control it may offer is in `MessageView.actions`, `SectionView.actions`, `QueueItemView.recovery` and `QueueProjection.elicitations`.
 
 ## A step
 
@@ -61,3 +86,18 @@ The routing corpus is `src/routing/corpus/`: labelled examples over hand-written
 Routing tests: `src/routing/acceptance/` (D1–D4, T1, E1, E2, P9, I9, the named routing cases of PLAN §6, T2 and T3 on the routing side), `src/routing/validation.test.ts`, and the corpus under a provider that answers as labelled (`src/routing/corpus/corpus.test.ts`). `routingScenario()` in `src/routing/acceptance/helpers.ts` runs the real router over scripted decisions stated by name.
 
 Engine acceptance tests are in `src/engine/acceptance/` (C1–C20, P1–P4, P6, P8, I1, I2, I4, I6, I10, the named cases of PLAN §6, and reducers folded from hand-written logs); the rebuild property tests are in `src/engine/projections/rebuild.test.ts`.
+
+## The recovery slice (`src/recovery/`)
+
+`recoveryModule` (registered by `src/recovery/index.ts`) decides what follows work that did not finish or was corrected. It emits events only; the engine's reducers and projections say what they mean.
+
+- **Retry policies** (`policyRetryPlanner`, `policy.ts`), from `RETRY_POLICIES`: non-retryable errors fail at once; Manual never retries; Standard and Persistent retry transient failures after an exact backoff on the injected clock, wait as `Retry-After` says for 429 (shown "Waiting for capacity") and 503 (shown "Retrying…"), fail when the wait is longer than the policy accepts, and retry an interrupted attempt at once on start. Interruptions and rate-limit waits count against the same limit (`automaticRetriesUsed`: the automatic attempts at the end of the section's list).
+- **Paused dependents** (`pause.ts`): a dependency-queued directive whose prerequisite (or a member of its sibling group) ended failed, stopped, interrupted or cancelled is paused with a recovery-choice elicitation. A retry of that prerequisite answers it (`retry-prerequisite`) and the directive waits again; `continue-without` waives the prerequisite (a join-back is then read with the member's marker); `cancel` cancels it. A recovery choice that no longer applies is withdrawn.
+- **Revisions** (`revisions.ts`, `replace.ts`): `plan.revisions` by target state (`revisionTargetState`). Work not started is revised in place (`directive-revised-in-place`, its queue item reads "Revised · waiting for …"). Anything started is replaced (`replaceWork`): its section superseded (cause `revision`), a new node with the same planned parents, a new section in a new `revision-replacement` response. Dependents: queued ones refresh their wait (a paused one whose cause was the target waits again); running ones that read the target restart in a `prerequisite-revised` response and wait for the replacement (`waitForReplacedInputs` adds the prerequisite); completed ones get the note.
+- **Shared requirements and the choice with default**: the brief keeps its exchange and is read with the correction after it; the router's `affected` list becomes the options (running work superseded at once with cause `redo` and held, queued work held, both locked; finished work selectable, pre-selected as judged). The default runs when `defaultChoiceWaitMs` elapses (timer `recovery.choice-default`, set again on start, or carried out on start if it elapsed) or when another message is submitted. Carrying out releases held work and redoes the chosen finished work in `redo` responses.
+- **Join-back re-formation**: a member replaced after its group closed re-forms the join-back once the replacement settles. A late retry never does.
+- **Superseded-input notes** (`notes.ts`, `supersededInputs`): the three kinds of PLAN §2 (`result`, `correction`, `session-requirement`), for completed current results of answer directives; a note only gains inputs, and the correction kinds wait until the revision's choice is resolved.
+
+Build decisions made here: a revision target that was failed, stopped, interrupted or cancelled, or whose retry is pending, is `ended-unfinished` and replaced like running work; a restarted dependent, a regenerated item and redone work wait for any input whose replacement is still running; a replacement of a member whose current node is a late retry goes on the member's own node; a clarification question is never noted.
+
+Recovery tests: `src/recovery/acceptance/` (R1–R8, E3, E4, F1–F9, P10–P13, T2, T3, I3, I5, I7, I8, and the named recovery cases of PLAN §6), and a randomized rebuild property test with revisions and recovery choices (`src/recovery/rebuild.test.ts`). `recoveryScenario()`, `revise()` and `trip()` in `src/recovery/acceptance/helpers.ts` state the running example of 06 and 08. The review findings on the routing slice are pinned in `src/routing/acceptance/review.test.ts`.
