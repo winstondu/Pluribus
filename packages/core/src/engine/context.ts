@@ -318,6 +318,13 @@ function readJoinBack(state: ConversationState, b: Builder, joinNodeId: NodeId, 
   for (const member of record.members) {
     const d = state.directives[member.directiveId]
     if (!d) continue
+    // A member replaced since this formation (a revision whose replacement has not settled yet) is
+    // read as its directive stands: never the superseded body (Q39, R5).
+    const recorded = member.attemptId ? state.attempts[member.attemptId] : undefined
+    if (recorded && recorded.sectionId !== d.sectionId) {
+      readExchange(state, b, d, member.nodeId, record.id)
+      continue
+    }
     b.node(member.nodeId)
     pushRequest(b, d, member.nodeId, record.id)
     if (member.outcome === 'completed' && member.attemptId !== null) {
@@ -331,7 +338,8 @@ function readJoinBack(state: ConversationState, b: Builder, joinNodeId: NodeId, 
   for (const tailId of group.lateRetryNodeIds) {
     if (tailId === runNodeId) continue
     const tail = state.nodes[tailId]
-    if (!tail || tail.directiveId === null) continue
+    // A late retry whose work was replaced since (its member was revised) is read through the record.
+    if (!tail || tail.directiveId === null || tail.replacedByNodeId !== null) continue
     const d = state.directives[tail.directiveId]
     if (!d) continue
     const completed = [...tail.attemptIds].reverse().find((id) => state.attempts[id]?.state === 'completed')
