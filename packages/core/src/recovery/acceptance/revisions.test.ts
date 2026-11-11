@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { WORDING, type RequirementId, type ResponseId } from '@committee/protocol'
-import { answer, atomic, done, say } from '../../testing'
+import { answer, atomic, done, noUnits, say } from '../../testing'
 import { expectRebuildable } from '../../engine/acceptance/helpers'
 import { A_TEXT, B_TEXT, J_TEXT, inputOf, recoveryScenario, revise, sectionOf, trip } from './helpers'
 
@@ -258,14 +258,9 @@ describe('revisions, as the reviews found them', () => {
     await s.t.submit(s.c, 'From now on answer in French. Explain caching')
     await s.t.advance(50)
     s.t.router.when('Actually, answer in Spanish from now on', (input) =>
-      ({
-        kind: 'plan',
-        plan: {
-          ...(atomic(input) as { plan: never }).plan,
-          units: [],
-          sessionRequirements: [{ requirement: requirement('req_es', 'Answer in Spanish', input.messageId), replacesRequirementId: 'req_fr' as RequirementId }],
-          revisions: [{ scope: 'shared-requirement', correction: 'Answer in Spanish', fragment: null, targetDirectiveIds: [], targetRequirementIds: ['req_fr' as RequirementId], affected: [] }],
-        },
+      noUnits(input, {
+        sessionRequirements: [{ requirement: requirement('req_es', 'Answer in Spanish', input.messageId), replacesRequirementId: 'req_fr' as RequirementId }],
+        revisions: [{ scope: 'shared-requirement', correction: 'Answer in Spanish', fragment: null, targetDirectiveIds: [], targetRequirementIds: ['req_fr' as RequirementId], affected: [] }],
       }),
     )
     await s.t.submit(s.c, 'Actually, answer in Spanish from now on')
