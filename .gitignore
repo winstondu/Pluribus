@@ -22,3 +22,4 @@ docs/presentation/
 .vite/
 test-results/
 playwright-report/
+.claude/worktrees/
