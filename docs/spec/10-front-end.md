@@ -32,6 +32,8 @@ The selected chat style is **Sections**, illustrated by the [chat prototype](../
 | Margin rails and Focus | Always-available chain association for each message | [09](09-debug-views.md) |
 | "New output ↓" | Shown when new output arrives while the reader is scrolled away | [03](03-transcript-and-placement.md) |
 
+Opening another conversation does not stop work in the previous one (Q100). A second Committee tab shows an already-open state while the first owns execution (Q99).
+
 ### Controls
 
 | Control | Where | Effect |
@@ -42,7 +44,7 @@ The selected chat style is **Sections**, illustrated by the [chat prototype](../
 | Retry | A failed, stopped, or interrupted section; a request | Starts a new attempt; on a request, only its unfinished sections |
 | Regenerate | Completed work with a superseded-input note | Cancels any of that work still in progress and redoes it against the new version |
 | Undo split | Split messages, until one shows answer text or gets a reply | Restores one atomic request |
-| Retry / Continue without / Cancel | A paused queue item | The recovery choice |
+| Retry / Continue without / Cancel | A dependency-recovery queue item | The recovery choice |
 | Choose section | Target-ambiguity modal above the composer | Picks among candidate sections (Q95) |
 | Choose work to redo | Choice-with-default modal above the composer | Edits the pre-selection until the default runs (Q95) |
 | Answer | Clarification question | Reply to the question through its reply affordance; an untargeted next message may also be recognized as the answer (Q98) |
@@ -74,7 +76,7 @@ Text the specification pins down. Other copy is the builder's choice.
 
 ### States a section can show
 
-Pending (responding bubble), streaming, completed, failed, stopped, interrupted, cancelled, superseded. A request as a whole never shows failed or cancelled.
+Pending (responding bubble), streaming, paused awaiting user input, completed, failed, stopped, interrupted, cancelled, superseded. A request as a whole never shows failed or cancelled.
 
 ### Accessibility and motion
 
@@ -89,7 +91,8 @@ Pending (responding bubble), streaming, completed, failed, stopped, interrupted,
 | Retry policy | Standard | Standard, Persistent, or Manual (Q47) |
 | Wait before a default choice runs | 30 seconds | (Q45) |
 | Concurrency limit | 4 | (Q60) |
-| Model per role | — | Answers (including work continuing from a join-back), decomposition, synthesis for join chains, decisions (Q65, Q90) |
+| Model per role | — | Answers (including work continuing from a join-back), decomposition, synthesis for join chains, decisions (Q65, Q90); MVP answer/decomposition choices come from the tested compatibility list (Q107) |
+| Ordered-message decomposition | Implementation default | Decomposer option: decompose ordered requests or keep them atomic; combined total limits remain atomic (Q102, Q104) |
 | Decision confidence thresholds | Tuned on the routing corpus | Sent to the backend (Q74) |
 | Dependency attachment | Strategy selection by rules; configured strategy, used when selection is off: tree walk, long unbranched runs searched; hop between branch points off; candidate sections from the lexical index; decision budget 2% of the conversation's log; context summaries off | The referent strategy and start at the trunk base, both used when selection is off; hop between branch points, used whenever the tree walk runs: a message about a section inside an unbranched run continues from the run's last section, which saves decision tokens and makes the answer read everything after the relevant part of the run; strategy selection (off, rules, or decision model); the candidate source (none, or the lexical index); the decision budget (absolute, or a share of the conversation's log); whether context summaries are used and generated ([architecture](11-architecture.md#dependency-attachment)) |
 | OpenRouter key | None | Pasted by the user; settings show only whether a key is configured (Q64, Q73) |
@@ -117,7 +120,7 @@ The backend owns all coordination: routing, scheduling, context assembly, and re
 | Stop | A section, or a whole request | [08](08-failure-and-recovery.md) |
 | Retry | A section, or a whole request | [08](08-failure-and-recovery.md) |
 | Regenerate | An item with a superseded-input note | [06](06-revisions.md) |
-| Continue without | A paused request | [08](08-failure-and-recovery.md) |
+| Continue without | A request paused for dependency recovery | [08](08-failure-and-recovery.md) |
 | Cancel | A paused request | [08](08-failure-and-recovery.md) |
 | Answer elicitation | The elicitation and the user's choice | [07](07-elicitation.md) |
 | Undo split | A set of split messages | [02](02-messages-and-decomposition.md) |

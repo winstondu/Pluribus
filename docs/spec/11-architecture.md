@@ -33,7 +33,7 @@ Every part of the design must preserve these. Invariants 1 to 10 come from the a
 
 The Committee backend comprises the orchestrator and the coordinator (scheduling, dependency tracking, context assembly). It runs either embedded in the client or on a server. Both deployments are TypeScript and share as much code as possible behind one interface (Q55, Q62; ADR-0005). A client-only design is not the target: the server deployment must remain possible.
 
-- **Embedded:** the backend runs in a Web Worker. Closing the tab is the interrupted case (Q52, Q62).
+- **Embedded:** the backend runs in a Web Worker. Closing the tab is the interrupted case (Q52, Q62). Only one active Committee tab executes work per browser profile/origin; a second tab shows an already-open state until ownership is released (Q99). Switching conversations in the owning tab leaves background work running under the app-wide concurrency limit (Q100).
 - **Server:** the client talks to the backend over WebSocket, or SSE plus POST (Q62). The server backend and its store are built after the embedded one (Q63, Q66).
 
 Interrupted execution in either deployment is recovered by the retry setting (Q52, Q54).
@@ -139,7 +139,9 @@ Each submitted message passes through four stages (Q59):
    - affected work, for shared-requirement revisions (Q44).
 2. **Generative decomposition**, only when the gate judges the message composite: structured fragments with exact source spans, requirement scope, and candidate dependencies.
 3. **Deterministic validation:** dependencies are acyclic, no subset bypasses a full join-back, and split messages are ordered topologically (Q53).
-4. **Scheduling** (see below).
+4. **Scheduling** (see below). Before visible answer generation, a typed readiness result establishes ready versus clarification needed; reuse routing/decomposition findings when sufficient, otherwise use a preparation step (Q103).
+
+Messages with a combined total output limit remain atomic and skip decomposition (Q102).
 
 Both the original text and any generated rewrite are recorded (Q59). Whether trivial messages skip the decision gate is decided after latency is measured (Q59).
 
@@ -413,7 +415,7 @@ The embedded Web Worker calls OpenRouter directly, with no CORS proxy (Q72). Jev
   - generative decomposition;
   - synthesis, for join chains only (Q65, Q90);
   - the pinned decision model (Q74).
-- **Embedded:** configurable from the frontend. **Server:** set by server environment settings (Q65).
+- **Embedded:** configurable from the frontend. MVP answer/decomposition choices are restricted to a small tested compatibility list, covering structured preparation and streamed clarification signals for the relevant roles (Q107). **Server:** set by server environment settings (Q65).
 - Each attempt records the model it used (Q65).
 
 ## Inspection

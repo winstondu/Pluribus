@@ -119,7 +119,7 @@ Rules cite the question that settled them, such as (Q33). The questions, the use
 
 ## Changing the specification
 
-- Number new questions from Q99. Ask them in batches, each with a recommendation so that "yes" accepts it.
-- Record each question, recommendation, and verbatim answer in `docs/archive/decisions/`, add it to the archive's decision index, then edit the affected document here so it states the current behavior without history.
+- Continue numbering after the latest question in the [implementation interview](../implementation/implementation-interview.md). Ask questions in dependency-ready batches, each with a recommendation so that "yes" accepts it.
+- Record new questions, recommendations, and verbatim answers in that interview, then edit the affected specification so it states the current behavior. The Q1–Q98 archive remains historical and read-only.
 - New terms go in the glossary, free of implementation detail. Write an ADR only for a substantial, hard-to-reverse trade-off.
 - Choices that do not affect a user-visible promise are left to the build and listed in the [build plan](12-build-plan.md#left-to-the-build).

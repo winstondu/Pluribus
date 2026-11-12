@@ -11,7 +11,7 @@ The user's intact submitted message, preserved even when its work is decomposed.
 _Avoid_: Fragment (for the intact submission)
 
 **Atomic message**:
-A request treated as one coherent intent; tightly related topics or an integrated output can form one atomic message.
+A request treated as one coherent intent; tightly related topics, an integrated output, or a combined total output limit can make it atomic.
 _Avoid_: Single-topic message
 
 **Composite message**:
@@ -97,7 +97,7 @@ A user-initiated redo of work whose input has since been replaced, cancelling an
 _Avoid_: Retry, revision
 
 **Paused**:
-A dependency-queued request whose prerequisite failed, was stopped, or was interrupted, waiting for the user's recovery choice.
+Work waiting for user action: either input needed to continue its answer, or a recovery choice after its prerequisite failed, was stopped, or was interrupted. Its pause reason determines how it can resume.
 
 **Dependency-queued message**:
 A submitted request waiting for a required result from in-flight work, distinct from independent work that is eligible to proceed.
@@ -122,7 +122,7 @@ Additional responses that ask for missing information and later deliver the affe
 An elicitation that pre-selects a reasonable, reversible action and carries it out if the user does not answer.
 
 **Recovery choice**:
-The elicitation shown for a paused request: retry the prerequisite, continue without it, or cancel. It has no default.
+The elicitation shown for a dependency-recovery pause: retry the prerequisite, continue without it, or cancel. It has no default.
 
 ### Routing
 
