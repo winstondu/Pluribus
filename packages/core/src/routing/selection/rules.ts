@@ -28,12 +28,16 @@ import type { GenealogyShape, StrategySelection, StrategySelector } from '../../
  *   more often than it is the subject. A trunk that never splits is the
  *   conversation itself, where replies to earlier answers are the normal
  *   case: off.
- * - **Hop between branch points** when a run below a split has `HOP_SKIP`
- *   or more answers before its last: each skipped answer saves about 108
- *   tokens, a reply inside the run costs a further request and about 280.
+ * - **Hop between branch points** is not chosen, by these rules or by any
+ *   selector. It places a unit on the last answer of a run it refers to, so
+ *   the answer reads everything after the relevant part of the run: a
+ *   trade between decision tokens and what an answer reads that the shape
+ *   of the genealogy says nothing about. It is used as the user set it.
+ *   (The rule that used to turn it on, a run of six or more answers below a
+ *   split, was derived for the switch's earlier meaning, in which the
+ *   answers skipped were still searched and the placement did not change.)
  */
 export const TRUNK_SKIP = 12
-export const HOP_SKIP = 5
 export const FURTHER_REQUEST_ROOM = 6_000
 
 export function chooseByRules(shape: GenealogyShape, tokenBudget: number = Number.POSITIVE_INFINITY): { readonly choice: StrategyChoice; readonly reason: string } {
@@ -48,15 +52,10 @@ export function chooseByRules(shape: GenealogyShape, tokenBudget: number = Numbe
   }
   const trunk = shape.longestTrunk
   const startAtTrunkBase = trunk !== null && trunk.endsInSplit && trunk.listedBeforeEnd >= TRUNK_SKIP
-  const run = shape.longestBranchRun
-  const hopBetweenBranchPoints = run !== null && run.sections - 1 >= HOP_SKIP
-  const switches = [
-    startAtTrunkBase ? `starting at the trunk base (a trunk with ${trunk?.listedBeforeEnd ?? 0} listed answers before its split)` : null,
-    hopBetweenBranchPoints ? `hopping between branch points (a run of ${run?.sections ?? 0} answers below a split)` : null,
-  ].filter((text): text is string => text !== null)
+  const switches = startAtTrunkBase ? `, starting at the trunk base (a trunk with ${trunk?.listedBeforeEnd ?? 0} listed answers before its split)` : ''
   return {
-    choice: { strategy: 'tree-walk', startAtTrunkBase, hopBetweenBranchPoints, searchLongRuns: true },
-    reason: `${shape.beyondWindow} ${shape.beyondWindow === 1 ? 'answer is' : 'answers are'} older than the routing request lists, which only the tree walk reaches; long runs are searched${switches.length > 0 ? `, ${switches.join(' and ')}` : ''}.`,
+    choice: { strategy: 'tree-walk', startAtTrunkBase, searchLongRuns: true },
+    reason: `${shape.beyondWindow} ${shape.beyondWindow === 1 ? 'answer is' : 'answers are'} older than the routing request lists, which only the tree walk reaches; long runs are searched${switches}.`,
   }
 }
 

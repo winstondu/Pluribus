@@ -1,7 +1,7 @@
 import type { DecisionBudget } from '@committee/protocol'
-import type { Probe, ReferentOperations, ReferentUnit } from '../../ports'
+import type { PointProbe, Probe, ReferentOperations, ReferentUnit, SegmentProbe } from '../../ports'
 import { onePassProbes } from './one-pass'
-import { probe, strategyFromPolicy, type ReferentPolicy, type SearchInput, type SearchOutcome } from './search'
+import { probe, strategyFromPolicy, type ReferentPolicy, type RunEnd, type SearchInput, type SearchOutcome } from './search'
 import { ancestorsOf, joinBacksOf, reduceToNonAncestors, segmentFrom, stretchOf, type GroupNode, type SectionNode, type TreeNode } from './tree'
 
 /**
@@ -38,16 +38,47 @@ import { ancestorsOf, joinBacksOf, reduceToNonAncestors, segmentFrom, stretchOf,
  *   one round. The first round rides in the routing request as far as that
  *   request lists what it names.
  * - **The budget is a hard stop.** Before each round the walk checks that
- *   the round and its fallback both fit. When they do not, it asks about
+ *   the round and its fallback both fit (the fallback as it would be after
+ *   the round: see hop between branch points below). When they do not, it asks about
  *   the listed nodes it has not asked about in one round, if that fits, and
  *   stops; when the fallback is what cannot be afforded, it goes on for as
  *   long as its own rounds fit.
  *
- * The two switches (`settings.routing.treeWalk`) change which sections of a
- * part are asked about by themselves at once: with `startAtTrunkBase`, of a
- * root's run only the last; with `hopBetweenBranchPoints`, of any other run
- * only the last. The sections skipped are searched, however few, and the
- * last is asked about again beside the ones the search opens.
+ * The two switches (`settings.routing.treeWalk`):
+ *
+ * - **`startAtTrunkBase`** changes which sections of a root's run are asked
+ *   about by themselves at once: only the last. The sections skipped are
+ *   searched, however few, and the last is asked about again beside the
+ *   ones the search opens.
+ * - **`hopBetweenBranchPoints`** drops the search for the last relevant
+ *   node of a run. The walk only learns whether the unit refers to the run:
+ *   from the Points on its sections that are known anyway, and from one
+ *   round of Segments over the sections that are not (a Point when it is
+ *   one section, and for a candidate section the walk starts at; nothing
+ *   when a Point of the run is already confirmed). No part is opened. A run that is plausible is descended below as always,
+ *   and its last section is taken as the unit's referent in the run with
+ *   the highest of those scores (`RunEnd`), although it was not asked about
+ *   by itself: its context holds the whole run. A relevant descendant
+ *   stands for it like for any ancestor, so it is the referent only of a
+ *   run that ends the line of relevance. Details:
+ *   - when a run that continues from the last section would not fit what a
+ *     run may read (`SearchInput.continuable`), the deepest section that
+ *     does is taken, and the sections below it are searched as with the
+ *     switch off;
+ *   - a member of a sibling group is asked about by itself beside its
+ *     group, as with the switch off, and is no evidence for the run below
+ *     it: the group as a whole may be what the unit refers to;
+ *   - a part in which every section was already asked about by itself has
+ *     nothing to save: its last relevant node stands, as with the switch
+ *     off;
+ *   - a correction needs the exact section it revises: for a corrective
+ *     unit the switch changes nothing;
+ *   - old answers that nothing was built on (`loneAnswers`) are not a run:
+ *     they are searched as with the switch off;
+ *   - the fallback does not ask about a section whose run was asked about
+ *     in its place: that answer stands. A run whose question was not sent
+ *     has nothing standing for it, and its listed sections are asked about
+ *     by themselves in the fallback as with the switch off.
  */
 export const treeWalkPolicy: ReferentPolicy = {
   name: 'tree-walk',
@@ -67,26 +98,39 @@ export const treeWalkPolicy: ReferentPolicy = {
   async search(input, ops): Promise<SearchOutcome> {
     const walk: Walk = { input, ops, units: new Map() }
     const steps = together(input.units.map((unit) => walkUnit(walk, unit)))
-    // The fallback: what one pass would have asked in the routing request and the walk has not asked yet.
+    // The fallback: what one pass would have asked in the routing request and the walk has not asked yet. A section
+    // whose run was asked about in its place (hop between branch points) is not asked about after all: that answer
+    // stands. `after`: the fallback as it would be once the round at hand is answered, which is what room is kept for.
     const listed = onePassProbes(input, ops)
+    const unasked = (after: boolean): Probe[] =>
+      listed.filter((p) => {
+        if (ops.known(p) !== null) return false
+        const state = walk.units.get(p.unit)
+        return p.kind !== 'point' || !state || !(state.stoodFor.has(p.node) || (after && state.asking.has(p.node)))
+      })
+    // The runs whose last section stands for them go with whatever the walk ends on.
+    const ended = (outcome: SearchOutcome): SearchOutcome => {
+      const runEnds = runEndsOf(walk)
+      return outcome.ok && runEnds.length > 0 ? { ...outcome, runEnds } : outcome
+    }
     for (let step = steps.next(); !step.done; step = steps.next()) {
       const round = distinct(step.value)
-      const fallback = listed.filter((p) => ops.known(p) === null)
-      const limit = ops.fits(round, fallback)
+      const fallback = unasked(false)
+      const limit = ops.fits(round, unasked(true))
       // Not room for this round and the fallback: fall back, unless the fallback is what does not fit and this round does.
       // Then walking on is all the budget still buys (a price guard on short answers leaves less than the fallback costs).
-      if (limit && (ops.fits(fallback) === null || ops.fits(round) !== null)) return fallBack(ops, fallback, limit)
+      if (limit && (ops.fits(fallback) === null || ops.fits(round) !== null)) return ended(await fallBack(ops, fallback, limit))
       const result = await ops.ask(round)
       if (result.kind === 'failed') return { ok: false, error: result.error }
-      if (result.kind === 'refused') return fallBack(ops, listed.filter((p) => ops.known(p) === null), result.limit)
+      if (result.kind === 'refused') return ended(await fallBack(ops, unasked(false), result.limit))
     }
-    return { ok: true, stop: null }
+    return ended({ ok: true, stop: null })
   },
 }
 
 export const treeWalkStrategy = strategyFromPolicy(treeWalkPolicy)
 
-/** Fewer sections than this are not worth skipping: one question about one section is the question about that section. */
+/** Fewer sections than this are not worth skipping, or asking about in one Segment: one question about one section is the question about that section. */
 export const MIN_SKIPPED = 2
 /** The most parts one run is split into in one round. */
 export const SEARCH_FANOUT = 24
@@ -157,6 +201,12 @@ interface UnitWalk {
   readonly examined: Map<TreeNode, { upTo: number; relevant: boolean }>
   /** Tops of the runs whose child runs were taken up. */
   readonly descended: Set<TreeNode>
+  /** By the top of an unbranched run, with hop between branch points on: what stands for the run, or null when nothing does. */
+  readonly hops: Map<TreeNode, Hop | null>
+  /** The sections that were asked about as a run, with an answer: what the last sections of their runs stand for. */
+  readonly stoodFor: Set<TreeNode>
+  /** The sections the round at hand asks about as a run. */
+  readonly asking: Set<TreeNode>
   /** The steps under way. A step that takes up further runs adds them here: a tree of any depth is walked without nesting. */
   readonly tasks: Step<unknown>[]
 }
@@ -211,7 +261,7 @@ function* drain(state: UnitWalk): Step<void> {
 
 function* walkUnit(walk: Walk, unit: ReferentUnit): Step<void> {
   const { input, ops } = walk
-  const state: UnitWalk = { examined: new Map(), descended: new Set(), tasks: [] }
+  const state: UnitWalk = { examined: new Map(), descended: new Set(), hops: new Map(), stoodFor: new Set(), asking: new Set(), tasks: [] }
   walk.units.set(unit, state)
   const set = startSet(input.tree.roots, input.starts(unit))
   const started = new Set<TreeNode>()
@@ -282,16 +332,18 @@ function loneAnswers(walk: Walk, unit: ReferentUnit, parts: readonly StartPart[]
 
 /** A start: its part of the run, and, as soon as that is plausible, the rest of the run and the runs below. */
 function* fromStart(walk: Walk, unit: ReferentUnit, state: UnitWalk, part: StartPart, plausible: () => void): Step<void> {
-  yield* examine(walk, unit, state, part.stretch, part.upTo, true, () => {
+  // A start that is not a root is a candidate section: a hint at the section itself.
+  const hint = part.start.parent !== null && part.start.kind === 'section' ? part.start : null
+  yield* examine(walk, unit, state, part.stretch, part.upTo, true, hint, () => {
     plausible()
-    state.tasks.push(examine(walk, unit, state, part.stretch, part.stretch.length - 1, false, () => undefined))
+    state.tasks.push(examine(walk, unit, state, part.stretch, part.stretch.length - 1, false, null, () => undefined))
     below(walk, unit, state, part.stretch)
   })
 }
 
 /** A run reached from above: examined, and descended below as soon as it is plausible. */
 function* descend(walk: Walk, unit: ReferentUnit, state: UnitWalk, stretch: readonly TreeNode[]): Step<void> {
-  yield* examine(walk, unit, state, stretch, stretch.length - 1, false, () => below(walk, unit, state, stretch))
+  yield* examine(walk, unit, state, stretch, stretch.length - 1, false, null, () => below(walk, unit, state, stretch))
 }
 
 /** Takes up the child runs of a run: below its end, and the join-back of every sibling group one of its sections is a member of. */
@@ -309,7 +361,7 @@ function below(walk: Walk, unit: ReferentUnit, state: UnitWalk, stretch: readonl
  * `plausible`, once, as soon as anything in the run is plausible: the first
  * round of a part settles that, before a search of it is finished.
  */
-function* examine(walk: Walk, unit: ReferentUnit, state: UnitWalk, stretch: readonly TreeNode[], upTo: number, start: boolean, plausible: () => void): Step<void> {
+function* examine(walk: Walk, unit: ReferentUnit, state: UnitWalk, stretch: readonly TreeNode[], upTo: number, start: boolean, hint: SectionNode | null, plausible: () => void): Step<void> {
   const top = stretch[0]
   if (!top) return
   const seen = state.examined.get(top) ?? { upTo: -1, relevant: false }
@@ -322,7 +374,7 @@ function* examine(walk: Walk, unit: ReferentUnit, state: UnitWalk, stretch: read
   const part = stretch.slice(seen.upTo + 1, upTo + 1)
   seen.upTo = upTo
   let told = false
-  yield* examinePart(walk, unit, part, start, top.parent === null, () => {
+  yield* examinePart(walk, unit, state, part, start, top.parent === null, hopOf(walk, unit, state, stretch), hint, () => {
     seen.relevant = true
     if (!told) plausible()
     told = true
@@ -339,10 +391,62 @@ function groupsOf(walk: Walk, part: readonly TreeNode[]): GroupNode[] {
   return [...new Set(part.flatMap((node) => (node.kind === 'group' ? [node] : joinBacksOf(walk.input.tree, node))))]
 }
 
-/** Whether only the last section of a part is asked about by itself at once and the others are searched, however few. */
+/** Whether only the last section of a part is asked about by itself at once and the others are searched, however few: a trunk, with start at the trunk base on. */
 function endsOnly(walk: Walk, sections: readonly SectionNode[], trunk: boolean): boolean {
-  const { startAtTrunkBase, hopBetweenBranchPoints } = walk.input.settings
-  return (trunk ? startAtTrunkBase : hopBetweenBranchPoints) && sections.length - 1 >= MIN_SKIPPED
+  return trunk && walk.input.settings.startAtTrunkBase && sections.length - 1 >= MIN_SKIPPED
+}
+
+// ───────────────────────────── hop between branch points ─────────────────────────────
+
+/** What stands for an unbranched run when its last relevant section is not searched for. */
+interface Hop {
+  /** The section a unit that refers to the run is placed on: its last, or the deepest one a run can continue from. */
+  readonly node: SectionNode
+  /** The sections of the run, first to last. */
+  readonly run: readonly SectionNode[]
+  /** The sections `node` stands for: those at or above it that are not a member of a sibling group. */
+  readonly covers: ReadonlySet<SectionNode>
+  /** Every probe that says whether the unit refers to one of them. */
+  readonly evidence: (PointProbe | SegmentProbe)[]
+  /** Whether a section of the run went without its own question because of the hop, and what was asked in its place was answered. */
+  taken: boolean
+}
+
+/**
+ * The hop of a run for a unit, or null: the switch is off, the unit is a
+ * correction, no section of the run can be continued from, or fewer than
+ * `MIN_SKIPPED` sections would be stood for.
+ */
+function hopOf(walk: Walk, unit: ReferentUnit, state: UnitWalk, stretch: readonly TreeNode[]): Hop | null {
+  const { input } = walk
+  const top = stretch[0]
+  if (!top || !input.settings.hopBetweenBranchPoints || input.corrective(unit)) return null
+  const known = state.hops.get(top)
+  if (known !== undefined) return known
+  const run = sectionsOf(stretch)
+  // Context only grows down a run: the deepest section a run can continue from is found from the end.
+  let reach = run.length - 1
+  for (let at = run[reach]; input.continuable && at && !input.continuable(at); at = run[reach]) reach--
+  const node = run[reach]
+  const covers = new Set(run.slice(0, reach + 1).filter((section) => joinBacksOf(input.tree, section).length === 0))
+  const hop: Hop | null = node && covers.has(node) && covers.size >= MIN_SKIPPED ? { node, run, covers, evidence: [], taken: false } : null
+  state.hops.set(top, hop)
+  return hop
+}
+
+/** The question about these sections of the run was answered, or needed no asking: from here on the run's last section stands for them. */
+function take(state: UnitWalk, hop: Hop, sections: readonly SectionNode[]): void {
+  hop.taken = true
+  for (const section of sections) state.stoodFor.add(section)
+}
+
+/** The runs of a walk whose last section was taken without a search inside them. */
+function runEndsOf(walk: Walk): RunEnd[] {
+  const out: RunEnd[] = []
+  for (const [unit, state] of walk.units) {
+    for (const hop of state.hops.values()) if (hop?.taken) out.push({ unit, node: hop.node, run: hop.run, evidence: hop.evidence })
+  }
+  return out
 }
 
 /** The sections skipped when only the last is asked about by itself: those the routing request lists and the older ones are searched apart, so that the first can ride. */
@@ -370,7 +474,7 @@ function opening(walk: Walk, unit: ReferentUnit, part: readonly TreeNode[], star
   return out
 }
 
-function* examinePart(walk: Walk, unit: ReferentUnit, part: readonly TreeNode[], start: boolean, trunk: boolean, plausible: () => void): Step<void> {
+function* examinePart(walk: Walk, unit: ReferentUnit, state: UnitWalk, part: readonly TreeNode[], start: boolean, trunk: boolean, hop: Hop | null, hint: SectionNode | null, plausible: () => void): Step<void> {
   const { input, ops } = walk
   const { clear, floor } = input.relevance
   const sections = sectionsOf(part)
@@ -385,17 +489,46 @@ function* examinePart(walk: Walk, unit: ReferentUnit, part: readonly TreeNode[],
   }
   const end = sections[sections.length - 1]
   if (end && endsOnly(walk, sections, trunk)) {
+    const whole = hop !== null && sections.every((node) => hop.covers.has(node))
+    if (whole) for (const node of sections) state.asking.add(node)
     yield* need(ops, first)
     asked.note()
-    yield* follow(walk, unit, skippedParts(walk, unit, sections), corrective ? 'all' : 'last', { node: end }, asked)
+    if (hop && whole) {
+      // The base by itself and the answers before it in Segments say whether the unit refers to the trunk: no part is opened.
+      take(state, hop, sections)
+      hop.evidence.push(...first.filter((p) => p.kind === 'point' || p.kind === 'segment'))
+    } else yield* follow(walk, unit, skippedParts(walk, unit, sections), corrective ? 'all' : 'last', { node: end }, asked)
   } else {
+    // The run's last section stands for these: their own questions are not waited for, and those not asked yet are not asked.
+    const stoodFor = (node: SectionNode): boolean => hop !== null && hop.covers.has(node)
+    const before = first.filter((p) => p.kind !== 'point' || !stoodFor(p.node))
     // What comes next depends on the sections already asked about by themselves: wait for those the routing request did not carry.
-    if (first.some((p) => p.kind === 'point' && ops.known(p) === null)) yield* need(ops, first)
-    const groups = first.filter((p) => ops.known(p) === null)
+    if (before.some((p) => p.kind === 'point' && ops.known(p) === null)) yield* need(ops, before)
+    const groups = before.filter((p) => ops.known(p) === null)
     // A confirmed section stands for everything above it in the run, except for a correction.
     const confirmed = corrective ? -1 : sections.findLastIndex((node) => (ops.known(probe.point(unit, node)) ?? 0) >= clear)
     const open = sections.slice(confirmed + 1).filter((node) => ops.known(probe.point(unit, node)) === null)
-    if (weight(walk, unit, open) <= input.settings.searchRunsOverTokens) yield* need(ops, [...groups, ...open.map((node) => probe.point(unit, node))])
+    const skipped = open.filter(stoodFor)
+    const mine = sections.filter(stoodFor)
+    hop?.evidence.push(...mine.map((node) => probe.point(unit, node)))
+    if (hop && skipped.length > 0) {
+      // Hop: whether the unit refers to the run is all that is asked. A Point of the run that is confirmed has answered it.
+      const answered = hop.evidence.some((p) => (ops.known(p) ?? 0) >= clear)
+      // A candidate section is where the source says the referent is: it is asked about by itself, beside the Segments over the rest.
+      const hinted = skipped.filter((node) => node === hint)
+      const rest = skipped.filter((node) => node !== hint)
+      const about: (PointProbe | SegmentProbe)[] = answered ? [] : [...hinted, ...(rest.length < MIN_SKIPPED ? rest : [])].map((node) => probe.point(unit, node))
+      if (!answered && rest.length >= MIN_SKIPPED) about.push(...split(walk, unit, rest).map((nodes) => probe.segment(unit, nodes)))
+      hop.evidence.push(...about)
+      asked.probes.push(...about)
+      // What the last section does not stand for is examined as with the switch off: a member of a sibling group, and sections a run cannot continue from.
+      const others = open.filter((node) => !stoodFor(node))
+      for (const node of mine) state.asking.add(node)
+      if (weight(walk, unit, others) <= input.settings.searchRunsOverTokens) yield* need(ops, [...groups, ...about, ...others.map((node) => probe.point(unit, node))])
+      else yield* together([all(need(ops, [...groups, ...about])), all(search(walk, unit, others, 'last', { node: null }, asked))])
+      // Only now: a round the budget refused leaves the run with nothing standing for it.
+      take(state, hop, mine)
+    } else if (weight(walk, unit, open) <= input.settings.searchRunsOverTokens) yield* need(ops, [...groups, ...open.map((node) => probe.point(unit, node))])
     else yield* together([all(need(ops, groups)), all(search(walk, unit, open, corrective ? 'all' : 'last', { node: null }, asked))])
   }
   asked.note()

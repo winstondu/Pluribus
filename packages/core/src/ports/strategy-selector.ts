@@ -32,7 +32,7 @@ export interface StrategySelector {
 export interface RunShape {
   /** Answer sections in the run. */
   readonly sections: number
-  /** Of those, listed in the pipeline's request, the run's last one not counted: what "start at the trunk base" and hops would skip there. */
+  /** Of those, listed in the pipeline's request, the run's last one not counted: what "start at the trunk base" would skip there. */
   readonly listedBeforeEnd: number
   /** Of those, older than the pipeline's window. */
   readonly unlisted: number

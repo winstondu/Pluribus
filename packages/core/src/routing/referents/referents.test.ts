@@ -786,12 +786,17 @@ describe('long runs · search', () => {
     expect(unit(routed).targets).toEqual(sections(['T40']))
   })
 
-  test('DA3 · a yes to a question about several sections only says where to look next: a message is placed on a section only if that section was asked about by itself', async () => {
-    // Within the budget the chunk that names T40 is followed, its sections are asked about one by one, and the reply is placed on T40.
+  test('DA3 · a yes to a question about several sections only says where to look next; with hop between branch points on, a unit that refers to an unbranched run is placed on the run\'s last section and on no other; a correction is never placed this way', async () => {
+    const t40 = (routed: Routed): string => `m_s${routed.numberOf.get('T40') ?? '?'}`
+    const candidatesOf = (routed: Routed) => planOf(routed).decision.units[0]?.targets.candidates.map((c) => c.sectionId) ?? []
+    const askedIds = (routed: Routed): string[] => routed.requests.flatMap((r) => Object.keys(r.questions))
+
+    // Off. Within the budget the chunk that names T40 is followed, its sections are asked about one by one, and the reply is placed on T40.
     const found = await route(flat(200), 'Make the answer to question 40 shorter', { own: { T40: 0.9 } })
     expect(chunkIds(found, 1).length).toBeGreaterThan(0)
-    expect(ownIds(found, 2)).toContain(`m_s${found.numberOf.get('T40') ?? '?'}`)
+    expect(ownIds(found, 2)).toContain(t40(found))
     expect(unit(found).targets).toEqual(sections(['T40']))
+    expect(planOf(found).decision.runEnds).toBeUndefined()
 
     // The budget ends the search between the chunk and its sections: the request that would list them is never sent.
     const routed = await route(flat(200), 'Make the answer to question 40 shorter', { own: { T40: 0.9 } }, { budget: { requests: 1 } })
@@ -799,14 +804,48 @@ describe('long runs · search', () => {
     const chunk = Object.entries(routed.requests[1]?.questions ?? {}).find(([, q]) => q.instructions.includes('"Question 40"'))
     expect(chunk?.[0]).toMatch(/^m_c\d+_\d+$/)
     // The chunk was answered yes, and no section it names was asked about by itself: none of them is a candidate.
-    expect(routed.requests.flatMap((r) => Object.keys(r.questions))).not.toContain(`m_s${routed.numberOf.get('T40') ?? '?'}`)
+    expect(askedIds(routed)).not.toContain(t40(routed))
     expect(routed.outcome.kind).toBe('plan')
     expect(unit(routed).targets).toEqual([])
     const decision = planOf(routed).decision
-    expect(decision.units[0]?.targets.candidates.map((c) => c.sectionId)).not.toContain(sceneIds.section('T40'))
-    for (const neighbour of ['T39', 'T41', 'T36', 'T44']) expect(decision.units[0]?.targets.candidates.map((c) => c.sectionId)).not.toContain(sceneIds.section(neighbour))
+    expect(candidatesOf(routed)).not.toContain(sceneIds.section('T40'))
+    for (const neighbour of ['T39', 'T41', 'T36', 'T44']) expect(candidatesOf(routed)).not.toContain(sceneIds.section(neighbour))
     // Nothing asked about by itself was plausible, so nothing was taken, and the user was not asked.
     expect(decision.budgetStop).toEqual({ limit: 'requests', fallback: 'one-pass', bestFound: [] })
+
+    // On. The same yes places the message on the last section of the run, T199, whose context holds T40: no part is opened.
+    const hop: RouteOptions = { treeWalk: { hopBetweenBranchPoints: true } }
+    const hopped = await route(flat(200), 'Make the answer to question 40 shorter', { own: { T40: 0.9 } }, hop)
+    expect(hopped.requests).toHaveLength(2)
+    expect(ownIds(hopped, 1)).toEqual([])
+    expect(unit(hopped).targets).toEqual(sections(['T199']))
+    expect(unit(hopped).placement).toEqual({ kind: 'continue', buildsOn: { kind: 'node', nodeId: sceneIds.node('T199') } })
+    // Never on another section of the run: the one it refers to and its neighbours were not asked about by themselves and are not candidates.
+    expect(askedIds(hopped)).not.toContain(t40(hopped))
+    for (const other of ['T40', 'T39', 'T41', 'T36', 'T44', 'T175']) expect(candidatesOf(hopped)).not.toContain(sceneIds.section(other))
+    // The decision records which run, which section and on what evidence.
+    const [end, ...more] = planOf(hopped).decision.runEnds ?? []
+    expect(more).toEqual([])
+    expect(end).toMatchObject({ unit: 'message', sectionId: sceneIds.section('T199'), confidence: 0.9, run: { firstSectionId: sceneIds.section('T0'), lastSectionId: sceneIds.section('T199'), sections: 200 }, limitedByContext: false })
+    // The evidence is the question that named T40 among the sections of its part.
+    const yes = Object.values(hopped.requests[1]?.questions ?? {}).find((q) => q.instructions.includes('"Question 40"'))
+    expect(yes?.instructions).toContain(`: S${hopped.numberOf.get((end?.evidence.firstSectionId ?? '').replace(/^sec_/, '')) ?? '?'} (`)
+    expect(end?.evidence.sections).toBeGreaterThan(1)
+    expect(planOf(hopped).decision.explanation).toContain('Hop between branch points is on, so no answer inside a run was searched for: the message on "turn 199", the last answer of a run of 200')
+    // Without a yes about the run nothing is placed on it: the hop is not a guess. Here the budget allows no question about the run.
+    const unasked = await route(flat(200), 'Make the answer to question 40 shorter', { own: { T40: 0.9 } }, { ...hop, budget: { requests: 0 } })
+    expect(unasked.requests).toHaveLength(1)
+    expect(unit(unasked).targets).toEqual([])
+    expect(planOf(unasked).decision.runEnds).toBeUndefined()
+
+    // A correction needs the exact section it revises: it is searched for whatever the switch says, request for request.
+    const rules: Rules = { own: { T40: 0.9 }, corrective: 0.95 }
+    const corrected = await route(flat(200), 'Actually, the answer to question 40 should say four days, not five', rules, hop)
+    const searched = await route(flat(200), 'Actually, the answer to question 40 should say four days, not five', rules)
+    expect(corrected.requests).toEqual(searched.requests)
+    expect(corrected.outcome).toEqual(searched.outcome)
+    expect(planOf(corrected).revisions[0]?.targetDirectiveIds).toEqual([sceneIds.directive('T40')])
+    expect(planOf(corrected).decision.runEnds).toBeUndefined()
   })
 
   test('search · the budget guard holds: a search never sends more than the budget allows, whatever the tree', async () => {
@@ -873,60 +912,129 @@ describe('long runs · start at the trunk base', () => {
 
 describe('long runs · hop between branch points', () => {
   const on: Partial<TreeWalkSettings> = { hopBetweenBranchPoints: true }
+  const chunk = (routed: Routed, from: string, to: string) => `m_c${routed.numberOf.get(from) ?? '?'}_${routed.numberOf.get(to) ?? '?'}`
 
-  test('hops · off, every section of a branch is asked about; on, only the end of each run, and the sections skipped as one chunk question per run', async () => {
-    // The brief and the end of the run P was built on are plausible: the line the walk descends along.
-    const rules: Rules = { own: { brief: 0.3, A4: 0.3, P: 0.9 } }
-    const off = await route(runs, 'Change variant P', rules)
+  test('hops · off, the sections of a run are asked about by themselves and the reply goes to the one it names; on, each run is one question and the reply goes to the run\'s last section', async () => {
+    // The brief is plausible: the line the walk descends along.
+    const rules: Rules = { own: { brief: 0.3, B1: 0.9 } }
+    const off = await route(runs, 'Tell me more about pricing step 1', rules)
     // The ends of the lines (P, Q and B3) were asked about in the first pass, in the pipeline's request.
     expect(new Set(ownIds(off, 0))).toEqual(new Set(ids(off, 's', ['brief', 'P', 'Q', 'B3'])))
     expect(new Set(off.asked[1])).toEqual(new Set(ids(off, 's', ['A', 'A1', 'A2', 'A3', 'A4', 'B', 'B1', 'B2'])))
-    const routed = await route(runs, 'Change variant P', rules, { treeWalk: on })
-    const chunk = (from: string, to: string) => `m_c${routed.numberOf.get(from) ?? '?'}_${routed.numberOf.get(to) ?? '?'}`
-    expect(new Set(routed.asked[1])).toEqual(new Set([...ids(routed, 's', ['A4']), chunk('A', 'A3'), chunk('B', 'B2')]))
-    // A part of a run is shown with what the run was built on, as context.
-    expect(routed.requests[1]?.state).toContain(`S${routed.numberOf.get('A')} to S${routed.numberOf.get('A3')} are consecutive answers of one line of work that builds on S${routed.numberOf.get('brief')}`)
-    // The lines of the skipped sections are not sent.
-    expect(routed.requests[1]?.state).not.toContain('"press 2"')
-    // P and Q were asked about in the first pass: no request is needed below the hop.
+    expect(unit(off).targets).toEqual(sections(['B1']))
+    expect(planOf(off).decision.runEnds).toBeUndefined()
+
+    const routed = await route(runs, 'Tell me more about pricing step 1', rules, { treeWalk: on })
+    // The pipeline's request is the same. Then one question per run about the sections not asked about yet, and nothing after it.
+    expect(routed.requests[0]).toEqual(off.requests[0])
     expect(routed.requests).toHaveLength(2)
-    expect(unit(routed).targets).toEqual(sections(['P']))
+    expect(new Set(routed.asked[1])).toEqual(new Set([chunk(routed, 'A', 'A4'), chunk(routed, 'B', 'B2')]))
+    // A part of a run is shown with what the run was built on, as context; the lines of its sections are not sent.
+    expect(routed.requests[1]?.state).toContain(`S${routed.numberOf.get('B')} to S${routed.numberOf.get('B2')} are consecutive answers of one line of work that builds on S${routed.numberOf.get('brief')}`)
+    expect(routed.requests[1]?.state).not.toContain('"pricing 1"')
+    expect(furtherTokens(routed)).toBeLessThan(furtherTokens(off))
+    // The reply continues from B3, the last section of the run, which reads B1 and everything after it.
+    expect(unit(routed).targets).toEqual(sections(['B3']))
+    expect(unit(routed).placement).toEqual({ kind: 'continue', buildsOn: { kind: 'node', nodeId: sceneIds.node('B3') } })
+    expect(planOf(routed).decision.runEnds).toEqual([
+      {
+        unit: 'message',
+        sectionId: sceneIds.section('B3'),
+        confidence: 0.9,
+        run: { firstSectionId: sceneIds.section('B'), lastSectionId: sceneIds.section('B3'), sections: 4 },
+        evidence: { firstSectionId: sceneIds.section('B'), lastSectionId: sceneIds.section('B2'), sections: 3 },
+        limitedByContext: false,
+      },
+    ])
+    expect(planOf(routed).decision.explanation).toContain(
+      'Hop between branch points is on, so no answer inside a run was searched for: the message on "pricing 3", the last answer of a run of 4 ("pricing 0" to "pricing 3"): a question about 3 of its answers together, "pricing 0" to "pricing 2", scored 0.90. That answer was not asked about by itself; its context holds the whole run.',
+    )
   })
 
-  test('hops · a reply to a section in the middle of a skipped run is resolved exactly, never placed on the end of the hop', async () => {
-    const routed = await route(runs, 'Redo pricing step 1', { own: { brief: 0.3, B1: 0.9 } }, { treeWalk: on })
-    expect(routed.requests).toHaveLength(3)
-    // The run's sections, and its end again beside them.
-    expect(new Set(routed.asked[2])).toEqual(new Set(ids(routed, 's', ['B', 'B1', 'B2', 'B3'])))
-    expect(unit(routed).targets).toEqual(sections(['B1']))
-    expect(unit(routed).placement).toEqual({ kind: 'continue', buildsOn: { kind: 'node', nodeId: sceneIds.node('B1') } })
+  test('hops · the last section carries the score of the question about its run: a clear run places without asking the user, a weakly plausible one is a weak referent and the user is asked', async () => {
+    const clear = await route(runs, 'Tell me more about pricing step 1', { own: { brief: 0.3 }, chunk: { B1: 0.75 } }, { treeWalk: on })
+    expect(clear.outcome.kind).toBe('plan')
+    expect(unit(clear).targets).toEqual(sections(['B3']))
+    const weak = await route(runs, 'Tell me more about pricing step 1', { own: { brief: 0.3 }, chunk: { B1: 0.4 } }, { treeWalk: on })
+    expect(weak.outcome).toEqual({ kind: 'target-ambiguity', candidates: [{ sectionId: sceneIds.section('B3'), confidence: 0.4 }, { sectionId: sceneIds.section('brief'), confidence: 0.3 }] })
+    // Off, a section that is weakly plausible by itself is asked about the same way.
+    const off = await route(runs, 'Tell me more about pricing step 1', { own: { brief: 0.3, B1: 0.4 } })
+    expect(off.outcome).toEqual({ kind: 'target-ambiguity', candidates: [{ sectionId: sceneIds.section('B1'), confidence: 0.4 }, { sectionId: sceneIds.section('brief'), confidence: 0.3 }] })
   })
 
-  test('hops · the end of a hop that looked relevant on its own is asked about again beside the run it ends: the reply goes to the section it names', async () => {
-    // Asked about before the run it ends is looked into (here in the first pass), B3 scores 0.8 for a reply to B1; beside the run it does not.
-    // B3 is built on B1, so its first score would have taken the reply.
-    const routed = await route(runs, 'Redo pricing step 1', { own: { brief: 0.3, B1: 0.9 }, alone: { B3: 0.8 } }, { treeWalk: on })
-    expect(routed.asked[0]).toContain(`m_s${routed.numberOf.get('B3') ?? '?'}`)
-    expect(routed.asked[2]).toContain(`m_s${routed.numberOf.get('B3') ?? '?'}`)
-    expect(unit(routed).targets).toEqual(sections(['B1']))
-    expect(unit(routed).placement).toEqual({ kind: 'continue', buildsOn: { kind: 'node', nodeId: sceneIds.node('B1') } })
-  })
-
-  test('hops · when the budget ends before the skipped run is looked into, the walk falls back to asking every listed section in one request: still resolved exactly', async () => {
-    const routed = await route(runs, 'Redo pricing step 1', { own: { brief: 0.3, B1: 0.9 } }, { treeWalk: on, budget: { requests: 1 } })
-    // The walk keeps room for its fallback, so with one request left it asks the one-pass questions instead of hopping.
-    expect(routed.requests).toHaveLength(2)
-    expect(chunkIds(routed, 1)).toEqual([])
-    expect(planOf(routed).decision.explanation).toContain('its request budget was reached, so the remaining candidates were asked about in one request')
-    expect(unit(routed).targets).toEqual(sections(['B1']))
-  })
-
-  test('hops · a relevant chunk of a skipped run is reason to descend below the end of the hop', async () => {
-    // Nothing but the chunk says the line A…A4 is relevant; the walk still looks below A4 and inside the run.
+  test('hops · a relevant descendant stands for the run above it: the walk goes on below a run that is referred to, and the last section of that run is not a target', async () => {
     const routed = await route(runs, 'Compare press step 2 with variant Q', { own: { brief: 0.3, A2: 0.9, Q: 0.9 }, several: 0.9 }, { treeWalk: on })
-    expect(new Set(routed.asked[2])).toEqual(new Set(ids(routed, 's', ['A', 'A1', 'A2', 'A3', 'A4'])))
-    // Q was built on A2: the nearer section stands for its ancestor.
+    expect(routed.requests).toHaveLength(2)
+    expect(new Set(routed.asked[1])).toEqual(new Set([chunk(routed, 'A', 'A4'), chunk(routed, 'B', 'B2')]))
+    // Q was built on A…A4 and was asked about by itself in the first pass.
     expect(unit(routed).targets).toEqual(sections(['Q']))
+    expect(planOf(routed).decision.runEnds).toBeUndefined()
+  })
+
+  test('hops · a trunk is a run like any other: in a long flat conversation a reply to an old answer continues from the latest one, for one request less', async () => {
+    const off = await route(flat(200), 'Tell me more about question 40', { own: { T40: 0.9 } })
+    const routed = await route(flat(200), 'Tell me more about question 40', { own: { T40: 0.9 } }, { treeWalk: on })
+    expect(off.requests).toHaveLength(3)
+    expect(routed.requests).toEqual(off.requests.slice(0, 2))
+    expect(unit(off).placement).toEqual({ kind: 'continue', buildsOn: { kind: 'node', nodeId: sceneIds.node('T40') } })
+    expect(unit(routed).placement).toEqual({ kind: 'continue', buildsOn: { kind: 'node', nodeId: sceneIds.node('T199') } })
+  })
+
+  test('hops · a correction keeps the search: the section it revises is found by itself, request for request as with the switch off', async () => {
+    const rules: Rules = { own: { brief: 0.3, B1: 0.9 }, corrective: 0.95 }
+    const off = await route(runs, 'Actually, pricing step 1 should be in euros, not dollars', rules)
+    const routed = await route(runs, 'Actually, pricing step 1 should be in euros, not dollars', rules, { treeWalk: on })
+    expect(routed.requests).toEqual(off.requests)
+    expect(routed.outcome).toEqual(off.outcome)
+    expect(planOf(routed).revisions[0]?.targetDirectiveIds).toEqual([sceneIds.directive('B1')])
+  })
+
+  test('hops · room is kept only for a fallback the round at hand does not stand for: with one request left the runs are asked about, not their sections one by one', async () => {
+    const off = await route(runs, 'Tell me more about pricing step 1', { own: { brief: 0.3, B1: 0.9 } }, { budget: { requests: 1 } })
+    // Off, the walk keeps room for its fallback, so with one request left it asks the one-pass questions instead of walking on.
+    expect(off.requests).toHaveLength(2)
+    expect(planOf(off).decision.explanation).toContain('its request budget was reached, so the remaining candidates were asked about in one request')
+    expect(unit(off).targets).toEqual(sections(['B1']))
+    // On, the question about the two runs stands for every listed section the fallback would ask about: nothing is left to keep room for.
+    const routed = await route(runs, 'Tell me more about pricing step 1', { own: { brief: 0.3, B1: 0.9 } }, { treeWalk: on, budget: { requests: 1 } })
+    expect(routed.requests).toHaveLength(2)
+    expect(new Set(routed.asked[1])).toEqual(new Set([chunk(routed, 'A', 'A4'), chunk(routed, 'B', 'B2')]))
+    expect(planOf(routed).decision.budgetStop).toBeUndefined()
+    expect(unit(routed).targets).toEqual(sections(['B3']))
+    // With no request left a run is not asked about, and nothing is placed on it: the best node found so far is the brief, asked about by itself.
+    const none = await route(runs, 'Tell me more about pricing step 1', { own: { brief: 0.3, B1: 0.9 } }, { treeWalk: on, budget: { requests: 0 } })
+    expect(none.requests).toHaveLength(1)
+    expect(unit(none).targets).toEqual(sections(['brief']))
+    expect(planOf(none).decision.runEnds).toBeUndefined()
+  })
+
+  test('hops · when the budget ends after a run was asked about, its last section is the best node found so far and the user is not asked', async () => {
+    // As `runs`, with B…B3 split into C…C2 and D…D2 below it, and C2 split again: more levels than the budget reaches.
+    const s = scene().chain('c', 'root', 'brief').add('brief', { chain: 'c', on: null, label: 'brief', request: 'Plan a product launch', answer: 'Noted.' })
+    const line = (chain: string, handles: readonly string[], on: string, label: string): void => {
+      s.chain(chain, 'branch', chain)
+      handles.forEach((h, i) => s.add(h, { chain, on: i === 0 ? on : (handles[i - 1] ?? null), label: `${label} ${i}`, request: `${label} step ${i}`, answer: `Done ${h}` }))
+    }
+    line('a', ['A', 'A1', 'A2'], 'brief', 'press')
+    line('b', ['B', 'B1', 'B2', 'B3'], 'brief', 'pricing')
+    line('x', ['C', 'C1', 'C2'], 'B3', 'discounts')
+    line('y', ['D', 'D1', 'D2'], 'B3', 'bundles')
+    line('v', ['E', 'E1', 'E2'], 'C2', 'coupons')
+    line('w', ['F', 'F1', 'F2'], 'C2', 'vouchers')
+    // The run B…B3 is weakly plausible, which would be put to the user. After the request about it, the next one and its fallback do not both fit.
+    const rules: Rules = { own: { brief: 0.3 }, chunk: { B1: 0.4 } }
+    const routed = await route(s.build(), 'Tell me more about pricing step 1', rules, { treeWalk: on, budget: { requests: 2 } })
+    expect(routed.requests).toHaveLength(3)
+    // A2, D2, E2 and F2 end their lines and were asked about by themselves in the first pass.
+    expect(chunkIds(routed, 1)).toEqual([chunk(routed, 'A', 'A1'), chunk(routed, 'B', 'B3')])
+    // The fallback asks about the listed sections by themselves, except those of the two runs that were asked about as runs.
+    expect(new Set(routed.asked[2])).toEqual(new Set(ids(routed, 's', ['C', 'C1', 'C2', 'D', 'D1', 'E', 'E1', 'F', 'F1'])))
+    expect(routed.outcome.kind).toBe('plan')
+    expect(planOf(routed).decision.budgetStop).toEqual({ limit: 'requests', fallback: 'one-pass', bestFound: [{ unit: 'message', sectionIds: sections(['B3']), confidence: 0.4 }] })
+    expect(unit(routed).targets).toEqual(sections(['B3']))
+    expect(planOf(routed).decision.runEnds?.[0]).toMatchObject({ sectionId: sceneIds.section('B3'), confidence: 0.4 })
+    // With room to finish, the same weak run is put to the user.
+    expect((await route(s.build(), 'Tell me more about pricing step 1', rules, { treeWalk: on })).outcome.kind).toBe('target-ambiguity')
   })
 })
 
@@ -957,11 +1065,13 @@ describe.each(COMBINATIONS)('long runs · %s', (_name, treeWalk) => {
     expect(unit(routed).placement).toEqual({ kind: 'continue', buildsOn: { kind: 'sibling-group', groupId: sceneIds.group('G') } })
   })
 
-  test('referents · a reply to a section in the middle of a run is resolved exactly, in the trunk and in a branch', async () => {
+  test('referents · a reply to a section in the middle of a run is resolved exactly, in the trunk and in a branch; with hops, it goes to the last section of a run that was not asked about section by section', async () => {
+    const hops = treeWalk.hopBetweenBranchPoints === true
     const inTrunk = await route(trunk, 'Make the answer to question 4 shorter', { own: { T4: 0.9 } }, { treeWalk })
-    expect(unit(inTrunk).targets).toEqual(sections(['T4']))
+    // Every section of the trunk is listed and rides in the pipeline's request by itself, unless the trunk base stands in for them.
+    expect(unit(inTrunk).targets).toEqual(sections([hops && treeWalk.startAtTrunkBase ? 'T9' : 'T4']))
     const inBranch = await route(runs, 'Redo press step 2', { own: { brief: 0.3, A2: 0.9 } }, { treeWalk })
-    expect(unit(inBranch).targets).toEqual(sections(['A2']))
+    expect(unit(inBranch).targets).toEqual(sections([hops ? 'A4' : 'A2']))
   })
 
   test('referents · a correction keeps the ancestor it revises beside its relevant descendant', async () => {

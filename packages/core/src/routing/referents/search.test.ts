@@ -22,6 +22,7 @@ import {
   type SearchInput,
   type TreeNode,
 } from './index'
+import type { SectionNode } from './tree'
 
 /**
  * The search with no decision provider at all: the policies run over an
@@ -126,6 +127,8 @@ interface Run {
   readonly corrective?: boolean
   readonly answer?: (probe: Probe) => number | undefined
   readonly riding?: (probe: Probe) => boolean
+  /** Whether a run that continues from the section fits what a run may read. Left out: every section does. */
+  readonly continuable?: (node: SectionNode) => boolean
 }
 
 async function search(tree: ReferentTree, run: Run, policy = treeWalkPolicy) {
@@ -143,10 +146,11 @@ async function search(tree: ReferentTree, run: Run, policy = treeWalkPolicy) {
     settings: { ...SETTINGS, ...run.settings },
     starts: () => run.candidates ?? [],
     corrective: () => run.corrective ?? false,
+    ...(run.continuable ? { continuable: run.continuable } : {}),
   }
   const outcome = await policy.search(input, ops)
   if (!outcome.ok) throw new Error('The oracle does not fail')
-  const referents = unitReferents(input, ops, UNIT, outcome.stop !== null)
+  const referents = unitReferents(input, ops, UNIT, outcome.stop !== null, outcome.runEnds)
   const found = referents.sections.filter((s) => s.confidence >= CLEAR).map((s) => s.sectionId)
   return { ops, outcome, referents, found: new Set(found) }
 }
@@ -493,34 +497,262 @@ describe('the walk', () => {
   })
 })
 
-describe('the switches', () => {
-  test.each([
-    ['start at the trunk base', { startAtTrunkBase: true }],
-    ['hop between branch points', { hopBetweenBranchPoints: true }],
-    ['both', { startAtTrunkBase: true, hopBetweenBranchPoints: true }],
-  ] as const)('switches · %s: the search still returns exactly the deepest relevant nodes', async (_name, settings) => {
+describe('start at the trunk base', () => {
+  test('trunk base · the search still returns exactly the deepest relevant nodes', async () => {
     for (const [, sc] of SHAPES) {
       const tree = treeOf(sc)
       const next = sequence(23)
       for (let round = 0; round < 15; round++) {
         const relevant = withAncestors(pick(tree.nodes, next, 1 + Math.floor(next() * 3)))
-        const { found } = await search(tree, { relevant, settings })
+        const { found } = await search(tree, { relevant, settings: { startAtTrunkBase: true } })
         expect(found).toEqual(sectionsOf(deepest(relevant)))
       }
     }
   })
 
-  test('switches · with a switch on, only the last section of a run is asked about by itself at once and the ones skipped are one Segment, however few', async () => {
+  test('trunk base · only the last section of a trunk is asked about by itself at once and the ones skipped are one Segment, however few', async () => {
     const tree = treeOf(earlySplit(4))
     const n = (handle: string) => nodeOf(tree, handle)
-    const kinds = (round: readonly Probe[] | undefined) => (round ?? []).map((p) => (p.kind === 'point' ? p.node.key : p.kind === 'segment' ? `${p.nodes[0]?.key}…${p.nodes[p.nodes.length - 1]?.key}` : p.kind))
     const trunk = await search(tree, { relevant: new Set([n('T4')]), settings: { startAtTrunkBase: true } })
     expect(kinds(trunk.ops.rounds[0])).toEqual([n('T4').key, `${n('T0').key}…${n('T3').key}`])
-    // Below the split the branches are short: asked about one by one, the switch for them being off.
+    // Below the split the branches are short: asked about one by one.
     expect(kinds(trunk.ops.rounds[1]).length).toBe(8)
-    const hops = await search(tree, { relevant: new Set([n('T4')]), settings: { hopBetweenBranchPoints: true } })
-    expect(kinds(hops.ops.rounds[0])).toHaveLength(5)
-    expect(kinds(hops.ops.rounds[1])).toEqual([n('a3').key, `${n('a0').key}…${n('a2').key}`, n('b3').key, `${n('b0').key}…${n('b2').key}`])
+  })
+})
+
+/** A round as what it asks about: a section or group by its key, a Segment by its first and last section. */
+const kinds = (round: readonly Probe[] | undefined): string[] => (round ?? []).map((p) => (p.kind === 'point' || p.kind === 'group' ? p.node.key : p.kind === 'segment' ? `${p.nodes[0]?.key}…${p.nodes[p.nodes.length - 1]?.key}` : p.kind))
+const rounds = (ops: OracleOperations): string[][] => ops.rounds.map((round) => kinds(round))
+const HOP: Partial<TreeWalkSettings> = { hopBetweenBranchPoints: true }
+const idOf = (node: TreeNode): SectionId => (node as SectionNode).entry.section.sectionId
+
+describe('hop between branch points', () => {
+  test.each([
+    [20, { off: { rounds: 2, probes: 14 }, on: { rounds: 1, probes: 2 } }],
+    [200, { off: { rounds: 2, probes: 29 }, on: { rounds: 1, probes: 17 } }],
+    [2_000, { off: { rounds: 3, probes: 43 }, on: { rounds: 1, probes: 24 } }],
+  ] as const)('hop · one relevant section in a run of %i: off, it is searched for and found; on, one round of Segments and the run\'s last section', async (n, expected) => {
+    const tree = treeOf(chain(n))
+    const target = nodeOf(tree, `T${Math.floor(n / 2)}`)
+    const end = nodeOf(tree, `T${n - 1}`)
+    const off = await search(tree, { relevant: new Set([target]) })
+    expect(off.found).toEqual(sectionsOf([target]))
+    expect({ rounds: off.ops.rounds.length, probes: off.ops.probes() }).toEqual(expected.off)
+    expect(off.outcome.runEnds).toBeUndefined()
+    expect(off.referents.runEnds).toBeUndefined()
+
+    const on = await search(tree, { relevant: new Set([target]), settings: HOP })
+    expect({ rounds: on.ops.rounds.length, probes: on.ops.probes() }).toEqual(expected.on)
+    // Only Segments: no part is opened and no section is asked about by itself, the last one included.
+    expect(on.ops.rounds.flat().every((p) => p.kind === 'segment')).toBe(true)
+    expect(on.ops.confirmed(UNIT, end)).toBe(false)
+    // The unit is placed on the run's last section and on no other: not on the section it refers to, not on a neighbor of it.
+    expect(on.referents.sections).toEqual([{ sectionId: idOf(end), confidence: 0.95 }])
+    const evidence = on.ops.rounds.flat().find((p) => p.kind === 'segment' && p.nodes.includes(target as SectionNode))
+    expect(on.referents.runEnds).toEqual([
+      {
+        sectionId: idOf(end),
+        confidence: 0.95,
+        run: { firstSectionId: idOf(nodeOf(tree, 'T0')), lastSectionId: idOf(end), sections: n },
+        evidence: evidence?.kind === 'segment' ? { firstSectionId: idOf(evidence.nodes[0] as TreeNode), lastSectionId: idOf(evidence.nodes[evidence.nodes.length - 1] as TreeNode), sections: evidence.nodes.length } : null,
+        limitedByContext: false,
+      },
+    ])
+  })
+
+  test('hop · a run nothing refers to is asked about in the same round as with the switch off, and nothing is placed on it', async () => {
+    const tree = treeOf(chain(200))
+    const off = await search(tree, { relevant: new Set() })
+    const on = await search(tree, { relevant: new Set(), settings: HOP })
+    expect(rounds(on.ops)).toEqual(rounds(off.ops))
+    expect(on.referents.sections).toEqual([])
+    expect(on.referents.runEnds).toBeUndefined()
+  })
+
+  test('hop · a run that is only weakly plausible gives its last section that weak score: a weak referent, not a confirmed one', async () => {
+    const tree = treeOf(chain(200))
+    const t40 = nodeOf(tree, 'T40')
+    const weak = (probe: Probe): number | undefined => (probe.kind === 'segment' && probe.nodes.includes(t40 as SectionNode) ? 0.4 : undefined)
+    const { found, referents } = await search(tree, { relevant: new Set(), answer: weak, settings: HOP })
+    expect(found).toEqual(new Set())
+    expect(referents.sections).toEqual([{ sectionId: idOf(nodeOf(tree, 'T199')), confidence: 0.4 }])
+    expect(referents.runEnds?.[0]).toMatchObject({ confidence: 0.4 })
+  })
+
+  test('hop · a relevant descendant: the walk goes on below the run as always, and the deepest relevant run\'s last section stands for the ones above it', async () => {
+    const tree = treeOf(earlySplit(8))
+    const n = (handle: string) => nodeOf(tree, handle)
+    // The trunk and branch a are referred to: no section is asked about by itself anywhere.
+    const both = await search(tree, { relevant: new Set([n('T2'), n('a5')]), settings: HOP })
+    expect(rounds(both.ops)).toEqual([[`${n('T0').key}…${n('T4').key}`], [`${n('a0').key}…${n('a7').key}`, `${n('b0').key}…${n('b7').key}`]])
+    expect(both.found).toEqual(sectionsOf([n('a7')]))
+    expect(both.referents.runEnds?.map((end) => end.sectionId)).toEqual([idOf(n('a7'))])
+    // Only the trunk is: the branches below it are still examined, and the trunk's last section is where the unit goes.
+    const trunk = await search(tree, { relevant: new Set([n('T2')]), settings: HOP })
+    expect(rounds(trunk.ops)).toEqual(rounds(both.ops))
+    expect(trunk.found).toEqual(sectionsOf([n('T4')]))
+    // Off, the same two units are placed on the sections they refer to.
+    expect((await search(tree, { relevant: new Set([n('T2'), n('a5')]) })).found).toEqual(sectionsOf([n('a5')]))
+    expect((await search(tree, { relevant: new Set([n('T2')]) })).found).toEqual(sectionsOf([n('T2')]))
+  })
+
+  test('hop · the search returns the last section of every run that holds a deepest relevant node, and of no other run', async () => {
+    for (const [, sc] of SHAPES) {
+      const tree = treeOf(sc)
+      const next = sequence(29)
+      for (let round = 0; round < 15; round++) {
+        const relevant = withAncestors(pick(tree.nodes, next, 1 + Math.floor(next() * 3)))
+        const { found, ops } = await search(tree, { relevant, settings: HOP })
+        // A group stands for its members; a section for the last section of its run. A lone old answer is its own run.
+        const expected = deepest(relevant).flatMap((node) => (node.kind === 'group' ? node.members : [stretchOf(node).filter((s) => s.kind === 'section').pop() as TreeNode]))
+        expect(found).toEqual(sectionsOf(reduceToNonAncestors(expected)))
+        expect(ops.probes()).toBeLessThanOrEqual((await search(tree, { relevant })).ops.probes())
+      }
+    }
+  })
+
+  test('hop · a correction needs the exact section it revises: for a corrective unit the switch changes no round and no referent', async () => {
+    for (const [, sc] of SHAPES) {
+      const tree = treeOf(sc)
+      const next = sequence(31)
+      for (let round = 0; round < 10; round++) {
+        const relevant = withAncestors(pick(tree.nodes, next, 1 + Math.floor(next() * 3)))
+        const off = await search(tree, { relevant, corrective: true })
+        const on = await search(tree, { relevant, corrective: true, settings: HOP })
+        expect(rounds(on.ops)).toEqual(rounds(off.ops))
+        expect(on.referents).toEqual(off.referents)
+        expect(on.outcome.runEnds).toBeUndefined()
+      }
+    }
+  })
+
+  test('hop · context limit: the deepest section a run can continue from is taken, and the sections below it are searched as with the switch off', async () => {
+    const tree = treeOf(chain(200))
+    const n = (handle: string) => nodeOf(tree, handle)
+    const upTo = (last: number) => (node: SectionNode): boolean => Number(node.entry.section.title.slice(1)) <= last
+    // T120 is the deepest section whose context fits: a unit that refers to T40 goes there, and the record says why not to the end.
+    const limited = await search(tree, { relevant: new Set([n('T40')]), settings: HOP, continuable: upTo(120) })
+    expect(limited.found).toEqual(sectionsOf([n('T120')]))
+    expect(limited.referents.runEnds?.[0]).toMatchObject({ sectionId: idOf(n('T120')), limitedByContext: true, run: { lastSectionId: idOf(n('T199')), sections: 200 } })
+    // T121 … T199 are not stood for by T120: a unit that refers to one of them has it found by a Point, as with the switch off.
+    const below = await search(tree, { relevant: new Set([n('T150')]), settings: HOP, continuable: upTo(120) })
+    expect(below.found).toEqual(sectionsOf([n('T150')]))
+    expect(below.ops.confirmed(UNIT, n('T150'))).toBe(true)
+    expect(below.referents.runEnds).toBeUndefined()
+    // Both: the section found below stands for T120, which is its ancestor.
+    const both = await search(tree, { relevant: new Set([n('T40'), n('T150')]), settings: HOP, continuable: upTo(120) })
+    expect(both.found).toEqual(sectionsOf([n('T150')]))
+    // With no limit the last section is taken; when not even the first section fits, nothing is, and the run is searched.
+    expect((await search(tree, { relevant: new Set([n('T40')]), settings: HOP, continuable: () => true })).found).toEqual(sectionsOf([n('T199')]))
+    const none = await search(tree, { relevant: new Set([n('T40')]), settings: HOP, continuable: () => false })
+    expect(none.found).toEqual(sectionsOf([n('T40')]))
+    expect(rounds(none.ops)).toEqual(rounds((await search(tree, { relevant: new Set([n('T40')]) })).ops))
+  })
+
+  test('hop · a sibling group still resolves to the whole group; a member is asked about by itself and is no evidence for the run below it', async () => {
+    // T0 … T3, then a and b in parallel from T3, joined back; a is continued by a1, a2, a3.
+    const s = scene().chain('c', 'root', 'chat')
+    for (let i = 0; i < 4; i++) add(s, `T${i}`, 'c', i === 0 ? null : `T${i - 1}`)
+    for (const side of ['a', 'b']) {
+      s.chain(side, 'fork', side)
+      add(s, side, side, 'T3')
+    }
+    s.group('G', { base: 'c', start: 'T3', members: ['a', 'b'], open: false })
+    s.chain('more', 'branch', 'more')
+    for (let i = 1; i <= 3; i++) add(s, `a${i}`, 'more', i === 1 ? 'a' : `a${i - 1}`)
+    const tree = treeOf(s.build())
+    const n = (handle: string) => nodeOf(tree, handle)
+    // The group as a whole: both members, and nothing of the run a was continued by.
+    const group = await search(tree, { relevant: new Set([n('T3'), n('a'), n('group:G')]), settings: HOP })
+    expect(group.found).toEqual(sectionsOf([n('a'), n('b')]))
+    expect(rounds(group.ops)[1]?.sort()).toEqual([n('group:G').key, n('a').key, n('b').key, `${n('a1').key}…${n('a3').key}`].sort())
+    expect(group.referents.runEnds).toBeUndefined()
+    // One member alone: the member, which was asked about by itself, not the end of the run below it.
+    const member = await search(tree, { relevant: new Set([n('T3'), n('a')]), settings: HOP })
+    expect(member.found).toEqual(sectionsOf([n('a')]))
+    // A section of the run below the member: that run's last section.
+    const run = await search(tree, { relevant: new Set([n('T3'), n('a2')]), settings: HOP })
+    expect(run.found).toEqual(sectionsOf([n('a3')]))
+    expect(run.referents.runEnds?.[0]).toMatchObject({ sectionId: idOf(n('a3')), run: { firstSectionId: idOf(n('a')), sections: 4 }, evidence: { firstSectionId: idOf(n('a1')), sections: 3 } })
+  })
+
+  test('hop · candidate sections and the two safeguards: a start that is relevant ends its run, one that is not hands over, and Several starts the displaced ancestors too', async () => {
+    const tree = treeOf(earlySplit(60))
+    const n = (handle: string) => nodeOf(tree, handle)
+    // a20 is the candidate; a5, above it, is what the unit refers to. One round: the candidate by itself, a0 … a19 in Segments. The rest of the run needs no question.
+    const started = await search(tree, { relevant: new Set([n('a5')]), candidates: [n('a20')], settings: HOP })
+    expect(rounds(started.ops)).toEqual([[n('a20').key, `${n('a0').key}…${n('a11').key}`, `${n('a12').key}…${n('a19').key}`]])
+    expect(started.found).toEqual(sectionsOf([n('a59')]))
+    // A candidate that is itself what the unit refers to is evidence for its run like any Point: the run's last section is taken.
+    const hit = await search(tree, { relevant: new Set([n('a20')]), candidates: [n('a20')], settings: HOP })
+    expect(hit.ops.rounds).toHaveLength(1)
+    expect(hit.found).toEqual(sectionsOf([n('a59')]))
+    expect(hit.referents.runEnds?.[0]).toMatchObject({ sectionId: idOf(n('a59')), evidence: { firstSectionId: idOf(n('a20')), sections: 1 } })
+
+    const short = treeOf(earlySplit(8))
+    const m = (handle: string) => nodeOf(short, handle)
+    // The candidate is in branch a; what is relevant is in branch b, under the trunk: the root the candidate displaced is started.
+    const handed = await search(short, { relevant: new Set([m('T4'), m('b3')]), candidates: [m('a2')], settings: HOP })
+    expect(rounds(handed.ops)).toEqual([[m('a2').key, `${m('a0').key}…${m('a1').key}`], [`${m('T0').key}…${m('T4').key}`], [`${m('a3').key}…${m('a7').key}`, `${m('b0').key}…${m('b7').key}`]])
+    expect(handed.found).toEqual(sectionsOf([m('b7')]))
+    // Several: the candidate's run is relevant, and the root it displaced is started all the same, so the other branch is found.
+    const several = (probe: Probe): number | undefined => (probe.kind === 'several' ? 0.9 : undefined)
+    const both = await search(short, { relevant: new Set([m('T4'), m('a2'), m('b3')]), candidates: [m('a2')], answer: several, riding: (p) => p.kind === 'several', settings: HOP })
+    expect(both.found).toEqual(sectionsOf([m('a7'), m('b7')]))
+  })
+
+  test('hop · first-pass sections: a Point the routing request carried is evidence for its run, and a run whose sections were all asked about by themselves is left as it is', async () => {
+    const tree = treeOf(earlySplit(8))
+    const n = (handle: string) => nodeOf(tree, handle)
+    // The ends of the two branches rode in the routing request. b7 is confirmed: its run needs no question, and it stands for the trunk.
+    const firstPass = (p: Probe): boolean => p.kind === 'point' && (p.node === n('a7') || p.node === n('b7'))
+    const confirmed = await search(tree, { relevant: new Set([n('T4'), n('b7')]), riding: firstPass, settings: HOP })
+    expect(rounds(confirmed.ops)).toEqual([[`${n('T0').key}…${n('T4').key}`], [`${n('a0').key}…${n('a6').key}`]])
+    expect(confirmed.found).toEqual(sectionsOf([n('b7')]))
+    expect(confirmed.referents.runEnds).toBeUndefined()
+    // Every section rode: there is nothing to save, and the last relevant section stands, as with the switch off.
+    const ten = treeOf(chain(10))
+    const all = await search(ten, { relevant: new Set([nodeOf(ten, 'T3')]), riding: (p) => p.kind === 'point', settings: HOP })
+    expect(all.ops.rounds).toEqual([])
+    expect(all.found).toEqual(sectionsOf([nodeOf(ten, 'T3')]))
+    expect(all.referents.runEnds).toBeUndefined()
+  })
+
+  test('hop · the budget is a hard stop: what the rounds that were sent say about a run stands, and the best node found so far can be a run\'s last section', async () => {
+    const tree = treeOf(earlySplit(8))
+    const n = (handle: string) => nodeOf(tree, handle)
+    const relevant = new Set([n('T2'), n('a5')])
+    // No round: nothing is known, nothing is placed.
+    const none = await search(tree, { relevant, settings: HOP, budget: { rounds: 0 } })
+    expect(none.ops.rounds).toEqual([])
+    expect(none.found).toEqual(new Set())
+    expect(none.referents.best).toBeNull()
+    // One round: the trunk is relevant, the branches were not asked about. The trunk's last section is the best node found so far.
+    const one = await search(tree, { relevant, settings: HOP, budget: { rounds: 1 } })
+    expect(one.ops.rounds).toHaveLength(1)
+    expect(one.outcome.stop).toEqual({ limit: 'requests', to: 'one-pass' })
+    expect(one.found).toEqual(sectionsOf([n('T4')]))
+    expect(one.referents.best).toEqual({ sectionIds: [idOf(n('T4'))], confidence: 0.95 })
+    // The same search again is the same search; with room it ends on branch a.
+    expect(rounds((await search(tree, { relevant, settings: HOP, budget: { rounds: 1 } })).ops)).toEqual(rounds(one.ops))
+    expect((await search(tree, { relevant, settings: HOP, budget: { rounds: 2 } })).found).toEqual(sectionsOf([n('a7')]))
+  })
+
+  test('hop · with start at the trunk base as well, the base and the Segments above it say whether the trunk is relevant, and no part is opened', async () => {
+    const tree = treeOf(earlySplit(4))
+    const n = (handle: string) => nodeOf(tree, handle)
+    const { ops, found } = await search(tree, { relevant: new Set([n('T2')]), settings: { ...HOP, startAtTrunkBase: true } })
+    expect(rounds(ops)).toEqual([[n('T4').key, `${n('T0').key}…${n('T3').key}`], [`${n('a0').key}…${n('a3').key}`, `${n('b0').key}…${n('b3').key}`]])
+    expect(found).toEqual(sectionsOf([n('T4')]))
+  })
+
+  test('hop · old answers that nothing was built on are not a run: each relevant one is found by itself, as with the switch off', async () => {
+    const tree = treeOf(manyRoots(70))
+    const relevant = new Set(['R3', 'R40', 'X1'].map((h) => nodeOf(tree, h)))
+    const off = await search(tree, { relevant })
+    const on = await search(tree, { relevant, settings: HOP })
+    expect(rounds(on.ops)).toEqual(rounds(off.ops))
+    expect(on.found).toEqual(sectionsOf([...relevant]))
   })
 })
 

@@ -1,11 +1,12 @@
 import type { StrategyChoice, StrategySelectionFallback } from '@committee/protocol'
 import type { SelectorQuestions, StrategySelection, StrategySelector } from '../../ports'
-import { FURTHER_REQUEST_ROOM, HOP_SKIP, TRUNK_SKIP, chooseByRules } from './rules'
+import { FURTHER_REQUEST_ROOM, TRUNK_SKIP, chooseByRules } from './rules'
 
 /**
  * The decision-model strategy selector: one small request about the shape
- * of the genealogy, four typed questions (a `choice` and three `noul`),
- * never free text. The rules stand in when the request fails, when the
+ * of the genealogy, three typed questions (a `choice` and two `noul`),
+ * never free text. Hop between branch points is not asked about: it is the
+ * user's setting (`./rules`). The rules stand in when the request fails, when the
  * model's confidence in the strategy is below the threshold, and when the
  * routing's token budget does not allow the request.
  *
@@ -38,26 +39,22 @@ export function createDecisionSelector(options: { readonly includeMessage?: bool
         return { selector: 'decision-model', choice: { strategy: 'one-pass' }, reason: `The decision model chose one pass for this shape (confidence ${strategy.confidence.toFixed(2)}).`, scores, fallback: null }
       }
       const trunk = result.noul(QUESTION.trunk) ?? 0
-      const hops = result.noul(QUESTION.hops) ?? 0
       const search = result.noul(QUESTION.search) ?? 1
-      Object.assign(scores, { startAtTrunkBase: trunk, hopBetweenBranchPoints: hops, searchLongRuns: search })
+      Object.assign(scores, { startAtTrunkBase: trunk, searchLongRuns: search })
       // A switch is turned on only on a confident yes. The search is the default and is turned off only on a confident no:
       // off, a run too long to list is out of reach.
       const choice: StrategyChoice = {
         strategy: 'tree-walk',
         startAtTrunkBase: trunk >= request.confidence,
-        hopBetweenBranchPoints: hops >= request.confidence,
         searchLongRuns: search > 1 - request.confidence,
       }
-      const on = [choice.searchLongRuns ? 'long runs searched' : 'runs listed', choice.startAtTrunkBase ? 'starting at the trunk base' : null, choice.hopBetweenBranchPoints ? 'hopping between branch points' : null].filter(
-        (text): text is string => text !== null,
-      )
+      const on = [choice.searchLongRuns ? 'long runs searched' : 'runs listed', ...(choice.startAtTrunkBase ? ['starting at the trunk base'] : [])]
       return { selector: 'decision-model', choice, reason: `The decision model chose the tree walk for this shape (confidence ${strategy.confidence.toFixed(2)}): ${on.join(', ')}.`, scores, fallback: null }
     },
   }
 }
 
-const QUESTION = { strategy: 'sel_strategy', trunk: 'sel_trunk', hops: 'sel_hops', search: 'sel_search' } as const
+const QUESTION = { strategy: 'sel_strategy', trunk: 'sel_trunk', search: 'sel_search' } as const
 
 function selectorQuestions(includeMessage: boolean): SelectorQuestions {
   const subject = includeMessage ? 'the new message refers to' : 'a new message refers to'
@@ -73,10 +70,6 @@ function selectorQuestions(includeMessage: boolean): SelectorQuestions {
     [QUESTION.trunk]: {
       type: 'noul',
       instructions: `Does the longest trunk end where the line splits and have ${TRUNK_SKIP} or more listed answers before its last answer? Then asking only about its last answer and searching the rest saves questions.`,
-    },
-    [QUESTION.hops]: {
-      type: 'noul',
-      instructions: `Does the longest run below a split have ${HOP_SKIP + 1} or more answers? Then asking only about the end of each run and searching the rest saves questions.`,
     },
     [QUESTION.search]: {
       type: 'noul',

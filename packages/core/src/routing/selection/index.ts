@@ -9,7 +9,9 @@ import { describeShape, genealogyShape, shapeSignature } from './shape'
  * Strategy selection (docs/build/dependency-decisioning.md · "Strategy selection"; working name
  * "decision-inception"): the optional layer that chooses a routing's
  * referent strategy and tree-walk settings from the shape of the
- * genealogy. With no selector, the settings are used as they are.
+ * genealogy. With no selector, the settings are used as they are. Hop
+ * between branch points is never part of a choice: it is used as the user
+ * set it, whoever chose the rest.
  */
 
 /** A run is never searched above this size: how a choice turns the search of long runs off. */
@@ -25,18 +27,18 @@ export function strategySelectorFor(mode: StrategySelectionMode): StrategySelect
 /** What the settings name, as a choice. */
 export function configuredChoice(routing: Pick<RoutingSettings, 'referentStrategy' | 'treeWalk'>): StrategyChoice {
   if (routing.referentStrategy === 'one-pass') return { strategy: 'one-pass' }
-  const { startAtTrunkBase, hopBetweenBranchPoints, searchRunsOverTokens } = routing.treeWalk
-  return { strategy: 'tree-walk', startAtTrunkBase, hopBetweenBranchPoints, searchLongRuns: searchRunsOverTokens < NEVER_SEARCH_RUNS }
+  const { startAtTrunkBase, searchRunsOverTokens } = routing.treeWalk
+  return { strategy: 'tree-walk', startAtTrunkBase, searchLongRuns: searchRunsOverTokens < NEVER_SEARCH_RUNS }
 }
 
-/** A choice as the pipeline uses it: a strategy, and the tree-walk settings handed to it. The run size that is searched stays the configured one. */
+/** A choice as the pipeline uses it: a strategy, and the tree-walk settings handed to it. The run size that is searched and hop between branch points stay the configured ones. */
 export function applyChoice(choice: StrategyChoice, configured: TreeWalkSettings): { readonly strategy: ReferentStrategy; readonly treeWalk: TreeWalkSettings } {
   if (choice.strategy === 'one-pass') return { strategy: referentStrategyFor('one-pass'), treeWalk: configured }
   return {
     strategy: referentStrategyFor('tree-walk'),
     treeWalk: {
       startAtTrunkBase: choice.startAtTrunkBase,
-      hopBetweenBranchPoints: choice.hopBetweenBranchPoints,
+      hopBetweenBranchPoints: configured.hopBetweenBranchPoints,
       searchRunsOverTokens: choice.searchLongRuns ? Math.min(configured.searchRunsOverTokens, NEVER_SEARCH_RUNS - 1) : NEVER_SEARCH_RUNS,
     },
   }
@@ -80,10 +82,10 @@ export async function selectStrategy(input: StrategySelectionInput): Promise<Str
 /** The choice in a few words, for the routing decision's explanation. */
 export function choiceText(choice: StrategyChoice): string {
   if (choice.strategy === 'one-pass') return 'one pass'
-  const parts = [choice.searchLongRuns ? 'long runs searched' : 'runs listed', choice.startAtTrunkBase ? 'starting at the trunk base' : null, choice.hopBetweenBranchPoints ? 'hopping between branch points' : null]
-  return `the tree walk (${parts.filter((text): text is string => text !== null).join(', ')})`
+  const parts = [choice.searchLongRuns ? 'long runs searched' : 'runs listed', ...(choice.startAtTrunkBase ? ['starting at the trunk base'] : [])]
+  return `the tree walk (${parts.join(', ')})`
 }
 
-export { rulesSelector, chooseByRules, TRUNK_SKIP, HOP_SKIP, FURTHER_REQUEST_ROOM } from './rules'
+export { rulesSelector, chooseByRules, TRUNK_SKIP, FURTHER_REQUEST_ROOM } from './rules'
 export { createDecisionSelector } from './decision'
 export { genealogyShape, shapeSignature, describeShape } from './shape'

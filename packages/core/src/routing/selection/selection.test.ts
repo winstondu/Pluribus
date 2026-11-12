@@ -68,7 +68,6 @@ interface SelectorScript {
   /** The strategy the decision model picks and its confidence; `fail` makes the request fail. */
   readonly strategy?: readonly ['one-pass' | 'tree-walk', number]
   readonly trunk?: number
-  readonly hops?: number
   readonly search?: number
   readonly fail?: boolean
 }
@@ -112,7 +111,6 @@ async function route(
       const answers: { [id: string]: unknown } = {
         sel_strategy: { type: 'choice', choice: strategy, confidence, probabilities: { 'one-pass': strategy === 'one-pass' ? confidence : 1 - confidence, 'tree-walk': strategy === 'tree-walk' ? confidence : 1 - confidence } },
         sel_trunk: { type: 'noul', probability: script.trunk ?? 0.05 },
-        sel_hops: { type: 'noul', probability: script.hops ?? 0.05 },
         sel_search: { type: 'noul', probability: script.search ?? 0.95 },
       }
       return { ok: true, model: 'scripted', answers: answers as never, usage: null }
@@ -137,7 +135,7 @@ const placed = (routed: Routed) => {
 /** The routing's token budget in a scene of default-length answers: the relative budget's floor. */
 const BUDGET = 16_000
 const signatureOf = (sc: Scene, tokenBudget = BUDGET): string => shapeSignature(shapeOf(sc), tokenBudget)
-const TREE_WALK: StrategyChoice = { strategy: 'tree-walk', startAtTrunkBase: false, hopBetweenBranchPoints: false, searchLongRuns: true }
+const TREE_WALK: StrategyChoice = { strategy: 'tree-walk', startAtTrunkBase: false, searchLongRuns: true }
 const J = 'Use those recommendations to make a five-day itinerary.'
 
 describe('the shape of the genealogy', () => {
@@ -225,7 +223,7 @@ describe('the rules', () => {
     expect(chooseByRules(shapeOf(trip(30))).reason).toContain('9 answers are older than the routing request lists')
   })
 
-  test('rules · the trunk base when a trunk with a dozen listed answers has split, never for a trunk that has not; hops when a branch run has six answers', () => {
+  test('rules · the trunk base when a trunk with a dozen listed answers has split, never for a trunk that has not; hop between branch points is never chosen, however long a run below a split', () => {
     // A chain that never splits is the conversation itself: replies to its earlier answers are the normal case.
     expect(chooseByRules(shapeOf(flat(200))).choice).toEqual(TREE_WALK)
     expect(chooseByRules(shapeOf(trunkThatSplits(30))).choice).toEqual({ ...TREE_WALK, startAtTrunkBase: true })
@@ -237,8 +235,10 @@ describe('the rules', () => {
     for (const side of ['X', 'Y']) short.chain(side, 'branch', side).add(side, { chain: side, on: 'T11', label: `side ${side}`, request: `Branch ${side}`, answer: `Answer ${side}` })
     expect(shapeOf(short.build()).longestTrunk).toMatchObject({ listedBeforeEnd: 11, endsInSplit: true })
     expect(chooseByRules(shapeOf(short.build())).choice).toEqual(TREE_WALK)
-    expect(chooseByRules(shapeOf(longBranches(20))).choice).toEqual({ ...TREE_WALK, hopBetweenBranchPoints: true })
-    expect(chooseByRules(shapeOf(longBranches(20))).reason).toContain('hopping between branch points (a run of 7 answers below a split)')
+    // The hop changes where a message is placed: it is the user's setting, and no rule turns it on.
+    expect(shapeOf(longBranches(20)).longestBranchRun).toMatchObject({ sections: 7 })
+    expect(chooseByRules(shapeOf(longBranches(20))).choice).toEqual(TREE_WALK)
+    expect(chooseByRules(shapeOf(longBranches(20))).reason).not.toContain('hop')
   })
 
   test('rules · a choice is applied as a strategy and tree-walk settings; the configured settings are a choice too', () => {
@@ -246,10 +246,13 @@ describe('the rules', () => {
     expect(configuredChoice(DEFAULT_SETTINGS.routing)).toEqual(TREE_WALK)
     expect(configuredChoice({ referentStrategy: 'one-pass', treeWalk: configured })).toEqual({ strategy: 'one-pass' })
     expect(applyChoice({ strategy: 'one-pass' }, configured)).toMatchObject({ strategy: { name: 'one-pass' }, treeWalk: configured })
-    expect(applyChoice({ ...TREE_WALK, hopBetweenBranchPoints: true }, configured)).toMatchObject({
+    expect(applyChoice({ ...TREE_WALK, startAtTrunkBase: true }, configured)).toMatchObject({
       strategy: { name: 'tree-walk' },
-      treeWalk: { startAtTrunkBase: false, hopBetweenBranchPoints: true, searchRunsOverTokens: 1_500 },
+      treeWalk: { startAtTrunkBase: true, hopBetweenBranchPoints: false, searchRunsOverTokens: 1_500 },
     })
+    // Hop between branch points is no part of a choice: it stays as the user set it, whatever is chosen.
+    expect(applyChoice(TREE_WALK, { ...configured, startAtTrunkBase: true, hopBetweenBranchPoints: true }).treeWalk).toEqual({ startAtTrunkBase: false, hopBetweenBranchPoints: true, searchRunsOverTokens: 1_500 })
+    expect(configuredChoice({ referentStrategy: 'tree-walk', treeWalk: { ...configured, hopBetweenBranchPoints: true } })).toEqual(TREE_WALK)
     // Search off: no run is ever large enough to be searched.
     expect(applyChoice({ ...TREE_WALK, searchLongRuns: false }, configured).treeWalk.searchRunsOverTokens).toBe(NEVER_SEARCH_RUNS)
     expect(configuredChoice({ referentStrategy: 'tree-walk', treeWalk: { ...configured, searchRunsOverTokens: NEVER_SEARCH_RUNS } })).toEqual({ ...TREE_WALK, searchLongRuns: false })
@@ -288,14 +291,15 @@ describe('strategy selection in the pipeline', () => {
       ['one pass, for a conversation inside the window', trip(0), J, ['A', 'B'], { referentStrategy: 'one-pass' }, { strategy: ['one-pass', 0.9] }, []],
       ['the tree walk, for answers beyond the window', trip(30), J, ['A', 'B'], { referentStrategy: 'tree-walk' }, { strategy: ['tree-walk', 0.9] }, []],
       ['the tree walk from the trunk base, for a long trunk that has split', trunkThatSplits(30), 'Make the answer to question 3 shorter', ['T3'], { referentStrategy: 'tree-walk', treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, startAtTrunkBase: true } }, { strategy: ['tree-walk', 0.9], trunk: 0.9 }, []],
-      ['the tree walk with hops, for a long branch run', longBranches(20), 'Redo press step 2', ['A2'], { referentStrategy: 'tree-walk', treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, hopBetweenBranchPoints: true } }, { strategy: ['tree-walk', 0.9], hops: 0.9 }, ['brief']],
-      // The last: the brief above the run is plausible, which is what the walk descends on.
+      // Hop between branch points is the user's setting, not a selector's: set, it is used whoever chose the strategy. The brief above the run is plausible, which is what the walk descends on.
+      ['the tree walk with hop between branch points set, for a long branch run', longBranches(20), 'Redo press step 2', ['A2'], { referentStrategy: 'tree-walk', treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, hopBetweenBranchPoints: true } }, { strategy: ['tree-walk', 0.9] }, ['brief']],
     ] as const
     for (const [name, sc, text, targets, configured, script, context] of cases) {
       const direct = await route(sc, text, targets, { ...configured, strategySelection: 'off' }, { context })
       expect(selectionOf(direct), name).toBeNull()
       // Configured the other way round, so that the result can only come from the selector.
-      const opposite: Partial<RoutingSettings> = configured.referentStrategy === 'one-pass' ? { referentStrategy: 'tree-walk' } : { referentStrategy: 'one-pass' }
+      const hop = 'treeWalk' in configured && configured.treeWalk.hopBetweenBranchPoints
+      const opposite: Partial<RoutingSettings> = { referentStrategy: configured.referentStrategy === 'one-pass' ? 'tree-walk' : 'one-pass', treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, hopBetweenBranchPoints: hop } }
       // By the rules: no request of its own, so every request is the routing's.
       const byRules = await route(sc, text, targets, { ...opposite, strategySelection: 'rules' }, { context })
       expect(selectionOf(byRules)?.selector, name).toBe('rules')
@@ -315,28 +319,28 @@ describe('strategy selection in the pipeline', () => {
   test('selection · decision model: one small request about the shape alone, typed questions, and then the routing of the strategy it chose', async () => {
     const sc = trunkThatSplits(30)
     const text = 'Make the answer to question 3 shorter'
-    const selected = await route(sc, text, ['T3'], { referentStrategy: 'one-pass', strategySelection: 'decision-model' }, { script: { strategy: ['tree-walk', 0.92], trunk: 0.88, hops: 0.1, search: 0.97 } })
+    const selected = await route(sc, text, ['T3'], { referentStrategy: 'one-pass', strategySelection: 'decision-model' }, { script: { strategy: ['tree-walk', 0.92], trunk: 0.88, search: 0.97 } })
     expect(selected.selector).toHaveLength(1)
     expect(selected.requests[0]).toBe(selected.selector[0])
     const asked = selected.selector[0]
     // The shape only: no request, answer, title or message text.
     expect(asked?.state).toBe(describeShape(shapeOf(sc), BUDGET))
     expect(asked?.state).not.toContain(text)
-    expect(Object.entries(asked?.questions ?? {}).map(([id, q]) => [id, q.type])).toEqual([['sel_strategy', 'choice'], ['sel_trunk', 'noul'], ['sel_hops', 'noul'], ['sel_search', 'noul']])
+    expect(Object.entries(asked?.questions ?? {}).map(([id, q]) => [id, q.type])).toEqual([['sel_strategy', 'choice'], ['sel_trunk', 'noul'], ['sel_search', 'noul']])
     expect(Object.keys((asked?.questions['sel_strategy'] as { options: object }).options)).toEqual(['one-pass', 'tree-walk'])
     // Small: 806 to 849 input tokens reported live (2026-11-11); the guard's estimate, fitted never to count below the reported figure, is about 1.3 times that.
     expect(estimateRequestTokens(asked?.state ?? '', asked?.questions ?? {})).toBeLessThan(1_100)
     expect(selectionOf(selected)).toEqual({
       selector: 'decision-model',
-      choice: { strategy: 'tree-walk', startAtTrunkBase: true, hopBetweenBranchPoints: false, searchLongRuns: true },
+      choice: { strategy: 'tree-walk', startAtTrunkBase: true, searchLongRuns: true },
       signature: signatureOf(sc),
       reason: 'The decision model chose the tree walk for this shape (confidence 0.92): long runs searched, starting at the trunk base.',
-      scores: { strategy: 0.92, startAtTrunkBase: 0.88, hopBetweenBranchPoints: 0.1, searchLongRuns: 0.97 },
+      scores: { strategy: 0.92, startAtTrunkBase: 0.88, searchLongRuns: 0.97 },
       fallback: null,
       reused: false,
     })
     // The selector's questions are in the decision record with every other question.
-    expect(planOf(selected).decision.questions.map((q) => q.id).slice(0, 4)).toEqual(['sel_strategy', 'sel_trunk', 'sel_hops', 'sel_search'])
+    expect(planOf(selected).decision.questions.map((q) => q.id).slice(0, 3)).toEqual(['sel_strategy', 'sel_trunk', 'sel_search'])
     // After the selector's request, the routing is that of the chosen strategy configured directly.
     const direct = await route(sc, text, ['T3'], { referentStrategy: 'tree-walk', treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, startAtTrunkBase: true } })
     expect(selected.routing).toEqual(direct.requests)
@@ -349,7 +353,8 @@ describe('strategy selection in the pipeline', () => {
 
   test('selection · the search of long runs is turned off only on a confident no, and a switch on only on a confident yes', async () => {
     const run = (script: SelectorScript) => route(flat(40), 'Explain how volcanoes form', [], { strategySelection: 'decision-model' }, { script })
-    expect(selectionOf(await run({ search: 0.5, trunk: 0.69, hops: 0.7 }))?.choice).toEqual({ strategy: 'tree-walk', startAtTrunkBase: false, hopBetweenBranchPoints: true, searchLongRuns: true })
+    expect(selectionOf(await run({ search: 0.5, trunk: 0.69 }))?.choice).toEqual({ strategy: 'tree-walk', startAtTrunkBase: false, searchLongRuns: true })
+    expect(selectionOf(await run({ search: 0.5, trunk: 0.7 }))?.choice).toEqual({ strategy: 'tree-walk', startAtTrunkBase: true, searchLongRuns: true })
     expect(selectionOf(await run({ search: 0.31 }))?.choice).toMatchObject({ searchLongRuns: true })
     expect(selectionOf(await run({ search: 0.2 }))?.choice).toMatchObject({ searchLongRuns: false })
   })
@@ -442,7 +447,7 @@ describe('strategy selection in the pipeline', () => {
 
   test('DA1 · with either referent strategy, and with strategy selection off, by rules or by the decision model, a continuation requiring multiple siblings depends on their full join-back (C9) and J continues on the chain A and B forked from (C19)', async () => {
     const selectorAnswers = (strategy: 'one-pass' | 'tree-walk', switches: number) =>
-      ({ sel_strategy: { type: 'choice', choice: strategy, confidence: 0.9, probabilities: {} }, sel_trunk: { type: 'noul', probability: switches }, sel_hops: { type: 'noul', probability: switches }, sel_search: { type: 'noul', probability: 0.9 } }) as never
+      ({ sel_strategy: { type: 'choice', choice: strategy, confidence: 0.9, probabilities: {} }, sel_trunk: { type: 'noul', probability: switches }, sel_search: { type: 'noul', probability: 0.9 } }) as never
     // Each strategy as it is reached in each mode: configured, chosen by the rules from the shape, or chosen by the decision model.
     const runs: (readonly [StrategySelectionMode, 'one-pass' | 'tree-walk', number, number])[] = [
       ['off', 'one-pass', 0, 0.1],

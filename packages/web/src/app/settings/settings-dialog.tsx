@@ -421,7 +421,10 @@ const CANDIDATE_SOURCES: readonly { value: CandidateSourceName; label: string; d
   },
 ]
 
-/** The tree walk's two switches. A run that is too long to ask about answer by answer is searched whichever way they are set. */
+/**
+ * The tree walk's two switches. The trunk base is chosen for each message while a strategy selector is on; hop between
+ * branch points changes where a message is placed, so it is never chosen and is used as set whenever the tree walk runs.
+ */
 const TREE_WALK_SWITCHES: readonly { key: 'startAtTrunkBase' | 'hopBetweenBranchPoints'; label: string; description: string }[] = [
   {
     key: 'startAtTrunkBase',
@@ -433,7 +436,7 @@ const TREE_WALK_SWITCHES: readonly { key: 'startAtTrunkBase' | 'hopBetweenBranch
     key: 'hopBetweenBranchPoints',
     label: 'Hop between branch points',
     description:
-      'Below a split, asks about the end of each branch’s run, not about every answer in it. Fewer questions; a reply to an answer in the middle of a run takes one more decision request.',
+      'A message about an answer inside a run (a line of work between two splits) continues from the run’s last answer: routing asks only whether the run is meant, not which answer in it. Saves decision tokens; the answer then reads everything after the part of the run the message is about. A correction is still matched to the exact answer it revises.',
   },
 ]
 
@@ -463,7 +466,7 @@ function ReferentSettings({ settings }: { settings: Settings }) {
       <Row
         label="Choosing the strategy"
         labelId={selectionLabel}
-        description={selecting ? 'While this is on, the strategy and the two tree-walk switches are chosen for each message; the ones set below are not used.' : undefined}
+        description={selecting ? 'While this is on, the strategy and “Start at the trunk base” are chosen for each message; the ones set below are not used. “Hop between branch points” is used as set.' : undefined}
         stacked
       >
         <ChoiceCards
@@ -483,8 +486,8 @@ function ReferentSettings({ settings }: { settings: Settings }) {
           className="sm:grid-cols-2"
         />
       </Row>
-      {settings.routing.referentStrategy === 'tree-walk'
-        ? TREE_WALK_SWITCHES.map((entry) => (
+      {/* A selector may choose the tree walk whatever is set here, and the hop then applies: its switch stays in reach. */}
+      {TREE_WALK_SWITCHES.filter((entry) => settings.routing.referentStrategy === 'tree-walk' || (selecting && entry.key === 'hopBetweenBranchPoints')).map((entry) => (
             <DebugRow
               key={entry.key}
               label={entry.label}
@@ -492,8 +495,7 @@ function ReferentSettings({ settings }: { settings: Settings }) {
               checked={settings.routing.treeWalk[entry.key]}
               onChange={(checked) => void change({ routing: { treeWalk: { [entry.key]: checked } } })}
             />
-          ))
-        : null}
+          ))}
       <Row
         label="Candidate sections"
         labelId={candidatesLabel}

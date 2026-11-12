@@ -65,6 +65,8 @@ const CONFIGURATIONS: readonly (readonly [string, Settings, StrategySelector | n
   ['one-pass, lexical candidate source', withStrategy('one-pass', {}, 'lexical'), null],
   ['tree-walk, long runs searched, lexical candidate source', withStrategy('tree-walk', {}, 'lexical'), null],
   ['strategy selected by rules, lexical candidate source', withSelection('rules', 'lexical'), null],
+  // Hop between branch points with the lexical source, beside the tree walk three rows up: what the hop saves and where it moves a placement.
+  ['tree-walk + hops, lexical candidate source', withStrategy('tree-walk', { hopBetweenBranchPoints: true }, 'lexical'), null],
 ]
 
 /** How the selections of a corpus run came out: who chose, what, and why the rules stood in. */
@@ -73,7 +75,7 @@ function selectionTally(results: readonly CorpusResult[]): string {
   for (const r of results) {
     const s = r.selection
     if (!s) continue
-    const choice = s.choice.strategy === 'one-pass' ? 'one-pass' : `tree-walk${s.choice.startAtTrunkBase ? '+trunk' : ''}${s.choice.hopBetweenBranchPoints ? '+hops' : ''}${s.choice.searchLongRuns ? '' : ', runs listed'}`
+    const choice = s.choice.strategy === 'one-pass' ? 'one-pass' : `tree-walk${s.choice.startAtTrunkBase ? '+trunk' : ''}${s.choice.searchLongRuns ? '' : ', runs listed'}`
     const key = `${s.selector}${s.fallback ? ` (fallback: ${s.fallback})` : ''} → ${choice}`
     counts.set(key, (counts.get(key) ?? 0) + 1)
   }
@@ -98,6 +100,9 @@ describe.skipIf(key === '')('referent strategies, live', () => {
     // What the candidate source handed each routing: seed hints, by position among the conversation's sections.
     const seeded = report.results.filter((r) => (r.candidates?.units ?? []).some((u) => u.candidates.length > 0))
     const seeds = seeded.map((r) => `  ${r.passed ? '✓' : '✗'} ${r.id}: ${(r.candidates?.units ?? []).map((u) => `${u.unit} ← ${u.candidates.map((c) => `${c.sectionId.replace(/^sec_/, '')} ${c.score?.toFixed(1) ?? '–'}`).join(', ') || 'none'}`).join('; ')}`)
+    // Hop between branch points: the targets that are the last section of a run, taken without a search inside the run.
+    const hopped = report.results.filter((r) => r.runEnds.length > 0).map((r) => `  ${r.passed ? '✓' : '✗'} ${r.id}: ${r.runEnds.map((e) => `${e.unit} → ${e.sectionId.replace(/^sec_/, '')} (${e.confidence.toFixed(2)}, run of ${e.run.sections})`).join('; ')}`)
+    console.log(`referents by ${name}: ${report.passed}/${report.total}, ${report.decisions.requests} requests, ${report.decisions.questions} questions, ${report.decisions.inputTokens} input tokens${hopped.length ? `\nrun ends taken in ${hopped.length} routings\n${hopped.join('\n')}` : ''}`)
     console.log(`referents by ${name}\n${formatCorpusReport(report)}\n${long.join('\n')}${tally ? `\nselections\n${tally}` : ''}\nbudget reached: ${stops.length}${stops.length ? `\n${stops.join('\n')}` : ''}\nuser asked which section: ${asked.length}${asked.length ? `\n${asked.join('\n')}` : ''}${seeds.length ? `\ncandidate sections handed to ${seeds.length} routings\n${seeds.join('\n')}` : ''}`)
     expect(report.total).toBe(ROUTING_CORPUS.length)
     expect(report.passed / report.total).toBeGreaterThanOrEqual(CORPUS_FLOOR)

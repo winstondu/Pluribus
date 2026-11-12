@@ -59,18 +59,37 @@ describe('routing corpus', () => {
     })
   })
 
-  // The tree walk's two switches, alone and together: with decisions as labelled every example is still routed as labelled.
-  describe.each([
-    ['start at the trunk base', { startAtTrunkBase: true }],
-    ['hops between branch points', { hopBetweenBranchPoints: true }],
-    ['trunk base and hops', { startAtTrunkBase: true, hopBetweenBranchPoints: true }],
-  ] as const)('referents by tree-walk, %s', (_name, switches) => {
-    const settings = { ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, strategySelection: 'off' as const, candidateSource: 'none' as const, treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, ...switches } } }
+  // Start at the trunk base: with decisions as labelled every example is still routed as labelled.
+  describe('referents by tree-walk, start at the trunk base', () => {
+    const settings = { ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, strategySelection: 'off' as const, candidateSource: 'none' as const, treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, startAtTrunkBase: true } } }
     test.each(ROUTING_CORPUS.map((e) => [e.id, e] as const))('corpus · with decisions as labelled, the pipeline routes %s as labelled', async (_id, example) => {
       const input = corpusInput(example, settings)
       const router = createRouter({ decisionProvider: oracleDecisionProvider(example, input), decomposer: referenceDecomposer(example) })
       if (example.below) expect(compare(example, await router.route(input, NEVER_CANCELLED))).not.toEqual([])
       else expect(compare(example, await router.route(input, NEVER_CANCELLED))).toEqual([])
+    })
+  })
+
+  // Hop between branch points places a unit on the last section of the run it refers to. The corpus is labelled with the
+  // section referred to, so one example is not routed as labelled, by design: its label is left as it is.
+  describe.each([
+    ['hop between branch points', { hopBetweenBranchPoints: true }],
+    ['trunk base and hop between branch points', { startAtTrunkBase: true, hopBetweenBranchPoints: true }],
+  ] as const)('referents by tree-walk, %s', (_name, switches) => {
+    const settings = { ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, strategySelection: 'off' as const, candidateSource: 'none' as const, treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, ...switches } } }
+    /** The examples whose referent is inside a run that is not asked about section by section, and where the unit goes instead. */
+    const moved: { readonly [id: string]: string } = { 'long-chain-old-section': 'E198' }
+    test.each(ROUTING_CORPUS.map((e) => [e.id, e] as const))('corpus · with decisions as labelled, the pipeline routes %s as labelled, or to the last section of the run the label is in', async (id, example) => {
+      const input = corpusInput(example, settings)
+      const router = createRouter({ decisionProvider: oracleDecisionProvider(example, input), decomposer: referenceDecomposer(example) })
+      const outcome = await router.route(input, NEVER_CANCELLED)
+      const end = moved[id]
+      if (end !== undefined) {
+        expect(compare(example, outcome)).not.toEqual([])
+        expect(outcome.kind === 'plan' ? outcome.plan.units.map((unit) => [unit.targets, unit.placement]) : outcome.kind).toEqual([[[sceneIds.section(end)], { kind: 'continue', buildsOn: { kind: 'node', nodeId: sceneIds.node(end) } }]])
+        expect(outcome.kind === 'plan' ? outcome.plan.decision.runEnds?.map((taken) => taken.sectionId) : null).toEqual([sceneIds.section(end)])
+      } else if (example.below) expect(compare(example, outcome)).not.toEqual([])
+      else expect(compare(example, outcome)).toEqual([])
     })
   })
 

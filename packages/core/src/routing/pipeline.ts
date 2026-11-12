@@ -1,5 +1,6 @@
 import {
   type BestNodeRecord,
+  type RunEndRecord,
   type BudgetStopRecord,
   type CandidateSourceRecord,
   type DecisionBudget,
@@ -152,6 +153,8 @@ class Record {
   budgetStop: Pick<BudgetStopRecord, 'limit' | 'fallback'> | null = null
   /** The units placed on the best node found so far, in place of a question to the user. */
   readonly bestFound: BestNodeRecord[] = []
+  /** The units placed on the last section of a run without a search inside it (hop between branch points). */
+  readonly runEnds: RunEndRecord[] = []
   /** Estimated input tokens of the pipeline's own decision requests so far: they are counted against the routing's token budget first. */
   pipelineTokens = 0
 
@@ -315,6 +318,7 @@ async function routeMessage(deps: Deps, input: RoutingInput, signal: CancelSigna
   })
   if (resolution.kind === 'ambiguous') return { kind: 'target-ambiguity', candidates: resolution.candidates }
   if (resolution.bestFound) record.bestFound.push({ unit: 'message', sectionIds: resolution.sectionIds, confidence: referents.stop?.best.get('m')?.confidence ?? 0 })
+  noteRunEnds(record, 'message', referents.units['m'], resolution.sectionIds)
   const referred = answerTargets(supplied, resolution.sectionIds)
   const revision = revisionOf(m, referred, changedRequirements, input.text, null, supplied, t)
   const targets = withNeededGroups(supplied, referred, selected(m.needsGroups, t.dependency))
@@ -492,6 +496,7 @@ async function routeComposite(deps: Deps, input: RoutingInput, signal: CancelSig
       continue
     }
     if (resolution.bestFound) record.bestFound.push({ unit: s.key, sectionIds: resolution.sectionIds, confidence: referred.stop?.best.get(s.key)?.confidence ?? 0 })
+    noteRunEnds(record, s.key, referred.units[s.key], resolution.sectionIds)
     const targets = answerTargets(supplied, resolution.sectionIds)
     const changed = (s.corrective ?? 0) >= t.clearlyCorrective ? selected(s.sessionRequirements, t.clearlyCorrective) : []
     for (const id of changed) if (!changedByAny.includes(id)) changedByAny.push(id)
@@ -837,7 +842,8 @@ async function resolveReferents(
   const units: { [key: string]: UnitReferents } = {}
   for (const [key, unit] of Object.entries(result.units)) {
     const sections = unit.sections.filter((s) => known.has(s.sectionId)).map((s) => ({ sectionId: s.sectionId, confidence: clamp01(s.confidence) }))
-    units[key] = { several: unit.several === null ? null : clamp01(unit.several), sections }
+    const runEnds = (unit.runEnds ?? []).filter((end) => known.has(end.sectionId)).map((end) => ({ ...end, confidence: clamp01(end.confidence) }))
+    units[key] = { several: unit.several === null ? null : clamp01(unit.several), sections, ...(runEnds.length > 0 ? { runEnds } : {}) }
     if (limit) best.set(key, bestOf(unit, sections, request))
   }
   if (!limit) return { ok: true, units, stop: null }
@@ -846,6 +852,11 @@ async function resolveReferents(
     fallback: result.fallback?.to ?? 'partial',
   }
   return { ok: true, units, stop: { best } }
+}
+
+/** Records the targets of a unit that are the last section of a run, taken without a search inside the run. */
+function noteRunEnds(record: Record, unit: string, referents: UnitReferents | undefined, targets: readonly SectionId[]): void {
+  for (const end of referents?.runEnds ?? []) if (targets.includes(end.sectionId)) record.runEnds.push({ unit, ...end })
 }
 
 /**
@@ -1186,6 +1197,20 @@ function bestFoundNote(input: RoutingInput, record: Record): string {
   return ` The decision budget is a hard stop, so the user was not asked which section is meant: the best node found so far was used, ${placed.join('; ')}.`
 }
 
+/** Which targets are the last section of a run the unit refers to, taken without asking about them by themselves, and on what evidence. */
+function runEndNote(input: RoutingInput, record: Record): string {
+  if (record.runEnds.length === 0) return ''
+  const section = (id: SectionId): CandidateSection | undefined => input.candidates.sections.find((s) => s.sectionId === id)
+  const title = (id: SectionId): string => `"${section(id)?.title ?? id}"`
+  const placed = record.runEnds.map((end) => {
+    const unit = end.unit === 'message' ? 'the message' : `part F${Number(end.unit.slice(1)) + 1}`
+    const asked = end.evidence.sections === 1 ? `a question about ${title(end.evidence.firstSectionId)} by itself` : `a question about ${end.evidence.sections} of its answers together, ${title(end.evidence.firstSectionId)} to ${title(end.evidence.lastSectionId)},`
+    const where = end.limitedByContext ? 'the deepest answer a run can continue from' : 'the last answer'
+    return `${unit} on ${title(end.sectionId)}, ${where} of a run of ${end.run.sections} (${title(end.run.firstSectionId)} to ${title(end.run.lastSectionId)}): ${asked} scored ${end.confidence.toFixed(2)}`
+  })
+  return ` Hop between branch points is on, so no answer inside a run was searched for: ${placed.join('; ')}. That answer was not asked about by itself; its context holds the whole run.`
+}
+
 function decisionRecord(
   input: RoutingInput,
   record: Record,
@@ -1199,11 +1224,12 @@ function decisionRecord(
     composition,
     units,
     thresholds: { ...input.settings.thresholds, ambiguityFloor: AMBIGUITY_FLOOR },
-    explanation: `${explanation}${selectionNote(record.selection)}${record.windowNote}${record.referentNote}${bestFoundNote(input, record)}${record.contextNote}`,
+    explanation: `${explanation}${selectionNote(record.selection)}${record.windowNote}${record.referentNote}${runEndNote(input, record)}${bestFoundNote(input, record)}${record.contextNote}`,
     questions: record.questions,
     ...(record.selection ? { strategySelection: record.selection } : {}),
     ...(record.budgetStop ? { budgetStop: { ...record.budgetStop, bestFound: record.bestFound } } : {}),
     ...(record.candidates ? { candidateSource: record.candidates } : {}),
+    ...(record.runEnds.length > 0 ? { runEnds: record.runEnds } : {}),
   }
 }
 

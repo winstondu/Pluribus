@@ -62,6 +62,7 @@ export type {
 } from './router'
 export type {
   BestNodeFound,
+  RunEndTaken,
   ReferentAsk,
   ReferentAskResult,
   ReferentGate,

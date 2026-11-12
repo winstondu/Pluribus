@@ -91,6 +91,16 @@ export interface ReferentRequest {
    * source. A strategy that does not walk ignores them.
    */
   readonly startCandidates: { readonly [key: string]: readonly SectionId[] }
+  /**
+   * Whether a run that continues from the section would fit what a run may
+   * read. Read by the tree walk with hop between branch points on, which
+   * takes the deepest section of an unbranched run that does. Left out:
+   * every section fits. The first version leaves it out: what a run may
+   * read is the answer model's context limit, which is counted when the
+   * run starts and is not known to routing (11 · "Context growth", Q67).
+   * It must not turn from false to true down a line: context only grows.
+   */
+  runContextFits?(section: CandidateSection): boolean
 }
 
 /** The answers to the questions that rode in the pipeline's request. */
@@ -140,14 +150,35 @@ export interface BestNodeFound {
   readonly confidence: number
 }
 
+/**
+ * A referent that hop between branch points placed on the last section of
+ * an unbranched run without a search inside the run (11 · "Referent
+ * strategies", DA3). The section was not asked about by itself; it carries
+ * the highest score among the questions about the run.
+ */
+export interface RunEndTaken {
+  /** The section taken: the run's last, or the deepest one a run's context allows. */
+  readonly sectionId: SectionId
+  readonly confidence: number
+  /** The unbranched run: its first and last answer section, and how many it has. */
+  readonly run: { readonly firstSectionId: SectionId; readonly lastSectionId: SectionId; readonly sections: number }
+  /** The question with that score: about one section (first and last the same) or about a part of the run. */
+  readonly evidence: { readonly firstSectionId: SectionId; readonly lastSectionId: SectionId; readonly sections: number }
+  /** True when the run's last section does not fit a run's context and a section above it was taken. */
+  readonly limitedByContext: boolean
+}
+
 export interface UnitReferents {
   /**
    * Every section the strategy scored and kept, each asked about by itself
-   * (or as a member of a sibling group asked about as a whole). A section
-   * left out is not a referent: it was never asked about by itself, or a
-   * relevant descendant stands for it.
+   * (or as a member of a sibling group asked about as a whole), or, with
+   * hop between branch points on, taken as the last section of a run the
+   * unit refers to (`runEnds`). A section left out is not a referent: it
+   * was never scored, or a relevant descendant stands for it.
    */
   readonly sections: readonly ScoredSection[]
+  /** The sections of `sections` that hop between branch points took without asking about them by themselves. Left out when none. */
+  readonly runEnds?: readonly RunEndTaken[]
   /** Probability that the unit refers to several sections at once; null when not asked. */
   readonly several: number | null
   /**

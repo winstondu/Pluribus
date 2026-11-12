@@ -23,7 +23,9 @@ import type { ReferentSection, ReferentUnit } from './referent-strategy'
  *   question is about the part only. It directs a search and confirms
  *   nothing.
  * - **Several**: does it refer to more than one section.
- * Only a Point or a Group can make a node a referent (DA3).
+ * Only a Point or a Group can make a node a referent (DA3). The one
+ * exception is the last section of an unbranched run, taken without a
+ * search when hop between branch points is on.
  *
  * Free:
  * - **Estimate**: a cheap prior. Never confirms anything.

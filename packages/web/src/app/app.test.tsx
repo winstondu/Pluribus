@@ -203,7 +203,16 @@ describe('shell', () => {
     await user.click(within(dialog).getByRole('switch', { name: 'Start at the trunk base' }))
     await waitFor(() => expect(store.getState().app?.settings.routing.treeWalk.startAtTrunkBase).toBe(true))
     expect(store.getState().app?.settings.routing.treeWalk.hopBetweenBranchPoints).toBe(true)
+    // The hop's wording says what it trades: fewer decision tokens for an answer that reads the rest of the run.
+    expect(within(dialog).getByText(/continues from the run’s last answer.*Saves decision tokens; the answer then reads everything after the part of the run the message is about/)).toBeInTheDocument()
     await user.click(within(dialog).getByRole('radio', { name: /One pass/ }))
+    await waitFor(() => expect(within(dialog).queryAllByRole('switch')).toHaveLength(2))
+    // A selector may choose the tree walk whatever is configured, and the hop is never the selector's: its switch is in reach, still on.
+    await user.click(within(dialog).getByRole('radio', { name: /By rules/ }))
+    await waitFor(() => expect(within(dialog).getByRole('switch', { name: 'Hop between branch points' })).toBeChecked())
+    expect(within(dialog).queryByRole('switch', { name: 'Start at the trunk base' })).not.toBeInTheDocument()
+    expect(within(dialog).getByText(/“Hop between branch points” is used as set/)).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('radio', { name: /As set here/ }))
     await waitFor(() => expect(within(dialog).queryAllByRole('switch')).toHaveLength(2))
     // Context summaries apply to either strategy, and say that nothing generates them yet.
     expect(within(dialog).getAllByText(/Summaries are not generated yet/)).toHaveLength(2)

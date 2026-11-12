@@ -524,14 +524,15 @@ export interface UnitRoutingDecision {
 /**
  * Which referent strategy a routing uses and how the tree walk treats runs,
  * as a strategy selector chose it from the shape of the conversation's
- * genealogy (11 · "Strategy selection").
+ * genealogy (11 · "Strategy selection"). Hop between branch points is not
+ * part of a choice: it changes where a message is placed, so it is used as
+ * the user set it.
  */
 export type StrategyChoice =
   | { readonly strategy: 'one-pass' }
   | {
       readonly strategy: 'tree-walk'
       readonly startAtTrunkBase: boolean
-      readonly hopBetweenBranchPoints: boolean
       /** Whether runs too long to ask about answer by answer are searched in chunks. Off: every answer of a run is asked about. */
       readonly searchLongRuns: boolean
     }
@@ -575,6 +576,26 @@ export interface CandidateSourceRecord {
       readonly score: number | null
     }[]
   }[]
+}
+
+/**
+ * Recorded when hop between branch points placed a unit's referent on the
+ * last section of an unbranched run without a search inside the run (11 ·
+ * "Referent strategies", DA3): the section was not asked about by itself.
+ */
+export interface RunEndRecord {
+  /** The unit's key in `RoutingDecision.units`. */
+  readonly unit: string
+  /** The section taken: the run's last, or the deepest one a run's context allows. */
+  readonly sectionId: SectionId
+  /** The confidence it carries: the highest score among the questions about the run. */
+  readonly confidence: number
+  /** The unbranched run: its first and last answer section, and how many it has. */
+  readonly run: { readonly firstSectionId: SectionId; readonly lastSectionId: SectionId; readonly sections: number }
+  /** The question with that score: about one section of the run by itself, or about a part of the run. */
+  readonly evidence: { readonly firstSectionId: SectionId; readonly lastSectionId: SectionId; readonly sections: number }
+  /** True when the run's last section was not taken because a run continuing from it would not fit its context. */
+  readonly limitedByContext: boolean
 }
 
 /** A limit of the decision budget (11 · "Decision budget"). */
@@ -630,6 +651,8 @@ export interface RoutingDecision {
   readonly budgetStop?: BudgetStopRecord | null
   /** Set when a candidate source was asked: which one, and the candidate sections it returned for each unit. */
   readonly candidateSource?: CandidateSourceRecord | null
+  /** Set when hop between branch points took the last section of a run as a referent without a search inside the run. */
+  readonly runEnds?: readonly RunEndRecord[]
 }
 
 // ─────────────────────────── decomposition ───────────────────────────

@@ -128,11 +128,17 @@ export interface TreeWalkSettings {
    */
   readonly startAtTrunkBase: boolean
   /**
-   * Hop between branch points. Below a branch point, on: of each branch's
-   * run only its end (the next branch point, or the leaf) is asked about by
-   * itself at once and the answers skipped are searched, however few. Off:
-   * every answer of the run is asked about, unless the run is longer than
-   * `searchRunsOverTokens`.
+   * Hop between branch points. On: the walk does not look for the last
+   * relevant answer inside a run. A unit that refers to a run, and to
+   * nothing built on it, is placed on the run's last answer (or the deepest
+   * one a run's context allows), which was not asked about by itself: its
+   * context holds the whole run. The answers of the run that were not asked
+   * about yet are asked about in parts only, to learn whether the run is
+   * relevant. Fewer decision tokens; the answer then reads everything after
+   * the relevant part of the run. A correction keeps the search: it needs
+   * the exact answer it revises. Off: the last relevant answer of a run is
+   * searched for. It is the user's setting: a strategy selector does not
+   * choose it.
    */
   readonly hopBetweenBranchPoints: boolean
   /**

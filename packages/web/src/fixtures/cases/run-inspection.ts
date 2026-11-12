@@ -460,9 +460,9 @@ const packing: RunInspection = {
     // A strategy selector was on: the decision model was not confident, so the rules chose.
     strategySelection: {
       selector: 'rules',
-      choice: { strategy: 'tree-walk', startAtTrunkBase: false, hopBetweenBranchPoints: true, searchLongRuns: true },
+      choice: { strategy: 'tree-walk', startAtTrunkBase: false, searchLongRuns: true },
       signature: 'v1|s6|w4|r2|o0|p2|d2|g0.1|k7|t3.2.0s|b3.4.2.3l|q5',
-      reason: 'The decision model chose one-pass with confidence 0.58, below 0.70. By the rules: 9 answers are older than the routing request lists, which only the tree walk reaches; long runs are searched, hopping between branch points (a run of 7 answers below a split).',
+      reason: 'The decision model chose one-pass with confidence 0.58, below 0.70. By the rules: 9 answers are older than the routing request lists, which only the tree walk reaches; long runs are searched.',
       scores: { strategy: 0.58 },
       fallback: 'low-confidence',
       reused: false,
@@ -482,6 +482,17 @@ const packing: RunInspection = {
     },
     // The token budget stopped the walk; the target was clear from what had been asked, so nothing had to be taken below the threshold.
     budgetStop: { limit: 'token-budget', fallback: 'one-pass', bestFound: [] },
+    // Hop between branch points was on: the line from the brief to the itinerary was asked about as one, and the message was placed on its last answer.
+    runEnds: [
+      {
+        unit: 'message',
+        sectionId: id('section', 'itinerary-revised'),
+        confidence: 0.84,
+        run: { firstSectionId: id('section', 'brief'), lastSectionId: id('section', 'itinerary-revised'), sections: 2 },
+        evidence: { firstSectionId: id('section', 'brief'), lastSectionId: id('section', 'itinerary-revised'), sections: 2 },
+        limitedByContext: false,
+      },
+    ],
   }),
   attempt: null,
   directiveState: 'dependency-queued',

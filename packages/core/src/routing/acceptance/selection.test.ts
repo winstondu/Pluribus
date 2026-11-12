@@ -27,7 +27,6 @@ function answerSelector(s: RoutingScenario): void {
     const answers = {
       sel_strategy: { type: 'choice', choice: 'tree-walk', confidence: 0.9, probabilities: { 'one-pass': 0.1, 'tree-walk': 0.9 } },
       sel_trunk: { type: 'noul', probability: 0.1 },
-      sel_hops: { type: 'noul', probability: 0.1 },
       sel_search: { type: 'noul', probability: 0.9 },
     }
     return { ok: true, model: 'typesafe/jev-1.13-20260917', answers: answers as never, usage: null }
@@ -72,7 +71,7 @@ describe.each<StrategySelectionMode>(['rules', 'decision-model'])('the J request
     const selection = (await decisionOf(s, message))?.strategySelection
     expect(selection?.selector).toBe(mode)
     // Three answers, all listed: the rules choose one pass; the scripted decision model chooses the tree walk.
-    expect(selection?.choice).toEqual(mode === 'rules' ? { strategy: 'one-pass' } : { strategy: 'tree-walk', startAtTrunkBase: false, hopBetweenBranchPoints: false, searchLongRuns: true })
+    expect(selection?.choice).toEqual(mode === 'rules' ? { strategy: 'one-pass' } : { strategy: 'tree-walk', startAtTrunkBase: false, searchLongRuns: true })
     expect(selection?.fallback).toBeNull()
     expect((await decisionOf(s, message))?.explanation).toContain(`Referent strategy chosen by ${mode === 'rules' ? 'the rules' : 'the decision model'}`)
     // What the run inspector reads: the state holds the same record.

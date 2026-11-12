@@ -530,7 +530,7 @@ describe('run inspector', () => {
     expect(routing).toHaveTextContent(DEFAULT_SETTINGS.models.decision)
     // A strategy selector was on for this routing: what ran, who chose it, why the rules stood in, and the model's confidence.
     const selection = within(routing).getByTestId('strategy-selection')
-    expect(selection).toHaveTextContent('Tree walk (long runs searched, hopping between branch points) · chosen by the rules')
+    expect(selection).toHaveTextContent('Tree walk (long runs searched) · chosen by the rules')
     expect(selection).toHaveTextContent('the decision model was not confident')
     expect(selection).toHaveTextContent('9 answers are older than the routing request lists')
     expect(selection).toHaveTextContent('strategy 0.58')
@@ -544,6 +544,11 @@ describe('run inspector', () => {
     const stop = within(routing).getByTestId('budget-stop')
     expect(stop).toHaveTextContent('Reached the token budget · the remaining listed sections were asked about in one request')
     expect(stop).toHaveTextContent('The best node found so far was not needed for this work.')
+    // Hop between branch points: which section was taken for which run, that it was not asked about by itself, and on what evidence.
+    const hop = within(routing).getByTestId('run-ends')
+    expect(hop).toHaveTextContent('Placed on itinerary, the last answer of a run of 2 · confidence 0.84')
+    expect(hop).toHaveTextContent('No answer inside the run was searched for, and this one was not asked about by itself: its context holds the whole run.')
+    expect(hop).toHaveTextContent('The run is trip brief to itinerary; the score is that of a question about 2 of its answers together, trip brief to itinerary.')
 
     await user.click(screen.getByRole('button', { name: 'Show in transcript' }))
     expect(ui.getState().reveal?.sectionId).toBe(fx.id('section', 'packing'))
