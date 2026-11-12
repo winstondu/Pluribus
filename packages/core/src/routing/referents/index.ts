@@ -24,7 +24,19 @@ export { onePassPolicy, onePassProbes, onePassStrategy } from './one-pass'
 export { treeWalkPolicy, treeWalkStrategy, startSet, MIN_SKIPPED, SEARCH_FANOUT, type StartSet } from './tree-walk'
 export { probe, strategyFromPolicy, unitReferents, type ReferentPolicy, type SearchInput, type SearchOutcome } from './search'
 export { createDecisionOperations, POINT_ANCESTRY, SEGMENT_LEAD, type DecisionOperations, type OperationsContext, type OperationsFactory } from './operations'
-export { createReferentAsk, estimateDecisionTokens, type ReferentSpend } from './ask'
+export {
+  createReferentAsk,
+  decisionAllowance,
+  estimateDecisionTokens,
+  estimateRequestTokens,
+  routingTokenBudget,
+  ANSWERS_TO_GO_BY,
+  SHORTEST_ANSWER_TOKENS,
+  type ReferentSpend,
+  type RoutedWork,
+  type RoutingLimit,
+  type RoutingTokenBudget,
+} from './ask'
 export { buildTree, branchingDepth, ancestorsOf, ancestorsOfAll, joinBacksOf, reduceToNonAncestors, segmentFrom, stretchOf, type ReferentTree, type TreeNode } from './tree'
-export { referentsFromScores, questionId as referentQuestionId } from './shared'
+export { bestNodeFound, referentsFromScores, questionId as referentQuestionId } from './shared'
 export { FIRST_PASS_SECTIONS, firstPassQuestions, firstPassSectionIds } from './first-pass'

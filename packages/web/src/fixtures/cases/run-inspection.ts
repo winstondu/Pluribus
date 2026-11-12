@@ -457,6 +457,18 @@ const packing: RunInspection = {
     needsClarification: 0.07,
     explanation: '“That plan” is the itinerary, which is still being written, so the packing list waits for it.',
   }, {
+    // A strategy selector was on: the decision model was not confident, so the rules chose.
+    strategySelection: {
+      selector: 'rules',
+      choice: { strategy: 'tree-walk', startAtTrunkBase: false, searchLongRuns: true },
+      signature: 'v1|s6|w4|r2|o0|p2|d2|g0.1|k7|t3.2.0s|b3.4.2.3l|q5',
+      reason: 'The decision model chose one-pass with confidence 0.58, below 0.70. By the rules: 9 answers are older than the routing request lists, which only the tree walk reaches; long runs are searched.',
+      scores: { strategy: 0.58 },
+      fallback: 'low-confidence',
+      reused: false,
+    },
+    // The token budget stopped the walk; the target was clear from what had been asked, so nothing had to be taken below the threshold.
+    budgetStop: { limit: 'token-budget', fallback: 'one-pass', bestFound: [] },
     // Hop between branch points was on: the line from the brief to the itinerary was asked about as one, and the message was placed on its last answer.
     runEnds: [
       {

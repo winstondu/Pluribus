@@ -32,14 +32,23 @@ import type { Supplied } from './supply'
  * selected dependency, a requirement change): a weak referent is never
  * dropped silently by starting a new chain. When the model says the message
  * refers to several sections and one is clear, every section at the floor
- * is a target too. Set from the first live corpus run (PLAN §7).
+ * is a target too. Set from the first live corpus run (PLAN §7). It is also
+ * the plausibility floor of the best node found so far, which stands in
+ * for the question to the user when the decision budget stopped the search
+ * (`resolveUnitTargets`).
  */
 export const AMBIGUITY_FLOOR = 0.25
 
 export type TargetMode = 'explicit' | 'inferred' | 'elicited' | 'none'
 
 export type TargetResolution =
-  | { readonly kind: 'resolved'; readonly sectionIds: readonly SectionId[]; readonly mode: TargetMode }
+  | {
+      readonly kind: 'resolved'
+      readonly sectionIds: readonly SectionId[]
+      readonly mode: TargetMode
+      /** True when the targets are the best node found so far, taken because the decision budget was reached. */
+      readonly bestFound?: boolean
+    }
   | { readonly kind: 'ambiguous'; readonly candidates: readonly { readonly sectionId: SectionId; readonly confidence: number }[] }
 
 /**
@@ -47,7 +56,9 @@ export type TargetResolution =
  * used as given (for a fragment: those of them it refers to). Otherwise a
  * section is inferred at or above `targetChoice`, several sections may be
  * inferred, and sections that only reach the ambiguity floor are a
- * question to the user, never a guess.
+ * question to the user, never a guess. The one exception is a routing
+ * whose referent strategy the decision budget stopped (`budgetStop`): the
+ * user is not asked, and the best node found so far is taken.
  */
 export function resolveUnitTargets(
   signals: UnitSignals,
@@ -68,6 +79,12 @@ export function resolveUnitTargets(
      * neither the handling chain nor the placement they give (see `referentCovered`).
      */
     readonly covered: (accepted: readonly SectionId[], weak: SectionId) => boolean
+    /**
+     * Set when the decision budget stopped the referent strategy (11 · "Decision budget"): the best node found so
+     * far, empty when there is none. The budget is a hard stop, so the user is not asked: where the rules below
+     * would ask, the clear targets stand alone, or, with none, the best node found so far is the target.
+     */
+    readonly budgetStop?: { readonly best: readonly SectionId[] } | null
   },
 ): TargetResolution {
   const ranked = [...signals.targets].sort((a, b) => b.confidence - a.confidence)
@@ -97,7 +114,7 @@ export function resolveUnitTargets(
         if (options.covered(accepted, t.id)) accepted.push(t.id)
         else uncovered = true
       }
-      if (uncovered && options.mayBeReply) {
+      if (uncovered && options.mayBeReply && !options.budgetStop) {
         return {
           kind: 'ambiguous',
           candidates: ranked.filter((t) => t.confidence >= AMBIGUITY_FLOOR).map((t) => ({ sectionId: t.id, confidence: t.confidence })),
@@ -109,6 +126,10 @@ export function resolveUnitTargets(
   }
   const weak = ranked.filter((t) => t.confidence >= AMBIGUITY_FLOOR)
   if (options.mayBeReply && (weak.length >= 2 || (weak.length === 1 && !options.placedWithoutTarget))) {
+    if (options.budgetStop) {
+      const best = options.budgetStop.best
+      return { kind: 'resolved', sectionIds: best, mode: best.length > 0 ? 'inferred' : 'none', bestFound: best.length > 0 }
+    }
     return { kind: 'ambiguous', candidates: weak.map((t) => ({ sectionId: t.id, confidence: t.confidence })) }
   }
   return { kind: 'resolved', sectionIds: [], mode: 'none' }

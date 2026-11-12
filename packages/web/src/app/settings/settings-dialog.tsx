@@ -1,15 +1,19 @@
 import {
+  DEFAULT_ABSOLUTE_TOKEN_BUDGET,
+  DEFAULT_RELATIVE_TOKEN_BUDGET,
   DEFAULT_SETTINGS,
   RETRY_POLICIES,
   type ComparePlacement,
   type DebugViewToggle,
   type DecisionThresholds,
+  type DecisionTokenBudget,
   type KeyProviderName,
   type ModelRoleChoice,
   type ReferentStrategyName,
   type RetryPolicy,
   type Settings,
   type SettingsPatch,
+  type StrategySelectionMode,
 } from '@pluribus/protocol'
 import { CheckIcon, KeyRoundIcon, MinusIcon, PlusIcon } from 'lucide-react'
 import { useEffect, useId, useState, type ReactNode } from 'react'
@@ -89,6 +93,7 @@ export function SettingsDialog() {
               <TabsContent value="routing">
                 <div className="grid gap-8">
                   <ReferentSettings settings={app.settings} />
+                  <DecisionBudgetSettings settings={app.settings} />
                   <ThresholdSettings settings={app.settings} />
                 </div>
               </TabsContent>
@@ -432,7 +437,21 @@ const REFERENT_STRATEGIES: readonly { value: ReferentStrategyName; label: string
   },
 ]
 
-/** The tree walk's two switches. A run that is too long to ask about answer by answer is searched whichever way they are set. */
+/** Whether the strategy and the tree walk's switches are chosen for each message from the shape of the conversation. */
+const STRATEGY_SELECTION: readonly { value: StrategySelectionMode; label: string; description: string }[] = [
+  { value: 'off', label: 'As set here', description: 'Every message uses the strategy and switches chosen below.' },
+  { value: 'rules', label: 'By rules', description: 'Chosen for each message from the shape of the conversation. No extra request. The default.' },
+  {
+    value: 'decision-model',
+    label: 'By the decision model',
+    description: 'One small request about the shape, reused until the shape changes. The rules when it fails or is unsure.',
+  },
+]
+
+/**
+ * The tree walk's two switches. The trunk base is chosen for each message while a strategy selector is on; hop between
+ * branch points changes where a message is placed, so it is never chosen and is used as set whenever the tree walk runs.
+ */
 const TREE_WALK_SWITCHES: readonly { key: 'startAtTrunkBase' | 'hopBetweenBranchPoints'; label: string; description: string }[] = [
   {
     key: 'startAtTrunkBase',
@@ -449,11 +468,41 @@ const TREE_WALK_SWITCHES: readonly { key: 'startAtTrunkBase' | 'hopBetweenBranch
 ]
 
 /** Context summaries for routing decisions. Nothing produces a summary yet, and the wording says so. */
+const SUMMARY_SWITCHES: readonly { key: 'useSummaryIfAvailable' | 'backgroundSummaries'; label: string; description: string }[] = [
+  {
+    key: 'useSummaryIfAvailable',
+    label: 'Use context summaries when available',
+    description:
+      'Routing reads a summary of the earlier work and the answer’s own content, not the answer’s usual line. Answers are still written from the full context. Summaries are not generated yet, so this changes nothing for now.',
+  },
+  {
+    key: 'backgroundSummaries',
+    label: 'Summarise context in the background',
+    description: 'Offers finished work to the summariser after each run. Summaries are not generated yet: turning this on has no effect for now.',
+  },
+]
+
 function ReferentSettings({ settings }: { settings: Settings }) {
   const change = useChangeSettings()
   const label = useId()
+  const selectionLabel = useId()
+  const selecting = settings.routing.strategySelection !== 'off'
   return (
     <Panel title="Referents" description="How routing decides which earlier answers a message refers to and waits for.">
+      <Row
+        label="Choosing the strategy"
+        labelId={selectionLabel}
+        description={selecting ? 'While this is on, the strategy and “Start at the trunk base” are chosen for each message; the ones set below are not used. “Hop between branch points” is used as set.' : undefined}
+        stacked
+      >
+        <ChoiceCards
+          labelledBy={selectionLabel}
+          options={STRATEGY_SELECTION}
+          value={settings.routing.strategySelection}
+          onChoose={(value) => void change({ routing: { strategySelection: value } })}
+          className="sm:grid-cols-3"
+        />
+      </Row>
       <Row label="Strategy" labelId={label} stacked>
         <ChoiceCards
           labelledBy={label}
@@ -463,8 +512,8 @@ function ReferentSettings({ settings }: { settings: Settings }) {
           className="sm:grid-cols-2"
         />
       </Row>
-      {settings.routing.referentStrategy === 'tree-walk'
-        ? TREE_WALK_SWITCHES.map((entry) => (
+      {/* A selector may choose the tree walk whatever is set here, and the hop then applies: its switch stays in reach. */}
+      {TREE_WALK_SWITCHES.filter((entry) => settings.routing.referentStrategy === 'tree-walk' || (selecting && entry.key === 'hopBetweenBranchPoints')).map((entry) => (
             <DebugRow
               key={entry.key}
               label={entry.label}
@@ -472,8 +521,88 @@ function ReferentSettings({ settings }: { settings: Settings }) {
               checked={settings.routing.treeWalk[entry.key]}
               onChange={(checked) => void change({ routing: { treeWalk: { [entry.key]: checked } } })}
             />
-          ))
-        : null}
+          ))}
+      {SUMMARY_SWITCHES.map((entry) => (
+        <DebugRow
+          key={entry.key}
+          label={entry.label}
+          description={entry.description}
+          checked={settings.routing[entry.key]}
+          onChange={(checked) => void change({ routing: { [entry.key]: checked } })}
+        />
+      ))}
+    </Panel>
+  )
+}
+
+// ───────────────────────── decision budget ─────────────────────────
+
+const wholeNumber = new Intl.NumberFormat('en-US')
+
+const TOKEN_BUDGET_MODES: readonly { value: DecisionTokenBudget['mode']; label: string; description: string }[] = [
+  {
+    value: 'relative',
+    label: 'Share of the conversation',
+    description: 'Grows with everything recorded in the conversation, so a long one can be searched further back for what a message refers to.',
+  },
+  {
+    value: 'absolute',
+    label: 'Fixed',
+    description: 'The same number of tokens for every message, however long the conversation is. Predictable; in a very long conversation an old answer may be out of reach.',
+  },
+]
+
+/** The decision input tokens routing one message may use: a share of the conversation's log, or a fixed number. */
+function DecisionBudgetSettings({ settings }: { settings: Settings }) {
+  const change = useChangeSettings()
+  const modeLabel = useId()
+  const valueLabel = useId()
+  const budget = settings.routing.tokenBudget
+  const setBudget = (tokenBudget: DecisionTokenBudget): Promise<boolean> => change({ routing: { tokenBudget } })
+  return (
+    <Panel
+      title="Decision budget"
+      description="The most decision-model input routing one message may use, in tokens. Whatever is set here, routing is also held to twice the cost of the answer it routes; the smaller limit applies."
+    >
+      <Row label="Token budget" labelId={modeLabel} stacked>
+        <ChoiceCards
+          labelledBy={modeLabel}
+          options={TOKEN_BUDGET_MODES}
+          value={budget.mode}
+          onChoose={(mode) => void setBudget(mode === 'relative' ? DEFAULT_RELATIVE_TOKEN_BUDGET : DEFAULT_ABSOLUTE_TOKEN_BUDGET)}
+          className="sm:grid-cols-2"
+        />
+      </Row>
+      {budget.mode === 'relative' ? (
+        <Row
+          label="Share of the conversation"
+          labelId={valueLabel}
+          description={`Of the tokens in every message and every answer attempt recorded so far. Never fewer than ${wholeNumber.format(budget.floor)} tokens, so a new conversation is not starved, and never more than ${wholeNumber.format(budget.ceiling)}.`}
+          stacked
+        >
+          <CommittedSlider
+            labelledBy={valueLabel}
+            value={Math.round(budget.fraction * 1000)}
+            min={5}
+            max={100}
+            step={5}
+            format={(perMille) => `${(perMille / 10).toFixed(1)}%`}
+            onCommit={(perMille) => setBudget({ ...budget, fraction: perMille / 1000 })}
+          />
+        </Row>
+      ) : (
+        <Row label="Tokens per message" labelId={valueLabel} description="Counts every decision request made to route one message." stacked>
+          <CommittedSlider
+            labelledBy={valueLabel}
+            value={budget.inputTokens}
+            min={2_000}
+            max={40_000}
+            step={1_000}
+            format={(tokens) => wholeNumber.format(tokens)}
+            onCommit={(inputTokens) => setBudget({ mode: 'absolute', inputTokens })}
+          />
+        </Row>
+      )}
     </Panel>
   )
 }

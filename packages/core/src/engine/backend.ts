@@ -41,6 +41,8 @@ import {
   type Backend,
   type CancelSource,
   type CancelTimer,
+  type ContextSummariser,
+  type ContextSummaryProvider,
   type CoreDependencies,
   type CoreOptions,
   type JsonValue,
@@ -50,9 +52,11 @@ import {
   type RoutingInput,
   type RoutingOutcome,
   type RoutingPlan,
+  type SummariseReason,
+  type SummariseRequest,
 } from '../ports'
-import { resolveTargets, routingCandidates } from './candidates'
-import { assembleContext, sessionRequirementsInForce, type AssembledContext } from './context'
+import { resolveTargets, routingCandidates, sessionLogTokens, strategySelectionOnRecord } from './candidates'
+import { assembleContext, contextChainOf, sessionRequirementsInForce, type AssembledContext } from './context'
 import { defaultModules } from './engine-module'
 import { defaultRetryPlanner, defaultRoutingRetryPlanner, notStartedInSection, scheduleRoutingRetry, settleWait } from './lifecycle'
 import {
@@ -69,6 +73,7 @@ import { checkPlan, nearestSettledAncestor } from './plan'
 import { Projector, projectSnapshot, runInspection } from './projections'
 import { messageVisible, nodeInFlight, resolvePlannedParents, unsatisfiedPrerequisites } from './queries'
 import { fold, reduce } from './reducers'
+import { fullChainContextProvider, noContextSummariser } from './summaries'
 import { STATE_VERSION, emptyConversationState, type ConversationState } from './state'
 
 /**
@@ -203,6 +208,8 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
   const router: Router | null = deps.router ?? (routerFactory ? routerFactory(deps) : null)
   if (!router) throw new Error('createBackend needs deps.router or a module with createRouter')
   const activeRouter: Router = router
+  const summaryProvider: ContextSummaryProvider = deps.contextSummaryProvider ?? fullChainContextProvider
+  const summariser: ContextSummariser = deps.contextSummariser ?? noContextSummariser
   const retryPlanner: RetryPlanner = [...modules].reverse().find((m) => m.retryPlanner)?.retryPlanner ?? defaultRetryPlanner
   const routingRetryPlanner: RoutingRetryPlanner =
     [...modules].reverse().find((m) => m.routingRetryPlanner)?.routingRetryPlanner ?? defaultRoutingRetryPlanner
@@ -533,9 +540,26 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
       forcedComposition: routeOptions.forcedComposition ?? null,
       candidates: routingCandidates(state),
       sessionRequirements: sessionRequirementsInForce(state),
+      sessionLogTokens: sessionLogTokens(state),
+      strategySelectionOnRecord: strategySelectionOnRecord(state),
       settings: { models: settings.models, thresholds: settings.thresholds, routing: settings.routing },
+      // Decisions may be shown a summary of a node's context; the chain comes from the same assembly a run uses.
+      ...(settings.routing.useSummaryIfAvailable
+        ? { decisionContext: (nodeId: NodeId) => summaryProvider.contextFor({ nodeId, chain: () => contextChainOf(state, nodeId) }) }
+        : {}),
       ids: deps.ids,
     }
+  }
+
+  /**
+   * Offers finished work to the context summariser, in the background, while the setting is on. Nothing waits
+   * for it, and its outcome is not recorded yet: the event that would record a summary is specified in
+   * docs/build/context-summaries.md.
+   */
+  function offerToSummariser(state: ConversationState, nodeId: NodeId, directiveId: DirectiveId | null, reason: SummariseReason): void {
+    if (!settings.routing.backgroundSummaries) return
+    const request: SummariseRequest = { conversationId: state.conversationId, nodeId, directiveId, reason, chain: () => contextChainOf(state, nodeId) }
+    void summariser.consider(request).catch(() => undefined)
   }
 
   /**
@@ -882,6 +906,7 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
         ctx.flushOutput(attemptId)
         live.delete(attemptId)
         ctx.emit({ type: 'attempt-completed', attemptId, finishReason: event.finishReason, usage: event.usage })
+        offerToSummariser(ctx.state, attempt.nodeId, attempt.directiveId, 'run-completed')
         return
       case 'failed': {
         ctx.flushOutput(attemptId)

@@ -1,7 +1,7 @@
-import type { ProviderError, TreeWalkSettings } from '@pluribus/protocol'
+import type { DecisionBudget, ProviderError, TreeWalkSettings } from '@pluribus/protocol'
 import type { GroupProbe, PointProbe, Probe, ReferentOperations, ReferentResult, ReferentStrategy, ReferentUnit, RunEndTaken, SegmentProbe, SeveralProbe, UnitReferents } from '../../ports'
 import { createDecisionOperations, type OperationsFactory } from './operations'
-import { referentsFromScores } from './shared'
+import { bestNodeFound, referentsFromScores } from './shared'
 import { buildTree, type GroupNode, type ReferentTree, type SectionNode, type TreeNode } from './tree'
 
 /**
@@ -10,10 +10,14 @@ import { buildTree, type GroupNode, type ReferentTree, type SectionNode, type Tr
  * The search looks for the deepest relevant nodes of each unit: every
  * relevant node that has no relevant descendant. A policy decides which
  * probes to send next, where to split and when to stop, and nothing else:
- * it holds no question text, no question ID
+ * it holds no question text, no question ID, no arithmetic on the budget
  * and no decision-provider type. Whatever implements `ReferentOperations`
- * can drive it: the decision provider, or an oracle over
+ * can drive it: the decision provider behind the guard, or an oracle over
  * a labelled set of relevant nodes in a test.
+ *
+ * Exact and best effort are the same search. With no budget it runs to its
+ * end. With one, a round that does not fit is not sent: the search stops
+ * and what was confirmed by a Point or a Group so far stands.
  *
  * Only a Point or a Group confirms a node. The one exception is a `RunEnd`:
  * with hop between branch points on, the tree walk takes the last section
@@ -74,6 +78,8 @@ export interface RunEnd {
 export type SearchOutcome =
   | {
       readonly ok: true
+      /** Set when the decision budget stopped the search: the limit, and whether the listed sections not yet asked about were still asked about in one round. */
+      readonly stop: { readonly limit: keyof DecisionBudget; readonly to: 'one-pass' | 'partial' } | null
       /** The runs whose last section was taken without a search inside them. Left out when there are none. */
       readonly runEnds?: readonly RunEnd[]
     }
@@ -94,9 +100,10 @@ export const probe = {
  * run (`RunEnd`) has the highest score among the questions about the run,
  * when that is at least plausible. Ancestors of a confirmed node are
  * dropped (not for a correction) and a confirmed group stands for all its
- * members (`referentsFromScores`).
+ * members (`referentsFromScores`). After a stop, the best node found so far
+ * is reported with them.
  */
-export function unitReferents(input: SearchInput, ops: ReferentOperations, unit: ReferentUnit, runEnds: readonly RunEnd[] = []): UnitReferents {
+export function unitReferents(input: SearchInput, ops: ReferentOperations, unit: ReferentUnit, stopped: boolean, runEnds: readonly RunEnd[] = []): UnitReferents {
   const taken = new Map<TreeNode, { readonly end: RunEnd; readonly value: number; readonly by: PointProbe | SegmentProbe }>()
   for (const end of runEnds) {
     if (end.unit !== unit) continue
@@ -134,6 +141,7 @@ export function unitReferents(input: SearchInput, ops: ReferentOperations, unit:
     sections,
     several: ops.known(probe.several(unit)),
     ...(ends.length > 0 ? { runEnds: ends } : {}),
+    ...(stopped ? { best: bestNodeFound(input.tree, score, { corrective, floor: input.relevance.floor }) } : {}),
   }
 }
 
@@ -172,8 +180,8 @@ export function strategyFromPolicy(policy: ReferentPolicy, operations: Operation
       const outcome = await policy.search(input, ops)
       if (!outcome.ok) return outcome
       const units: { [key: string]: UnitReferents } = {}
-      for (const unit of request.units) units[unit.key] = unitReferents(input, ops, unit, outcome.runEnds)
-      return { ok: true, units }
+      for (const unit of request.units) units[unit.key] = unitReferents(input, ops, unit, outcome.stop !== null, outcome.runEnds)
+      return { ok: true, units, fallback: outcome.stop }
     },
   }
 }

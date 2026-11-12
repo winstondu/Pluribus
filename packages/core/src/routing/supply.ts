@@ -1,6 +1,6 @@
 import { IN_FLIGHT_STATES, type DirectiveId, type NodeId, type SectionId, type SiblingGroupId } from '@pluribus/protocol'
-import { firstPassSectionIds } from './referents/first-pass'
-import type { CandidateChain, CandidateGroup, CandidateSection, CandidateWork, ReferentSection, RoutingInput } from '../ports'
+import { FIRST_PASS_SECTIONS, firstPassSectionIds } from './referents/first-pass'
+import type { CandidateChain, CandidateGroup, CandidateSection, CandidateWork, DecisionContext, ReferentSection, RoutingInput } from '../ports'
 
 /**
  * Which candidates the decision model is asked about (12 · "Left to the
@@ -15,10 +15,20 @@ import type { CandidateChain, CandidateGroup, CandidateSection, CandidateWork, R
  * - Session-wide requirements in force, for corrections to them.
  */
 export const MAX_SECTIONS = 24
+/**
+ * The smallest window of the pipeline's request, when it is cut to fit the
+ * routing's decision token budget: it then lists the first-pass sections
+ * only (`firstPassSectionIds`: the most recent answer sections that no
+ * later one of them builds on, at most this many), and as many lines of
+ * work.
+ */
+export const MIN_SECTIONS = FIRST_PASS_SECTIONS
 export const MAX_DEPENDENCIES = 16
 export const MAX_CHAINS = 24
 
 export interface Supplied {
+  /** The most sections and lines of work listed: `MAX_SECTIONS` unless the request was cut to fit the token budget. */
+  readonly window: number
   readonly sections: readonly CandidateSection[]
   readonly inFlight: readonly CandidateWork[]
   readonly openGroups: readonly CandidateGroup[]
@@ -31,19 +41,27 @@ export interface Supplied {
 }
 
 /**
- * The first-pass sections are listed however old they are, because every
- * routing asks about each of them by itself.
+ * `window` is the most sections, and the most lines of work, that are
+ * listed. It is `MAX_SECTIONS` unless the pipeline's request has to be cut
+ * to fit the routing's decision token budget; then the most recent stay,
+ * and an open clarification question stays listed however old it is, so
+ * that its answer is still recognised. The first-pass sections are listed
+ * whatever the window, because every routing asks about each of them by
+ * itself; at the smallest window (`MIN_SECTIONS`) they are the only answer
+ * sections listed.
  */
-export function supply(input: RoutingInput, given: readonly SectionId[]): Supplied {
+export function supply(input: RoutingInput, given: readonly SectionId[], window: number = MAX_SECTIONS): Supplied {
   const c = input.candidates
-  const recent = new Set(c.sections.slice(-MAX_SECTIONS))
+  const size = Math.min(MAX_SECTIONS, Math.max(MIN_SECTIONS, Math.floor(window)))
+  const recent = new Set(size === MIN_SECTIONS && c.sections.length > MIN_SECTIONS ? [] : c.sections.slice(-size))
   const first = new Set(firstPassSectionIds(c))
-  const kept = (s: CandidateSection): boolean => given.includes(s.sectionId) || first.has(s.sectionId)
+  const kept = (s: CandidateSection): boolean => given.includes(s.sectionId) || first.has(s.sectionId) || (size < MAX_SECTIONS && s.asksElicitationId !== null)
   const sections = c.sections.filter((s) => recent.has(s) || kept(s))
   const inFlight = c.work.filter((w) => IN_FLIGHT_STATES.includes(w.state)).slice(-MAX_DEPENDENCIES)
   const openGroups = c.groups.filter((g) => g.open)
-  const chains = c.chains.slice(-MAX_CHAINS)
+  const chains = c.chains.slice(-Math.min(MAX_CHAINS, size))
   return {
+    window: size,
     sections,
     inFlight,
     openGroups,
@@ -60,8 +78,35 @@ function quote(text: string, max = 400): string {
   return `"${flat.length > max ? `${flat.slice(0, max)}…` : flat}"`
 }
 
-export function sectionLine(s: CandidateSection, n: number): string {
+/** The most of a summary shown in a section's line. */
+export const SUMMARY_SHOWN = 600
+/** The most messages of a section's own content shown after a summary: the latest ones. */
+export const OWN_MESSAGES_SHOWN = 6
+
+/**
+ * What the decision model is shown for a section in place of its usual
+ * line: nothing unless the setting is on, the engine supplied a reader and
+ * a summary is available for the section's node. A full chain is not a
+ * summary: the usual line stands (docs/build/context-summaries.md).
+ */
+export function decisionContextOf(input: Pick<RoutingInput, 'settings' | 'decisionContext'>, section: CandidateSection): DecisionContext | null {
+  if (!input.settings.routing.useSummaryIfAvailable || !input.decisionContext || section.asksElicitationId) return null
+  const context = input.decisionContext(section.nodeId)
+  return context?.kind === 'summary' ? context : null
+}
+
+/**
+ * A section's line. With a summary: the summary of its context up to the
+ * anchor, then the content specific to the section (the exchanges after
+ * the anchor, the section's own last).
+ */
+export function sectionLine(s: CandidateSection, n: number, context: DecisionContext | null = null): string {
   if (s.asksElicitationId) return `S${n}. A question Pluribus asked the user, still unanswered: ${quote(s.excerpt || s.request)}`
+  if (context?.kind === 'summary') {
+    const own = context.own.slice(-OWN_MESSAGES_SHOWN).map((m) => `${m.role === 'assistant' ? 'answer' : 'request'} ${quote(m.content, m.role === 'assistant' ? 280 : 240)}`)
+    const after = own.length > 0 ? `; after that: ${own.join('; ')}` : ''
+    return `S${n}. "${s.title}": the work before it, summarised: ${quote(context.summary.text, SUMMARY_SHOWN)}${after}`
+  }
   const answer = s.excerpt ? `answer ${s.state === 'completed' ? '' : `so far (${s.state}) `}${quote(s.excerpt)}` : `no answer yet (${s.state})`
   return `S${n}. "${s.title}": request ${quote(s.request, 240)}; ${answer}`
 }
@@ -79,7 +124,7 @@ export function describeState(input: RoutingInput, supplied: Supplied, subject: 
   const lines: string[] = []
   if (supplied.sections.length > 0) {
     lines.push('Answer sections in this conversation, oldest first:')
-    supplied.sections.forEach((s, i) => lines.push(sectionLine(s, i + 1)))
+    supplied.sections.forEach((s, i) => lines.push(sectionLine(s, i + 1, decisionContextOf(input, s))))
   } else {
     lines.push('The conversation has no answers yet.')
   }

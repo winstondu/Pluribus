@@ -6,7 +6,8 @@ import { buildTree, type ReferentTree, type TreeNode } from './tree'
 /**
  * The first pass of every routing (11 · "Referent strategies"): how many of
  * the most recent answer sections are asked about by themselves in the
- * routing request, whichever strategy runs.
+ * routing request, whichever strategy runs. Also the fewest sections that
+ * request lists when the decision budget cuts it (`MIN_SECTIONS`).
  */
 export const FIRST_PASS_SECTIONS = 5
 

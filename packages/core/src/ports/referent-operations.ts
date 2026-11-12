@@ -1,4 +1,4 @@
-import type { ProviderError, SectionId, SiblingGroupId } from '@pluribus/protocol'
+import type { DecisionBudget, ProviderError, SectionId, SiblingGroupId } from '@pluribus/protocol'
 import type { CandidateGroup } from './router'
 import type { ReferentSection, ReferentUnit } from './referent-strategy'
 
@@ -13,7 +13,7 @@ import type { ReferentSection, ReferentUnit } from './referent-strategy'
  * search finds them with the operations below and nothing else, so a
  * strategy is only policy: which probes next, where to split, when to stop.
  *
- * Decision-backed:
+ * Decision-backed, counted against the decision budget:
  * - **Point**: does the unit refer to this one node, asked about by itself.
  *   The decision model is shown some of the node's ancestry as context.
  * - **Group**: does it build on a sibling group as a whole (the join-back).
@@ -31,15 +31,16 @@ import type { ReferentSection, ReferentUnit } from './referent-strategy'
  * - **Structure**: the tree types below; the helpers that read them are
  *   pure functions over state (`routing/referents/tree.ts`).
  * - **Describe**: how a node is shown in a question.
- * - **Cost**: the size of a probe. The probes of one round are one
- *   decision request.
+ * - **Cost**: the size of a probe, and whether a round fits what is left of
+ *   the budget. The probes of one round are one decision request.
  */
 export interface ReferentOperations {
   /** The latest answer to a probe, as a probability of yes: from the routing request or from a round. Null when it was not asked. */
   known(probe: Probe): number | null
   /**
    * One round: every probe in one decision request. A probe that is already
-   * known is asked again. Never rejects.
+   * known is asked again. Never rejects; a round the budget does not allow
+   * is refused and nothing is sent.
    */
   ask(round: readonly Probe[]): Promise<ProbeRoundResult>
   /** Whether the routing request, which is sent anyway, can carry the probe: everything it names is listed there. */
@@ -50,10 +51,20 @@ export interface ReferentOperations {
   describe(node: ReferentNode): string
   /** Cost: what a probe adds to a round, in estimated input tokens. Deterministic. */
   size(probe: Probe): number
+  /**
+   * Cost: the first limit of the decision budget that sending `round`, and
+   * `reserve` as a round after it, would pass; null when both fit. An empty
+   * round costs nothing.
+   */
+  fits(round: readonly Probe[], reserve?: readonly Probe[]): keyof DecisionBudget | null
+  /** Cost: what the budget still allows. */
+  remaining(): DecisionBudget
 }
 
 export type ProbeRoundResult =
   | { readonly kind: 'answered' }
+  /** The round would exceed the budget. Nothing was sent. */
+  | { readonly kind: 'refused'; readonly limit: keyof DecisionBudget }
   | { readonly kind: 'failed'; readonly error: ProviderError }
 
 export type Probe = PointProbe | GroupProbe | SegmentProbe | SeveralProbe

@@ -1,5 +1,6 @@
 import type {
   AttemptResultStatus,
+  BudgetStopRecord,
   RunEndRecord,
   ConsumedMessage,
   ContextOrigin,
@@ -11,6 +12,8 @@ import type {
   PrerequisiteRef,
   RunInspection,
   SectionId,
+  StrategyChoice,
+  StrategySelectionRecord,
   TranscriptProjection,
   UnitRoutingDecision,
   WaitTargetView,
@@ -452,6 +455,70 @@ function prerequisiteWord(ref: PrerequisiteRef, transcript: TranscriptProjection
   return section?.title ?? ref.directiveId
 }
 
+const FALLBACK_SENTENCE: { readonly [F in NonNullable<StrategySelectionRecord['fallback']>]: string } = {
+  failed: 'the decision model could not be asked',
+  'low-confidence': 'the decision model was not confident',
+  'no-budget': 'the decision budget had no room to ask the decision model',
+}
+
+function strategyWord(choice: StrategyChoice): string {
+  if (choice.strategy === 'one-pass') return 'One pass'
+  const settings = [
+    choice.searchLongRuns ? 'long runs searched' : 'runs listed',
+    choice.startAtTrunkBase ? 'from the trunk base' : null,
+  ].filter((text): text is string => text !== null)
+  return `Tree walk (${settings.join(', ')})`
+}
+
+/** How the referent strategy was chosen for this routing, when a strategy selector was on. */
+function StrategySelectionRow({ selection }: { selection: StrategySelectionRecord }) {
+  const by = selection.selector === 'rules' ? 'the rules' : 'the decision model'
+  const scores = selection.scores ? Object.entries(selection.scores) : []
+  return (
+    <Row label="Strategy">
+      <span data-testid="strategy-selection">
+        {strategyWord(selection.choice)} · <span className="text-muted-foreground">chosen by {by}</span>
+        {selection.reused ? <span className="text-muted-foreground"> · reused for the same shape</span> : null}
+        {selection.fallback ? <span className="text-muted-foreground"> · {FALLBACK_SENTENCE[selection.fallback]}</span> : null}
+        <span className="mt-0.5 block text-muted-foreground">{selection.reason}</span>
+        {scores.length > 0 ? (
+          <span className="mt-0.5 block font-mono text-2xs text-muted-foreground">
+            {scores.map(([name, value]) => `${name} ${value.toFixed(2)}`).join(' · ')}
+          </span>
+        ) : null}
+      </span>
+    </Row>
+  )
+}
+
+const LIMIT_WORD: { readonly [L in BudgetStopRecord['limit']]: string } = {
+  'token-budget': 'the token budget',
+  'price-guard': 'the bound against the answer',
+  requests: 'the limit on further requests',
+  questions: 'the limit on questions',
+}
+
+/** That the decision budget stopped the search for referents, and the best node found so far where routing used one. */
+function BudgetStopRow({ stop, unitKey, transcript }: { stop: BudgetStopRecord; unitKey: string | null; transcript: TranscriptProjection }) {
+  const best = stop.bestFound.find((found) => found.unit === unitKey) ?? null
+  const title = (sectionId: SectionId): string => transcript.sections[sectionId]?.title ?? sectionId
+  return (
+    <Row label="Decision budget">
+      <span data-testid="budget-stop">
+        Reached {LIMIT_WORD[stop.limit]} ·{' '}
+        <span className="text-muted-foreground">
+          {stop.fallback === 'one-pass' ? 'the remaining listed sections were asked about in one request' : 'nothing more was asked'}
+        </span>
+        <span className="mt-0.5 block text-muted-foreground">
+          {best
+            ? `The user was not asked which section is meant. The best node found so far was used: ${best.sectionIds.map(title).join(' + ')}, confidence ${best.confidence.toFixed(2)}.`
+            : 'The best node found so far was not needed for this work.'}
+        </span>
+      </span>
+    </Row>
+  )
+}
+
 /**
  * That hop between branch points placed this work on the last answer of a run it refers to, without a search inside
  * the run: which run, and the question whose answer said the run is meant.
@@ -508,6 +575,8 @@ function Routing(props: { inspection: RunInspection; transcript: TranscriptProje
           {decision.composition.value} · <span className="text-muted-foreground">{confidence(decision.composition)}</span>
         </Row>
         {unit ? <UnitRows unit={unit} transcript={transcript} genealogy={genealogy} inspection={inspection} /> : null}
+        {decision.strategySelection ? <StrategySelectionRow selection={decision.strategySelection} /> : null}
+        {decision.budgetStop ? <BudgetStopRow stop={decision.budgetStop} unitKey={unit?.key ?? null} transcript={transcript} /> : null}
         {decision.runEnds ? <RunEndsRow ends={decision.runEnds} unitKey={unit?.key ?? null} transcript={transcript} /> : null}
         <Row label="Explanation">{unit?.explanation || decision.explanation || 'None recorded.'}</Row>
       </dl>

@@ -109,8 +109,8 @@ export function buildTree(request: Pick<ReferentRequest, 'sections' | 'candidate
   return { roots, nodes, bySection, byGroup }
 }
 
-/** Sections by number; a group right after its last member. */
-function rank(node: TreeNode): number {
+/** Position in conversation order: sections by number; a group right after its last member. */
+export function rank(node: TreeNode): number {
   return node.kind === 'section' ? node.n : Math.max(...node.members.map((m) => m.n)) + 0.5
 }
 

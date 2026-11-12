@@ -62,6 +62,7 @@ export type {
   RoutingPlan,
 } from './router'
 export type {
+  BestNodeFound,
   RunEndTaken,
   ReferentAsk,
   ReferentAskResult,
@@ -88,5 +89,28 @@ export type {
   SegmentProbe,
   SeveralProbe,
 } from './referent-operations'
+export type {
+  ContextChain,
+  ContextSummariser,
+  ContextSummary,
+  ContextSummaryDraft,
+  ContextSummaryProvenance,
+  ContextSummaryProvider,
+  DecisionContext,
+  DecisionContextRequest,
+  SummariseOutcome,
+  SummariseReason,
+  SummariseRequest,
+} from './context-summary'
+export type {
+  GenealogyShape,
+  RunShape,
+  SelectorAsk,
+  SelectorAskResult,
+  SelectorQuestions,
+  StrategySelection,
+  StrategySelectionRequest,
+  StrategySelector,
+} from './strategy-selector'
 export type { Backend, CoreDependencies, CoreOptions } from './backend'
 export { DEFAULT_CORE_OPTIONS } from './backend'

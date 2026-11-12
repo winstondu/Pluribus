@@ -22,6 +22,8 @@ export {
   meteredDecisionProvider,
   oracleDecisionProvider,
   referenceDecomposer,
+  sceneLogTokens,
+  suppliedIn,
   type CorpusReport,
   type CorpusResult,
   type CorpusRun,

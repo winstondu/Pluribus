@@ -120,6 +120,7 @@ const nodeOf = (tree: ReferentTree, handle: string): TreeNode => {
 interface Run {
   readonly relevant: ReadonlySet<TreeNode>
   readonly candidates?: readonly TreeNode[]
+  readonly budget?: { readonly rounds?: number; readonly probes?: number }
   readonly settings?: Partial<TreeWalkSettings>
   readonly corrective?: boolean
   readonly answer?: (probe: Probe) => number | undefined
@@ -132,6 +133,7 @@ async function search(tree: ReferentTree, run: Run, policy = treeWalkPolicy) {
   const ops: OracleOperations = createOracleOperations({
     tree,
     relevant: () => run.relevant,
+    ...(run.budget ? { budget: run.budget } : {}),
     ...(run.answer ? { answer: run.answer } : {}),
     ...(run.riding ? { riding: run.riding } : {}),
   })
@@ -146,7 +148,7 @@ async function search(tree: ReferentTree, run: Run, policy = treeWalkPolicy) {
   }
   const outcome = await policy.search(input, ops)
   if (!outcome.ok) throw new Error('The oracle does not fail')
-  const referents = unitReferents(input, ops, UNIT, outcome.runEnds)
+  const referents = unitReferents(input, ops, UNIT, outcome.stop !== null, outcome.runEnds)
   const found = referents.sections.filter((s) => s.confidence >= CLEAR).map((s) => s.sectionId)
   return { ops, outcome, referents, found: new Set(found) }
 }
@@ -240,6 +242,7 @@ describe('exact: no budget', () => {
       // Relevance as the model has it (a relevant node's ancestors are relevant), and the least a walk needs (one node of every run above).
       for (const relevant of [withAncestors(targets), withLineAbove(targets)]) {
         const { found, outcome, ops } = await search(tree, { relevant })
+        expect(outcome.stop).toBeNull()
         expect(found).toEqual(sectionsOf(deepest(relevant)))
         // Nothing is asked twice.
         const asked = ops.rounds.flat().map((p) => (p.kind === 'segment' ? `c:${p.nodes.map((node) => node.key).join(',')}` : p.kind === 'several' ? 'several' : p.node.key))
@@ -272,6 +275,46 @@ describe('exact: no budget', () => {
       }
       expect(reduceToNonAncestors(nodes)).toHaveLength(nodes.length)
     }
+  })
+})
+
+describe('best effort: a budget', () => {
+  test.each(SHAPES)('budget · %s: the search never exceeds the budget and returns only nodes a Point or a Group confirmed', async (_name, sc) => {
+    const tree = treeOf(sc)
+    const next = sequence(19)
+    for (const budget of [{ rounds: 0 }, { rounds: 1 }, { rounds: 2 }, { rounds: 4 }, { probes: 3 }, { probes: 20 }, { rounds: 3, probes: 30 }]) {
+      for (let round = 0; round < 12; round++) {
+        const relevant = withAncestors(pick(tree.nodes, next, 1 + Math.floor(next() * 3)))
+        const { ops, found, referents, outcome } = await search(tree, { relevant, budget })
+        expect(ops.rounds.length).toBeLessThanOrEqual(budget.rounds ?? Number.POSITIVE_INFINITY)
+        expect(ops.probes()).toBeLessThanOrEqual(budget.probes ?? Number.POSITIVE_INFINITY)
+        // DA3: a section is a referent only if it was asked about by itself, or its sibling group was, as a whole.
+        const byItself = (id: SectionId): boolean => {
+          const node = tree.bySection.get(id)
+          return node !== undefined && (ops.confirmed(UNIT, node) || tree.nodes.some((group) => group.kind === 'group' && group.members.includes(node) && ops.confirmed(UNIT, group)))
+        }
+        for (const id of found) expect(byItself(id)).toBe(true)
+        for (const id of referents.best?.sectionIds ?? []) expect(byItself(id)).toBe(true)
+        // What it found is relevant, and with the whole budget unused it is the exact answer.
+        for (const id of found) expect(sectionsOf([...relevant]).has(id)).toBe(true)
+        if (outcome.stop === null) expect(found).toEqual(sectionsOf(deepest(relevant)))
+        // The same search again is the same search.
+        const again = await search(tree, { relevant, budget })
+        expect(again.ops.rounds.map((r) => r.length)).toEqual(ops.rounds.map((r) => r.length))
+        expect(again.found).toEqual(found)
+      }
+    }
+  })
+
+  test('budget · a search the budget stopped between a Segment and its Points confirms nothing there (DA3)', async () => {
+    const tree = treeOf(chain(200))
+    const { found, ops, outcome, referents } = await search(tree, { relevant: new Set([nodeOf(tree, 'T40')]), budget: { rounds: 1 } })
+    expect(ops.rounds).toHaveLength(1)
+    expect(ops.rounds[0]?.every((p) => p.kind === 'segment')).toBe(true)
+    // The oracle's routing request lists nothing, so there is no listed section left to fall back to.
+    expect(outcome.stop).toEqual({ limit: 'requests', to: 'one-pass' })
+    expect(found).toEqual(new Set())
+    expect(referents.best).toBeNull()
   })
 })
 
@@ -325,6 +368,10 @@ describe('the last relevant node of a run', () => {
     expect(ops.rounds[2]?.some((p) => p.kind === 'point' && p.node === nodeOf(tree, 'T90'))).toBe(true)
     const opened = new Set(ops.rounds.flat().flatMap((p) => (p.kind === 'point' ? [p.node] : [])))
     expect(opened.size).toBeLessThanOrEqual(2 * LISTABLE)
+    // With no budget for the third round the search stops with nothing confirmed, and T150 is still not a referent.
+    const stopped = await search(tree, { relevant: new Set([nodeOf(tree, 'T90')]), answer: wrongYes, budget: { rounds: 2 } })
+    expect(stopped.found).toEqual(new Set())
+    expect(stopped.outcome.stop?.limit).toBe('requests')
   })
 
   test('last · a run short enough is asked about point by point, in one round, and the result is still its last relevant section', async () => {
@@ -669,6 +716,26 @@ describe('hop between branch points', () => {
     expect(all.referents.runEnds).toBeUndefined()
   })
 
+  test('hop · the budget is a hard stop: what the rounds that were sent say about a run stands, and the best node found so far can be a run\'s last section', async () => {
+    const tree = treeOf(earlySplit(8))
+    const n = (handle: string) => nodeOf(tree, handle)
+    const relevant = new Set([n('T2'), n('a5')])
+    // No round: nothing is known, nothing is placed.
+    const none = await search(tree, { relevant, settings: HOP, budget: { rounds: 0 } })
+    expect(none.ops.rounds).toEqual([])
+    expect(none.found).toEqual(new Set())
+    expect(none.referents.best).toBeNull()
+    // One round: the trunk is relevant, the branches were not asked about. The trunk's last section is the best node found so far.
+    const one = await search(tree, { relevant, settings: HOP, budget: { rounds: 1 } })
+    expect(one.ops.rounds).toHaveLength(1)
+    expect(one.outcome.stop).toEqual({ limit: 'requests', to: 'one-pass' })
+    expect(one.found).toEqual(sectionsOf([n('T4')]))
+    expect(one.referents.best).toEqual({ sectionIds: [idOf(n('T4'))], confidence: 0.95 })
+    // The same search again is the same search; with room it ends on branch a.
+    expect(rounds((await search(tree, { relevant, settings: HOP, budget: { rounds: 1 } })).ops)).toEqual(rounds(one.ops))
+    expect((await search(tree, { relevant, settings: HOP, budget: { rounds: 2 } })).found).toEqual(sectionsOf([n('a7')]))
+  })
+
   test('hop · with start at the trunk base as well, the base and the Segments above it say whether the trunk is relevant, and no part is opened', async () => {
     const tree = treeOf(earlySplit(4))
     const n = (handle: string) => nodeOf(tree, handle)
@@ -694,7 +761,7 @@ describe('one pass', () => {
     const input: SearchInput = { tree, units: [UNIT], relevance: { clear: CLEAR, floor: FLOOR }, settings: SETTINGS, starts: () => [], corrective: () => false }
     const opening = onePassPolicy.opening(input, ops)
     expect(opening.map((p) => p.kind).sort()).toEqual([...Array<string>(2).fill('group'), ...Array<string>(7).fill('point'), 'several'])
-    expect(await onePassPolicy.search(input, ops)).toEqual({ ok: true })
+    expect(await onePassPolicy.search(input, ops)).toEqual({ ok: true, stop: null })
     expect(ops.rounds).toEqual([])
   })
 })
@@ -702,7 +769,7 @@ describe('one pass', () => {
 describe('a policy is only policy', () => {
   test.each([['one-pass.ts', onePassSource], ['tree-walk.ts', treeWalkSource]])('policy · %s holds no question text, question ID, token estimate or decision-provider type: it is written against the operations and the structure only', (file, source) => {
     const imports = [...source.matchAll(/^import .* from '([^']+)'$/gm)].map((m) => m[1])
-    expect(imports.filter((from) => from?.startsWith('.')).sort()).toEqual(file === 'one-pass.ts' ? ['../../ports', './search'] : ['../../ports', './search', './tree'])
+    expect(imports.filter((from) => from?.startsWith('.')).sort()).toEqual(file === 'one-pass.ts' ? ['../../ports', './search'] : ['../../ports', './one-pass', './search', './tree'])
     for (const banned of ['questionId', 'NoulQuestion', 'DecisionProvider', 'ReferentAsk', 'estimateDecisionTokens', 'instructions', 'inputTokens', 'stateText', 'remaining(']) expect(source).not.toContain(banned)
   })
 

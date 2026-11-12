@@ -30,6 +30,7 @@ export { reduce, fold, REDUCERS, type Reducer } from './reducers'
 export * as queries from './queries'
 export {
   assembleContext,
+  contextChainOf,
   ancestryOf,
   sessionRequirementsInForce,
   requestText,
@@ -38,6 +39,7 @@ export {
   PREAMBLE,
   type AssembledContext,
 } from './context'
+export { fullChainContextProvider, noContextSummariser } from './summaries'
 export { checkPlan, placeUnit, nearestSettledAncestor, unitsApplier, type PlanCheck } from './plan'
 export {
   computeWait,
@@ -56,5 +58,5 @@ export {
   RETRY_TIMER,
   type WaitDecision,
 } from './lifecycle'
-export { routingCandidates, resolveTargets } from './candidates'
+export { routingCandidates, resolveTargets, sessionLogTokens } from './candidates'
 export { Projector, projectSnapshot, rebuildSnapshot, runInspection, undoSplitAvailable } from './projections'

@@ -3,12 +3,13 @@ import {
   createIdFactory,
   createSeededRandom,
   createUlidFactory,
+  textTokens,
   type DecisionQuestionRecord,
   type IdFactory,
   type PointRef,
   type PrerequisiteRef,
   type Settings,
-  type RunEndRecord,
+  type BudgetStopRecord, type RunEndRecord, type StrategySelectionRecord,
   type TextSpan,
 } from '@pluribus/protocol'
 import type {
@@ -23,11 +24,12 @@ import type {
   RoutingInput,
   RoutingOutcome,
   RoutingPlan,
+  StrategySelector,
 } from '../../../src/ports'
 import { NEVER_CANCELLED } from '../../../src/ports'
 import { createRouter } from '../../../src/routing/pipeline'
 import { buildTree } from '../../../src/routing/referents/tree'
-import { numberedAnswerSections, supply } from '../../../src/routing/supply'
+import { MAX_SECTIONS, MIN_SECTIONS, numberedAnswerSections, supply, type Supplied } from '../../../src/routing/supply'
 import { ROUTING_CORPUS } from './examples'
 import { ids } from './scene'
 import type { CorpusExample, CorpusExpectation, CorpusTopic, ExpectationSet, PartExpectation, PlacementExpectation, ReferenceDecomposition } from './types'
@@ -40,6 +42,8 @@ export interface CorpusRun {
   readonly settings?: Pick<Settings, 'models' | 'thresholds' | 'routing'>
   readonly examples?: readonly CorpusExample[]
   readonly signal?: CancelSignal
+  /** Injected in place of the strategy selector the settings name. */
+  readonly strategySelector?: StrategySelector
 }
 
 export interface CorpusResult {
@@ -55,6 +59,10 @@ export interface CorpusResult {
   readonly questions: readonly DecisionQuestionRecord[]
   /** What routing the example cost in decision calls. */
   readonly decisions: DecisionSpend
+  /** How the referent strategy was chosen, when a strategy selector was on. */
+  readonly selection: StrategySelectionRecord | null
+  /** Set when a limit of the decision budget stopped the referent strategy, with the best node found so far where one was used. */
+  readonly budgetStop: BudgetStopRecord | null
   /** The targets that hop between branch points placed on the last section of a run without a search inside it; empty when none. */
   readonly runEnds: readonly RunEndRecord[]
 }
@@ -106,9 +114,15 @@ export function corpusInput(example: CorpusExample, settings: Pick<Settings, 'mo
     forcedComposition: null,
     candidates: example.scene.candidates,
     sessionRequirements: example.scene.sessionRequirements,
+    sessionLogTokens: sceneLogTokens(example),
     settings: { models: settings.models, thresholds: settings.thresholds, routing: settings.routing },
     ids: idFactory ?? createIdFactory(createUlidFactory(() => 0, createSeededRandom(11))),
   }
+}
+
+/** The log of a scene: the request and the answer of every section it holds, and the new message. A scene has no retired attempts. */
+export function sceneLogTokens(example: Pick<CorpusExample, 'scene' | 'text'>): number {
+  return example.scene.candidates.sections.reduce((sum, s) => sum + textTokens(s.request.length) + textTokens(s.answerLength), textTokens(example.text.length))
 }
 
 function spansOf(text: string, part: string | readonly string[]): TextSpan[] {
@@ -159,7 +173,7 @@ export async function evaluateCorpus(run: CorpusRun): Promise<CorpusReport> {
   for (const example of run.examples ?? ROUTING_CORPUS) {
     const input = corpusInput(example, run.settings)
     const metered = meteredDecisionProvider(run.decisionProvider)
-    const router = createRouter({ decisionProvider: metered, decomposer: run.decomposer ?? referenceDecomposer(example) })
+    const router = createRouter({ decisionProvider: metered, decomposer: run.decomposer ?? referenceDecomposer(example), ...(run.strategySelector ? { strategySelector: run.strategySelector } : {}) })
     const outcome = await router.route(input, run.signal ?? NEVER_CANCELLED)
     const expectations = expectationSetFor(input.settings, outcome)
     const mismatches = compare(example, outcome, expectations)
@@ -173,6 +187,8 @@ export async function evaluateCorpus(run: CorpusRun): Promise<CorpusReport> {
       outcome: outcome.kind,
       questions: outcome.kind === 'plan' ? outcome.plan.decision.questions : [],
       decisions: metered.spent(),
+      selection: outcome.kind === 'plan' ? (outcome.plan.decision.strategySelection ?? null) : null,
+      budgetStop: outcome.kind === 'plan' ? (outcome.plan.decision.budgetStop ?? null) : null,
       runEnds: outcome.kind === 'plan' ? (outcome.plan.decision.runEnds ?? []) : [],
     })
   }
@@ -195,14 +211,18 @@ export async function evaluateCorpus(run: CorpusRun): Promise<CorpusReport> {
 
 /**
  * The expectations a routing is scored against: those for hop between
- * branch points when the switch is on and the tree walk ran; the default
- * ones otherwise. Read from the configuration, never from where the routing
- * placed anything.
+ * branch points when the switch is on and the tree walk ran, whether it
+ * was configured or a strategy selector chose it (the switch applies
+ * whenever the tree walk runs, 11 · "Strategy selection"); the default ones
+ * otherwise. Read from the configuration and the selection record, never
+ * from where the routing placed anything.
  */
 export function expectationSetFor(settings: Pick<Settings, 'routing'>, outcome: RoutingOutcome): ExpectationSet {
   const routing = settings.routing
   if (!routing.treeWalk.hopBetweenBranchPoints) return 'default'
-  return routing.referentStrategy === 'tree-walk' ? 'hop' : 'default'
+  const chosen = outcome.kind === 'plan' ? outcome.plan.decision.strategySelection?.choice.strategy : undefined
+  const strategy = chosen ?? (routing.strategySelection === 'off' ? routing.referentStrategy : null)
+  return strategy === 'tree-walk' ? 'hop' : 'default'
 }
 
 /** An example's expectation in one set: the hop's parts in place of the default ones where the example has them. */
@@ -360,6 +380,25 @@ function expectedPlacementText(p: PlacementExpectation): string {
 
 // ───────────────────────────── the oracle ─────────────────────────────
 
+/**
+ * The candidates as one of the pipeline's own requests listed them, read
+ * back from its state text: the pipeline lists fewer answer sections when
+ * the routing's token budget is tight, and numbers them from 1 again. Null
+ * for a request that is not the pipeline's own (a strategy's further
+ * request lists only the sections it asks about).
+ */
+export function suppliedIn(input: RoutingInput, given: readonly RoutingInput['explicitTargets'][number][], state: string): Supplied | null {
+  if (!state.startsWith('Answer sections in this conversation, oldest first:')) return null
+  // Which sections a window lists is read from their lines: two windows can list the same number of sections.
+  const lines = state.split('\n').filter((line) => /^S\d+\. /.test(line))
+  for (let window = MAX_SECTIONS; window >= MIN_SECTIONS; window--) {
+    const supplied = supply(input, given, window)
+    if (supplied.sections.length !== lines.length) continue
+    if (supplied.sections.every((s, i) => s.asksElicitationId !== null || (lines[i] ?? '').startsWith(`S${i + 1}. "${s.title}"`))) return supplied
+  }
+  return null
+}
+
 const YES = 0.95
 const NO = 0.05
 const UNSURE = 0.5
@@ -374,15 +413,23 @@ const PLAUSIBLE = 0.4
  */
 export function oracleDecisionProvider(example: CorpusExample, input: RoutingInput): DecisionProvider {
   const expect = example.expect
-  const supplied = supply(input, input.explicitTargets)
   const parts = expect.parts ?? []
   const partFor = (key: string): PartExpectation | undefined => (key === 'm' ? (parts.length === 1 ? parts[0] : undefined) : parts[Number(key.slice(1))])
-  const answerSections = numberedAnswerSections(input, supplied)
+  // The candidates as the pipeline listed them: read back from each of its requests, whose window the token budget may have cut.
+  let supplied = supply(input, input.explicitTargets)
+  let answerSections = numberedAnswerSections(input, supplied)
+  // The context tree as the referent strategies see it, for the questions about a group as a whole.
+  let tree = buildTree({ sections: answerSections, candidates: input.candidates })
+  const follow = (state: string): void => {
+    const listed = suppliedIn(input, input.explicitTargets, state)
+    if (!listed || listed.window === supplied.window) return
+    supplied = listed
+    answerSections = numberedAnswerSections(input, supplied)
+    tree = buildTree({ sections: answerSections, candidates: input.candidates })
+  }
   /** The handle of S<n>: a listed section by its place in the state text, one beyond the window by the number it was given. */
   const sectionHandle = (n: number): string =>
     example.scene.handles.get(supplied.sections[n - 1]?.sectionId ?? answerSections.find((x) => x.n === n)?.section.sectionId ?? '') ?? ''
-  // The context tree as the referent strategies see it, for the questions about a group as a whole.
-  const tree = buildTree({ sections: answerSections, candidates: input.candidates })
   const relationOption = (p: PartExpectation | undefined): string =>
     p?.kind === 'unit' ? (p.relation === 'result-dependent' ? 'dependent' : (p.relation ?? 'addition')) : p?.kind === 'revision' || expect.ambiguous ? 'addition' : 'new'
 
@@ -464,6 +511,7 @@ export function oracleDecisionProvider(example: CorpusExample, input: RoutingInp
 
   return {
     async decide<Q extends DecisionQuestions>(request: DecisionRequest<Q>): Promise<DecisionResult<Q>> {
+      follow(request.state)
       const answers: { [id: string]: unknown } = {}
       for (const [id, q] of Object.entries(request.questions)) {
         answers[id] = answer(id, q.instructions, q.type === 'choice' ? Object.keys(q.options) : [])

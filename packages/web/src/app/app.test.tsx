@@ -173,10 +173,32 @@ describe('shell', () => {
     await waitFor(() => expect(store.getState().app?.settings.models.decomposition).toBe('anthropic/claude-opus-5.5'))
 
     await user.click(within(dialog).getByRole('tab', { name: 'Routing' }))
-    expect(within(dialog).getAllByRole('slider')).toHaveLength(5)
+    // Five thresholds and the decision token budget's value.
+    expect(within(dialog).getAllByRole('slider')).toHaveLength(6)
+    // The token budget: a share of the conversation by default, or a fixed number; one setting, the mode and its value.
+    expect(within(dialog).getByRole('radio', { name: /Share of the conversation/ })).toBeChecked()
+    expect(within(dialog).getByText(/Never fewer than 16,000 tokens.*never more than 40,000/)).toBeInTheDocument()
+    expect(within(dialog).getByText('2.0%')).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('radio', { name: /Fixed/ }))
+    await waitFor(() => expect(store.getState().app?.settings.routing.tokenBudget).toEqual({ mode: 'absolute', inputTokens: 16_000 }))
+    expect(await within(dialog).findByText('16,000')).toBeInTheDocument()
+    expect(within(dialog).getByText('Tokens per message')).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('radio', { name: /Share of the conversation/ }))
+    await waitFor(() => expect(store.getState().app?.settings.routing.tokenBudget).toEqual({ mode: 'relative', fraction: 0.02, floor: 16_000, ceiling: 40_000 }))
+    // Strategy selection: by the rules unless changed; the decision model, or the strategy as set below.
+    expect(within(dialog).getByRole('radio', { name: /By rules/ })).toBeChecked()
+    expect(within(dialog).getByText(/the ones set below are not used/)).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('radio', { name: /By the decision model/ }))
+    await waitFor(() => expect(store.getState().app?.settings.routing.strategySelection).toBe('decision-model'))
+    expect(await within(dialog).findByText(/the ones set below are not used/)).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('radio', { name: /By rules/ }))
+    await waitFor(() => expect(store.getState().app?.settings.routing.strategySelection).toBe('rules'))
+    await user.click(within(dialog).getByRole('radio', { name: /As set here/ }))
+    await waitFor(() => expect(store.getState().app?.settings.routing.strategySelection).toBe('off'))
+    await waitFor(() => expect(within(dialog).queryByText(/the ones set below are not used/)).not.toBeInTheDocument())
     // The tree walk's two switches sit under the strategy, are independent, and are shown only for the tree walk.
     expect(within(dialog).getByRole('radio', { name: /Tree walk/ })).toBeChecked()
-    expect(within(dialog).getAllByRole('switch')).toHaveLength(2)
+    expect(within(dialog).getAllByRole('switch')).toHaveLength(4)
     expect(within(dialog).getByRole('switch', { name: 'Start at the trunk base' })).not.toBeChecked()
     await user.click(within(dialog).getByRole('switch', { name: 'Hop between branch points' }))
     await waitFor(() => expect(store.getState().app?.settings.routing.treeWalk).toEqual({ startAtTrunkBase: false, hopBetweenBranchPoints: true, searchRunsOverTokens: 1_500 }))
@@ -186,7 +208,21 @@ describe('shell', () => {
     // The hop's wording says what it trades: fewer decision tokens for an answer that reads the rest of the run.
     expect(within(dialog).getByText(/continues from the run’s last answer.*Saves decision tokens; the answer then reads everything after the part of the run the message is about/)).toBeInTheDocument()
     await user.click(within(dialog).getByRole('radio', { name: /One pass/ }))
-    await waitFor(() => expect(within(dialog).queryAllByRole('switch')).toHaveLength(0))
+    await waitFor(() => expect(within(dialog).queryAllByRole('switch')).toHaveLength(2))
+    // A selector may choose the tree walk whatever is configured, and the hop is never the selector's: its switch is in reach, still on.
+    await user.click(within(dialog).getByRole('radio', { name: /By rules/ }))
+    await waitFor(() => expect(within(dialog).getByRole('switch', { name: 'Hop between branch points' })).toBeChecked())
+    expect(within(dialog).queryByRole('switch', { name: 'Start at the trunk base' })).not.toBeInTheDocument()
+    expect(within(dialog).getByText(/“Hop between branch points” is used as set/)).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('radio', { name: /As set here/ }))
+    await waitFor(() => expect(within(dialog).queryAllByRole('switch')).toHaveLength(2))
+    // Context summaries apply to either strategy, and say that nothing generates them yet.
+    expect(within(dialog).getAllByText(/Summaries are not generated yet/)).toHaveLength(2)
+    await user.click(within(dialog).getByRole('switch', { name: 'Use context summaries when available' }))
+    await waitFor(() => expect(store.getState().app?.settings.routing.useSummaryIfAvailable).toBe(true))
+    expect(store.getState().app?.settings.routing.backgroundSummaries).toBe(false)
+    await user.click(within(dialog).getByRole('switch', { name: 'Summarise context in the background' }))
+    await waitFor(() => expect(store.getState().app?.settings.routing.backgroundSummaries).toBe(true))
     expect(store.getState().app?.settings.routing.treeWalk.startAtTrunkBase).toBe(true)
 
     await user.click(within(dialog).getByRole('tab', { name: 'Debug views' }))
