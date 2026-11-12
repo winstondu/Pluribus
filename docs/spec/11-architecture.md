@@ -196,6 +196,8 @@ Finding referents is a search over the genealogy, stated here once so that every
 
   Best effort is the exact search made interruptible: the same steps, the most promising first. Routing always runs in best effort; exact is the search with no budget, and is what the build's tests check a strategy against.
 
+- **What exact means for a search that only follows relevant lines.** A search that does not look below an unbranched run that is not relevant finds every deepest relevant node only when each one is reached through relevant lines, is a starting node, or is a first-pass section. A relevant section under a line that is not itself relevant is found through a starting node, not by the walk. Whatever it returns is sound: every referent was confirmed by a Point or a Group.
+
 ### Operations
 
 A strategy reaches the genealogy and the decision model only through a fixed set of operations behind one interface. A strategy is then policy alone: which operations to use next, where to split, and when to stop. How each operation is carried out is injected, so a strategy is tested with no decision model at all, and the means of an operation can change without touching a strategy.
@@ -207,7 +209,7 @@ Each operation that asks has a **subject**, what the question is about, and a **
 | **Point** | One section, by itself | Some of the section's ancestry | Confirm the section as a referent | Yes |
 | **Group** | One sibling group as a whole, as the join-back it is or will be | Its members | Confirm the group, which resolves to every member (Q30) | Yes |
 | **Segment** | A contiguous part of one unbranched run | Some of the sections at the top of the run | Say where to look next. It confirms nothing | Yes |
-| **Several** | The unit: does it refer to more than one section at once | The sections asked about | Admit a merely plausible further referent beside a clear one, where that changes nothing about where the work runs; tell a search whether to go on after its first find | Yes |
+| **Several** | The unit: does it refer to more than one section at once | The sections asked about | Admit a merely plausible further referent beside a clear one, where that changes nothing about where the work runs; tell a search to look on other lines after its first find | Yes |
 | **Estimate** | A section or a part of an unbranched run | None: it is computed, not asked | Order and prune what is asked. It confirms nothing | No |
 | **Structure** | The genealogy: roots, continuations, the unbranched run of a node, ancestors, recency | | Read from the backend's records | No |
 | **Describe** | How a section is shown in a question: its title, the request it answered, its context chain, or a [context summary](#context-summaries-for-decisions) | | | No |
@@ -233,7 +235,7 @@ How referents are found is a **referent strategy** behind one interface. The pip
 |---|---|---|
 | Asks about, after the first pass | Every answer section the routing request lists (the most recent ones), and each sibling group among them as a whole | The genealogy from its starting nodes downward, one unbranched run at a time, only along lines that are relevant |
 | Requests | The routing request that is sent anyway. No further request | That request, and one more for each level it descends and each step of a search, within the [decision budget](#decision-budget) |
-| Reach | The listed sections. An older section is never asked about | Any section, however old |
+| Reach | The listed sections. An older section is never asked about | Any section, however old, that lies on a relevant line or under a starting node |
 
 Terms the tree walk uses. A **branch point** is a place where a line of work splits: a node with two or more continuations, a sibling group's join-back among them. An **unbranched run** is the answers of one line between two branch points, each continuing the one before; it is not a model run. The **trunk** of a root is its first unbranched run, down to the first branch point, or to its tip when the line never splits; the last answer of a trunk is its **base**.
 
@@ -243,12 +245,12 @@ Terms the tree walk uses. A **branch point** is a place where a line of work spl
 
 **Tree walk**
 
-- **Starting nodes.** The walk starts from every root, and from any **candidate sections** it is handed besides. Candidates come from a candidate source, an injected port; its intended use is retrieval, the sections an index over the conversation finds closest to the unit. The first version ships a source that returns none, so the walk starts from the roots.
+- **Starting nodes.** The walk starts from every root, and from any **candidate sections** it is handed besides. Candidates come from a candidate source, an injected port; its intended use is retrieval, the sections an index over the conversation finds closest to the unit. The first version has no source, so there are no candidates and the walk starts from the roots. A source that fails counts as none, and none is asked when the reply target was given.
 - **No starting node is an ancestor of another.** Before the walk, the roots and the candidates are reduced to the set in which no node is an ancestor of another: an ancestor is dropped in favor of its descendant, whose context holds it. A root with a candidate below it therefore gives way to the candidate.
 - **A dropped ancestor is not lost.** It is taken up again as a starting node when the node that displaced it turns out not to be relevant, and when Several says the unit refers to more than one section, so that a second referent on another line under the same root is still found (C9, C19).
 - **At a starting node** the walk examines the part of the node's unbranched run from the top of the run down to the node: by a Point for each section when the part is short, by a search when it is long.
-- **Search of a long unbranched run.** The search looks for the last relevant section. "Does the unit refer to anything after this position?" is a Segment, and along one unbranched run its answer changes from yes to no only once, so the position is found by halving, or by asking about several parts in one request; the requests it needs grow with the logarithm of the run's length. The section found is then confirmed by a Point before it can be a referent. Old single answers that nothing was built on count as one unbranched run.
-- **Descent.** Below an unbranched run that is relevant, each continuing unbranched run is examined in the same way, and a sibling group's join-back by a Group. Nothing is examined below an unbranched run that is not relevant, apart from the first-pass sections and the starting nodes.
+- **Search of a long unbranched run.** The search looks for the last relevant section. "Does the unit refer to anything after this position?" is a Segment, and along one unbranched run its answer changes from yes to no only once, so the position is found by halving, or by asking about several parts in one request; the requests it needs grow with the logarithm of the run's length. The latest part that is at least plausible is then opened: its sections are asked about by Points, and only a section confirmed by a Point can be a referent. When none of them is confirmed, the next plausible part before it is opened, while the budget allows; a part that was not plausible is never opened. Sections above a confirmed section are not asked about, because they are its ancestors. A correction opens every plausible part, since it seeks the relevant sections themselves. Old single answers that nothing was built on count as one unbranched run, searched for every relevant one: they are not a line of work, so none holds another in its context.
+- **Descent.** Below an unbranched run in which anything is at least plausible, each continuing unbranched run is examined in the same way, and a sibling group's join-back by a Group. Nothing is examined below an unbranched run that is not relevant, apart from the first-pass sections and the starting nodes. This is the cost of having no question about everything built on a node: a reply to an old section on a side line, under a line the unit does not otherwise touch, is reached only through a candidate section.
 - **Start at the trunk base** (optional, off by default). Of each trunk only the base is asked about by itself; the answers before it are searched, however few.
 - **Hop between branch points** (optional, off by default). Below a branch point, of each unbranched run only its last answer is asked about by itself; the answers skipped are searched.
 
