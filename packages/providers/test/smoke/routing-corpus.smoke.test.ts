@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { ROUTING_CORPUS, evaluateCorpus, formatCorpusReport } from '@committee/core/testing'
-import { createOpenRouterDecisionProvider, createOpenRouterDecomposer } from '@committee/providers'
+import { ROUTING_CORPUS, evaluateCorpus, formatCorpusReport } from '@pluribus/core/testing'
+import { createOpenRouterDecisionProvider, createOpenRouterDecomposer } from '@pluribus/providers'
 
 /**
  * The routing corpus (`packages/core/testing/routing/corpus/`) against the live

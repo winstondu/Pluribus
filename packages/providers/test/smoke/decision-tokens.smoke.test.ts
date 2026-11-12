@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { NEVER_CANCELLED } from '@committee/core/ports'
-import { estimateRequestTokens } from '@committee/core'
-import { costGridRows } from '@committee/core/testing'
-import { createOpenRouterDecisionProvider } from '@committee/providers'
+import { NEVER_CANCELLED } from '@pluribus/core/ports'
+import { estimateRequestTokens } from '@pluribus/core'
+import { costGridRows } from '@pluribus/core/testing'
+import { createOpenRouterDecisionProvider } from '@pluribus/providers'
 import { corpusThroughMock, settingsFor } from '../../testing/openrouter/corpus-through-mock'
 import { FITTED_CALIBRATION, calibratedTokens, createDecisionsApiMock, contentCharacters, contentTokens, toPortRequest, type WireDecisionBody } from '../../testing/openrouter/decisions-api-mock'
 

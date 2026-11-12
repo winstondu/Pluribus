@@ -1,7 +1,7 @@
 import { cn } from '@/lib/utils'
 
 /**
- * The Committee mark: one conversation (the outer line) holding several
+ * The Pluribus mark: one conversation (the outer line) holding several
  * lines of work (the three strokes inside it). Drawn with currentColor.
  */
 export function BrandMark({ className }: { className?: string }) {
@@ -24,5 +24,5 @@ export function BrandMark({ className }: { className?: string }) {
 }
 
 export function Wordmark({ className }: { className?: string }) {
-  return <span className={cn('font-serif text-[1.0625rem] font-medium tracking-[-0.01em]', className)}>Committee</span>
+  return <span className={cn('font-serif text-[1.0625rem] font-medium tracking-[-0.01em]', className)}>Pluribus</span>
 }

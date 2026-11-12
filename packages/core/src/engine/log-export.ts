@@ -18,7 +18,7 @@ import {
   type RoutingDecisionIndexEntry,
   type RunInspection,
   type Settings,
-} from '@committee/protocol'
+} from '@pluribus/protocol'
 
 /**
  * Builds the full log export of one conversation (protocol `log-export.ts`).

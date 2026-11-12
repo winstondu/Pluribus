@@ -1,6 +1,6 @@
 import type Anthropic from '@anthropic-ai/sdk'
-import { compatibleModel, providerError, type ClarificationReason, type TokenUsage } from '@committee/protocol'
-import type { CancelSignal, ModelProvider, ModelRequest, ModelStreamEvent, ModelStreamTerminal, TokenCount } from '@committee/core/ports'
+import { compatibleModel, providerError, type ClarificationReason, type TokenUsage } from '@pluribus/protocol'
+import type { CancelSignal, ModelProvider, ModelRequest, ModelStreamEvent, ModelStreamTerminal, TokenCount } from '@pluribus/core/ports'
 import { abortControllerFor } from '../openrouter/http'
 import { CLARIFICATION_TOOL, CLARIFICATION_TOOL_NAME } from '../openrouter/model-provider'
 import { estimateTokens } from '../openrouter/models'

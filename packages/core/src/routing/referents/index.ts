@@ -1,4 +1,4 @@
-import type { ReferentStrategyName } from '@committee/protocol'
+import type { ReferentStrategyName } from '@pluribus/protocol'
 import type { ReferentStrategy } from '../../ports'
 import { onePassStrategy } from './one-pass'
 import { treeWalkStrategy } from './tree-walk'

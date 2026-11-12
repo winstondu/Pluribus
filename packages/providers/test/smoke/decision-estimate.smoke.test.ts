@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { NEVER_CANCELLED } from '@committee/core/ports'
-import { estimateRequestTokens } from '@committee/core'
-import { createOpenRouterDecisionProvider } from '@committee/providers'
+import { NEVER_CANCELLED } from '@pluribus/core/ports'
+import { estimateRequestTokens } from '@pluribus/core'
+import { createOpenRouterDecisionProvider } from '@pluribus/providers'
 import { ESTIMATE_FIXTURE, estimateInput, estimateSample, sampleRow, type EstimateRow } from '../../testing/openrouter/estimate-fixture'
 import { toPortRequest } from '../../testing/openrouter/decisions-api-mock'
 

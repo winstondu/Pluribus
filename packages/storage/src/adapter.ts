@@ -70,7 +70,7 @@ export interface WriteTransaction extends ReadTransaction {
 }
 
 export interface DatabaseSchema {
-  /** Database name: `committee-events`, `committee-secrets`. */
+  /** Database name: `pluribus-events`, `pluribus-secrets`. */
   readonly name: string
   /** Schema version of the database layout (object stores), not of the events. */
   readonly version: number

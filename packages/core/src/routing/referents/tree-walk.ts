@@ -1,4 +1,4 @@
-import type { DecisionBudget } from '@committee/protocol'
+import type { DecisionBudget } from '@pluribus/protocol'
 import type { PointProbe, Probe, ReferentOperations, ReferentUnit, SegmentProbe } from '../../ports'
 import { onePassProbes } from './one-pass'
 import { probe, strategyFromPolicy, type ReferentPolicy, type RunEnd, type SearchInput, type SearchOutcome } from './search'

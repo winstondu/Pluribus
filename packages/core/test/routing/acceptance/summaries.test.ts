@@ -1,4 +1,4 @@
-import type { AttemptStarted, SettingsPatch } from '@committee/protocol'
+import type { AttemptStarted, SettingsPatch } from '@pluribus/protocol'
 import { describe, expect, test } from 'vitest'
 import { contextChainOf, fullChainContextProvider, noContextSummariser } from '../../../src/engine'
 import type { ContextSummariser, ContextSummaryProvider, DecisionContext, SummariseRequest } from '../../../src/ports'

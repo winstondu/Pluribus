@@ -1,6 +1,6 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import type { KeyCheck } from '@committee/protocol'
+import type { KeyCheck } from '@pluribus/protocol'
 import { describe, expect, test } from 'vitest'
 import { createWorkerKeyProvision, serveKeys, type KeyPort, type KeyService } from './key-channel'
 import { createKeyService, type KeyVault } from './key-service'
@@ -143,7 +143,7 @@ describe('layering', () => {
       // The Worker's own files, and the one module that connects to it, are the embedded deployment.
       if (relative.startsWith('worker/') || relative === 'backend/connect.ts') continue
       const text = readFileSync(path, 'utf8')
-      if (/from '@committee\/(storage|providers)'/.test(text) || /from '(@\/worker|\.\.?\/(\.\.\/)*worker)\//.test(text)) offenders.push(relative)
+      if (/from '@pluribus\/(storage|providers)'/.test(text) || /from '(@\/worker|\.\.?\/(\.\.\/)*worker)\//.test(text)) offenders.push(relative)
     }
     expect(offenders).toEqual([])
   })

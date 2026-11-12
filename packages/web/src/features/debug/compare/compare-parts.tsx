@@ -1,4 +1,4 @@
-import type { DecompositionView, FragmentId, FragmentView, MessageId, Requirement } from '@committee/protocol'
+import type { DecompositionView, FragmentId, FragmentView, MessageId, Requirement } from '@pluribus/protocol'
 import { useId, useState, type ReactNode } from 'react'
 import { useUiState } from '@/app/ui-state'
 import { useGenealogy, useTranscript } from '@/backend'

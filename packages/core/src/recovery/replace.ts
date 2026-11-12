@@ -8,8 +8,8 @@ import type {
   RevisionTargetState,
   SectionId,
   SupersessionCause,
-} from '@committee/protocol'
-import { NOT_STARTED_STATES } from '@committee/protocol'
+} from '@pluribus/protocol'
+import { NOT_STARTED_STATES } from '@pluribus/protocol'
 import { assembleContext, queries, settleWait, supersedeSection, type ConversationState, type DirectiveRow, type Reaction, type StepContext } from '../engine'
 
 /**

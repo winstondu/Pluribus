@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { NEVER_CANCELLED } from '@committee/core/ports'
+import { NEVER_CANCELLED } from '@pluribus/core/ports'
 import { PREPARATION_PROMPT, READINESS_JSON_SCHEMA, createOpenRouterPreparer, parseReadiness, transcriptOf } from '../../src/openrouter/preparer'
 import { TEST_KEY, jsonResponse, mockFetch, withKey, withoutKey, type Responder } from '../../testing/fetch-mock'
 

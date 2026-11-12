@@ -1,4 +1,4 @@
-import { LOG_EXPORT_SCHEMA, type ConversationId, type LogExportDocument } from '@committee/protocol'
+import { LOG_EXPORT_SCHEMA, type ConversationId, type LogExportDocument } from '@pluribus/protocol'
 import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, test, vi } from 'vitest'
@@ -27,7 +27,7 @@ function stubObjectUrls() {
   const revoked: string[] = []
   const create = vi.fn((blob: Blob) => {
     blobs.push(blob)
-    return `blob:committee/${blobs.length}`
+    return `blob:pluribus/${blobs.length}`
   })
   const revoke = vi.fn((url: string) => revoked.push(url))
   Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: create })
@@ -77,8 +77,8 @@ describe('export full logs', () => {
     await user.click(screen.getByRole('menuitem', { name: 'Export full logs' }))
     await waitFor(() => expect(clicked).toHaveLength(1))
     const conversationId = store.getState().activeConversationId ?? ''
-    expect(clicked[0]?.href).toBe('blob:committee/1')
-    expect(clicked[0]?.download).toMatch(new RegExp(`^committee-log-${conversationId}-\\d{8}-\\d{6}\\.json$`))
+    expect(clicked[0]?.href).toBe('blob:pluribus/1')
+    expect(clicked[0]?.download).toMatch(new RegExp(`^pluribus-log-${conversationId}-\\d{8}-\\d{6}\\.json$`))
     const blob = urls.blobs[0]
     expect(blob?.type).toBe('application/json')
     const doc = JSON.parse(await readBlob(blob ?? new Blob())) as LogExportDocument
@@ -95,12 +95,12 @@ describe('export full logs', () => {
     const server: LogExportSource = {
       exportLog: (conversationId) => {
         asked.push(conversationId)
-        return Promise.resolve({ kind: 'url', url: 'https://committee.example/exports/42.json', filename: 'committee-log-server.json' })
+        return Promise.resolve({ kind: 'url', url: 'https://pluribus.example/exports/42.json', filename: 'pluribus-log-server.json' })
       },
     }
     const { user, store } = await renderHeader(server)
     await user.click(screen.getByRole('menuitem', { name: 'Export full logs' }))
-    await waitFor(() => expect(clicked).toEqual([{ href: 'https://committee.example/exports/42.json', download: 'committee-log-server.json' }]))
+    await waitFor(() => expect(clicked).toEqual([{ href: 'https://pluribus.example/exports/42.json', download: 'pluribus-log-server.json' }]))
     expect(asked).toEqual([store.getState().activeConversationId])
     expect(urls.create).not.toHaveBeenCalled()
   })
@@ -147,7 +147,7 @@ describe('export full logs', () => {
     expect(revoked).toEqual([])
     later.forEach((run) => run())
     expect(revoked).toEqual(['blob:one'])
-    saveLogExport({ kind: 'url', url: 'https://committee.example/x.json', filename: 'b.json' }, environment)
+    saveLogExport({ kind: 'url', url: 'https://pluribus.example/x.json', filename: 'b.json' }, environment)
     expect(later).toHaveLength(1)
     expect(document.querySelectorAll('a[download]')).toHaveLength(0)
   })

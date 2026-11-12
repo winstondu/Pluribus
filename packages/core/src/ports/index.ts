@@ -4,9 +4,9 @@
  * class.
  *
  * Implementations:
- * - `@committee/providers`: ModelProvider, Preparer, DecisionProvider, Decomposer over OpenRouter
- * - `@committee/storage`: EventStore, ProjectionCache, SecretsStore over IndexedDB and in memory
- * - `@committee/core/testing`: scripted and in-memory fakes of all of them, and the fake clock
+ * - `@pluribus/providers`: ModelProvider, Preparer, DecisionProvider, Decomposer over OpenRouter
+ * - `@pluribus/storage`: EventStore, ProjectionCache, SecretsStore over IndexedDB and in memory
+ * - `@pluribus/core/testing`: scripted and in-memory fakes of all of them, and the fake clock
  */
 export type { CancelSignal, CancelSource } from './cancel'
 export { NEVER_CANCELLED, createCancelSource } from './cancel'

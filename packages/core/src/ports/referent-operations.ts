@@ -1,4 +1,4 @@
-import type { ConversationId, DecisionBudget, ProviderError, SectionId, SiblingGroupId } from '@committee/protocol'
+import type { ConversationId, DecisionBudget, ProviderError, SectionId, SiblingGroupId } from '@pluribus/protocol'
 import type { CandidateGroup, CandidateSection } from './router'
 import type { ReferentSection, ReferentUnit } from './referent-strategy'
 

@@ -1,10 +1,10 @@
 import 'fake-indexeddb/auto'
 import { IDBFactory } from 'fake-indexeddb'
 import { describe, expect, test } from 'vitest'
-import { describeCommitteeStorage, describeEventStore, describeProjectionCache, describeSecretsStore, type StorageHarness } from '@committee/storage/conformance'
+import { describePluribusStorage, describeEventStore, describeProjectionCache, describeSecretsStore, type StorageHarness } from '@pluribus/storage/conformance'
 import { compareKeys, keyInRange, type StorageKey } from '../src/adapter'
 import { EVENTS_DATABASE } from '../src/event-store'
-import { createMemoryStorage, MemoryDatabase, openIndexedDbAdapter, openIndexedDbStorage, openMemoryAdapter } from '@committee/storage'
+import { createMemoryStorage, MemoryDatabase, openIndexedDbAdapter, openIndexedDbStorage, openMemoryAdapter } from '@pluribus/storage'
 
 function indexedDbHarness(): StorageHarness {
   // A fresh factory per test is a fresh, empty set of databases.
@@ -33,16 +33,16 @@ for (const [name, harness] of adapters) {
   describeEventStore(name, async () => (await harness().open()).eventStore)
   describeProjectionCache(name, async () => (await harness().open()).projectionCache)
   describeSecretsStore(name, async () => (await harness().open()).secretsStore)
-  describeCommitteeStorage(name, harness)
+  describePluribusStorage(name, harness)
 }
 
 describe('IndexedDB storage', () => {
-  test('keeps the key in committee-secrets, a database separate from committee-events', async () => {
+  test('keeps the key in pluribus-secrets, a database separate from pluribus-events', async () => {
     const indexedDB = new IDBFactory()
     const storage = await openIndexedDbStorage({ indexedDB })
     await storage.secretsStore.set('openrouter-key', 'sk-or-v1-separate-database')
     const names = (await indexedDB.databases()).map((database) => database.name).sort()
-    expect(names).toEqual(['committee-events', 'committee-secrets'])
+    expect(names).toEqual(['pluribus-events', 'pluribus-secrets'])
     storage.close()
   })
 

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
-import { DEFAULT_SETTINGS, type CandidateSourceName, type Settings } from '@committee/protocol'
-import { estimateRequestTokens } from '@committee/core'
-import { ROUTING_CORPUS } from '@committee/core/testing'
+import { DEFAULT_SETTINGS, type CandidateSourceName, type Settings } from '@pluribus/protocol'
+import { estimateRequestTokens } from '@pluribus/core'
+import { ROUTING_CORPUS } from '@pluribus/core/testing'
 import { corpusThroughMock, type MeasuredExample } from '../testing/openrouter/corpus-through-mock'
 import { FITTED_CALIBRATION, calibratedTokens, toPortRequest } from '../testing/openrouter/decisions-api-mock'
 

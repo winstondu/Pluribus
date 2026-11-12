@@ -1,10 +1,10 @@
-# @committee/web
+# @pluribus/web
 
-The Committee client: Vite, React 19, Tailwind v4. It renders the four projections and sends commands; it never decides placement, ordering, dependencies or context. This file is the guide to the foundation the features are built in: the shell, the design system, the client store, fixtures and tests.
+The Pluribus client: Vite, React 19, Tailwind v4. It renders the four projections and sends commands; it never decides placement, ordering, dependencies or context. This file is the guide to the foundation the features are built in: the shell, the design system, the client store, fixtures and tests.
 
 ```sh
 pnpm dev                                        # http://localhost:5173
-pnpm --filter @committee/web typecheck
+pnpm --filter @pluribus/web typecheck
 pnpm vitest run --project web packages/web
 ```
 
@@ -13,7 +13,7 @@ pnpm vitest run --project web packages/web
 | `/` | The app on the Worker backend: core, the OpenRouter providers and IndexedDB storage in a Web Worker (`src/worker/`) |
 | `/?fixtures` | The fixture gallery: every fixture in the real shell, with a stepper, a phone-width frame and the theme switch |
 | `/?fixture=<id>` | One fixture, playing its steps on timers |
-| `/?fixture=<id>&manual` | One fixture, steps played by hand: `window.__committeeFixture.step()` |
+| `/?fixture=<id>&manual` | One fixture, steps played by hand: `window.__pluribusFixture.step()` |
 
 Fixtures are available on the dev server, and in a build made with `VITE_FIXTURES=1`.
 
@@ -30,7 +30,7 @@ Fixtures are available on the dev server, and in a build made with `VITE_FIXTURE
 | `src/test/` | `setup.ts` (jsdom polyfills), `render.tsx` (`renderWithBackend`) | ui-foundation |
 | `src/features/transcript`, `composer`, `association` | Transcript, composer dock, rails and Focus | ui-transcript |
 | `src/features/debug` | Mini-map, operation graph, run inspector, Compare | ui-debug |
-| `src/worker/` | `backend.worker.ts` (the Worker: takes the `committee-backend` lock, opens storage, builds and serves the backend), `client.ts` (one Worker per page, `connectWorker`), `system.ts` (clock, timers, IDs) | integration |
+| `src/worker/` | `backend.worker.ts` (the Worker: takes the `pluribus-backend` lock, opens storage, builds and serves the backend), `client.ts` (one Worker per page, `connectWorker`), `system.ts` (clock, timers, IDs) | integration |
 | `e2e/` | End-to-end flows in Chromium over the Worker with live OpenRouter (`pnpm e2e`, not part of `pnpm test`) | integration |
 
 ## How a feature plugs in

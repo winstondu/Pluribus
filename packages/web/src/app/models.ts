@@ -1,4 +1,4 @@
-import type { ModelProviderName, ModelRole, ProviderChoice } from '@committee/protocol'
+import type { ModelProviderName, ModelRole, ProviderChoice } from '@pluribus/protocol'
 
 /** One model offered in the per-role model selector. */
 export interface ModelOption {
@@ -77,7 +77,7 @@ export const MODEL_ROLES: readonly { role: ModelRole; label: string; description
   {
     role: 'decision',
     label: 'Decisions',
-    description: 'Chooses among candidates Committee supplies: targets, relations, placement. It selects; it does not write.',
+    description: 'Chooses among candidates Pluribus supplies: targets, relations, placement. It selects; it does not write.',
   },
 ]
 

@@ -1,4 +1,4 @@
-import type { KeyCheck, KeyProviderName } from '@committee/protocol'
+import type { KeyCheck, KeyProviderName } from '@pluribus/protocol'
 import type { KeyService } from './key-channel'
 
 /**

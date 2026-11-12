@@ -1,4 +1,4 @@
-import { textTokens, type RoutingDecided } from '@committee/protocol'
+import { textTokens, type RoutingDecided } from '@pluribus/protocol'
 import { describe, expect, test } from 'vitest'
 import { sessionLogTokens } from '../../../src/engine'
 import { answer, fail, say } from '../../../testing'

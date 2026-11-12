@@ -1,5 +1,5 @@
-import { createIdFactory, createUlidFactory, type IdFactory } from '@committee/protocol'
-import type { Clock, Timers } from '@committee/core/ports'
+import { createIdFactory, createUlidFactory, type IdFactory } from '@pluribus/protocol'
+import type { Clock, Timers } from '@pluribus/core/ports'
 
 /**
  * The real time and identity ports for the embedded backend. Core never

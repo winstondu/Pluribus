@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, resolveTokenBudget, type NodeId, type DecisionBudget, type DecisionCostGuard, type DecisionTokenBudget, type ReferentStrategyName, type RoutingSettings, type TreeWalkSettings } from '@committee/protocol'
+import { DEFAULT_SETTINGS, resolveTokenBudget, type NodeId, type DecisionBudget, type DecisionCostGuard, type DecisionTokenBudget, type ReferentStrategyName, type RoutingSettings, type TreeWalkSettings } from '@pluribus/protocol'
 import { describe, expect, test } from 'vitest'
 import { NEVER_CANCELLED, type CandidateQuery, type CandidateSource, type DecisionContext, type RoutingInput, type DecisionProvider, type DecisionQuestions, type DecisionRequest, type DecisionResult, type ReferentRequest, type ReferentStrategy, type RoutingOutcome, type RoutingPlan } from '../../../src/ports'
 import { compareWithLabel as compare, corpusInput, oracleDecisionProvider, referenceDecomposer, scene, sceneIds, sceneLogTokens, suppliedIn, type CorpusExample, type Scene } from '../../../testing/routing/corpus'

@@ -1,15 +1,15 @@
 /**
  * Conformance suites for the storage ports: one contract, run against every
  * implementation (the IndexedDB adapter, the in-memory adapter, and core's
- * in-memory fakes). The `@committee/storage/conformance` entry loads Vitest.
+ * in-memory fakes). The `@pluribus/storage/conformance` entry loads Vitest.
  *
  * - {@link describeEventStore}, {@link describeProjectionCache},
  *   {@link describeSecretsStore}: the ports alone.
- * - {@link describeCommitteeStorage}: this package's stores together over one
+ * - {@link describePluribusStorage}: this package's stores together over one
  *   pair of databases: reload, the log directory, output grouped under its
  *   attempt, and that the key never reaches the events database.
  */
-import { EventStoreConflictError, type CachedState, type EventStore, type ProjectionCache, type SecretsStore } from '@committee/core/ports'
+import { EventStoreConflictError, type CachedState, type EventStore, type ProjectionCache, type SecretsStore } from '@pluribus/core/ports'
 import {
   APP_LOG,
   EVENT_SCHEMA_VERSION,
@@ -21,11 +21,11 @@ import {
   type EventId,
   type LogId,
   type PersistedEvent,
-} from '@committee/protocol'
+} from '@pluribus/protocol'
 import { describe, expect, test } from 'vitest'
 import type { StorageAdapter } from '../src/adapter'
 import { EVENTS_DATABASE } from '../src/event-store'
-import type { CommitteeStorage } from '../src/storage'
+import type { PluribusStorage } from '../src/storage'
 import { secretControls } from '../src/secrets-store'
 
 type Make<T> = () => T | Promise<T>
@@ -364,7 +364,7 @@ export function describeSecretsStore(name: string, make: Make<SecretsStore>): vo
 
 export interface StorageHarness {
   /** Opens the stores over this harness's databases. Opening again after `close()` is a reload. */
-  open(): Promise<CommitteeStorage>
+  open(): Promise<PluribusStorage>
   /** A raw adapter over the same events database, to inspect everything stored there. */
   openRawEvents(): StorageAdapter
 }
@@ -384,7 +384,7 @@ async function dumpEventsDatabase(harness: StorageHarness): Promise<string> {
   }
 }
 
-export function describeCommitteeStorage(name: string, make: Make<StorageHarness>): void {
+export function describePluribusStorage(name: string, make: Make<StorageHarness>): void {
   describe(`${name} · storage`, () => {
     test('reload produces the same log, cache and key', async () => {
       const harness = await make()

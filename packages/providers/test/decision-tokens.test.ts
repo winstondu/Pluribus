@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'vitest'
-import { CHARACTERS_PER_TOKEN, DEFAULT_SETTINGS } from '@committee/protocol'
-import { estimateRequestTokens, SHORTEST_ANSWER_TOKENS } from '@committee/core'
-import { NEVER_CANCELLED, type DecisionProvider } from '@committee/core/ports'
-import { COST_GRID_MESSAGE, COST_GRID_SIZES, ROUTING_CORPUS, costGridRows, decisionDollars, type CostGridChannel, type CostGridRow } from '@committee/core/testing'
-import { createOpenRouterDecisionProvider } from '@committee/providers'
+import { CHARACTERS_PER_TOKEN, DEFAULT_SETTINGS } from '@pluribus/protocol'
+import { estimateRequestTokens, SHORTEST_ANSWER_TOKENS } from '@pluribus/core'
+import { NEVER_CANCELLED, type DecisionProvider } from '@pluribus/core/ports'
+import { COST_GRID_MESSAGE, COST_GRID_SIZES, ROUTING_CORPUS, costGridRows, decisionDollars, type CostGridChannel, type CostGridRow } from '@pluribus/core/testing'
+import { createOpenRouterDecisionProvider } from '@pluribus/providers'
 import { MEASURED_CONFIGURATIONS, corpusThroughMock, settingsFor, type MeasuredConfiguration, type MeasuredExample } from '../testing/openrouter/corpus-through-mock'
 import {
   DECISION_INPUT_PRICE_PER_TOKEN,
@@ -94,13 +94,19 @@ function totals(examples: readonly MeasuredExample[]): Totals {
  * 96,883 calibrated, 119,955 estimate; tree walk 63, 86, 1,025, 324,685, 75,926, 114,326, 140,304; rules 63, 82,
  * 1,047, 324,636, 75,879, 113,280, 139,144.
  */
+/*
+ * Recorded again when the project was renamed Pluribus: the unanswered-question opening names it ("A question
+ * Pluribus asked the user"), one character shorter and two tokenizer tokens more in each configuration. Before it:
+ * one pass 279,432 characters, 64,568 tokenizer, 98,430 calibrated; tree walk 329,373, 77,000, 115,873; rules
+ * 329,324, 76,953, 114,827.
+ */
 const RECORDED: { readonly [N in MeasuredConfiguration]: Totals } = {
   // Live: 74 requests, 92,592 tokens reported. Calibrated is 0.8% above it; the estimate 24.6% above.
-  'one pass': { passed: 61, requests: 75, questions: 983, characters: 279_432, tokenizer: 64_568, calibrated: 98_430, estimate: 121_917 },
+  'one pass': { passed: 61, requests: 75, questions: 983, characters: 279_431, tokenizer: 64_570, calibrated: 98_432, estimate: 121_917 },
   // Live: 85 requests, 109,128 tokens reported (108,412 with the earlier estimate). Calibrated is 1.5% above it; the estimate 24.4% above.
-  'tree walk, long runs searched': { passed: 64, requests: 87, questions: 1038, characters: 329_373, tokenizer: 77_000, calibrated: 115_873, estimate: 142_266 },
+  'tree walk, long runs searched': { passed: 64, requests: 87, questions: 1038, characters: 329_372, tokenizer: 77_002, calibrated: 115_875, estimate: 142_266 },
   // Live: 82 requests, 108,557 tokens reported (107,841 with the earlier estimate). Calibrated is 1.1% above it; the estimate 24.0% above.
-  'selected by rules (the default)': { passed: 64, requests: 83, questions: 1060, characters: 329_324, tokenizer: 76_953, calibrated: 114_827, estimate: 141_106 },
+  'selected by rules (the default)': { passed: 64, requests: 83, questions: 1060, characters: 329_323, tokenizer: 76_955, calibrated: 114_829, estimate: 141_106 },
 }
 
 const configurations = Object.keys(MEASURED_CONFIGURATIONS) as MeasuredConfiguration[]

@@ -8,7 +8,7 @@ import {
   type Placement,
   type PrerequisiteRef,
   type SectionId,
-} from '@committee/protocol'
+} from '@pluribus/protocol'
 import { fail, independent, say, spanOf, type ScriptStep, type UnitSpec } from '../../testing'
 import { fold, emptyConversationState, rebuildSnapshot } from '../../src/engine'
 import type { Scenario } from '../../testing/acceptance/engine'

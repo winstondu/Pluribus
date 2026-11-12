@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import type { SectionId } from '@committee/protocol'
+import type { SectionId } from '@pluribus/protocol'
 import { answer, done, fail, say } from '../../../testing'
 import { BRIEF, recoveryScenario, revise, sectionOf } from '../../../testing/acceptance/recovery'
 

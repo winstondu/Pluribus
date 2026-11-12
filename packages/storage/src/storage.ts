@@ -1,4 +1,4 @@
-import type { ProjectionCache } from '@committee/core/ports'
+import type { ProjectionCache } from '@pluribus/core/ports'
 import type { DatabaseSchema, StorageAdapter } from './adapter'
 import { createEventStore, EVENTS_DATABASE, type LocalEventStore } from './event-store'
 import { openIndexedDbAdapter } from './indexeddb-adapter'
@@ -7,7 +7,7 @@ import { createProjectionCache } from './projection-cache'
 import { createSecretsStore, SECRETS_DATABASE, type LocalSecretsStore } from './secrets-store'
 
 /** The three stores the backend is given (`CoreDependencies`), over two separate databases. */
-export interface CommitteeStorage {
+export interface PluribusStorage {
   readonly eventStore: LocalEventStore
   readonly projectionCache: ProjectionCache
   readonly secretsStore: LocalSecretsStore
@@ -15,7 +15,7 @@ export interface CommitteeStorage {
   close(): void
 }
 
-function storageOver(events: StorageAdapter, secrets: StorageAdapter): CommitteeStorage {
+function storageOver(events: StorageAdapter, secrets: StorageAdapter): PluribusStorage {
   return {
     eventStore: createEventStore(events),
     projectionCache: createProjectionCache(events),
@@ -30,18 +30,18 @@ function storageOver(events: StorageAdapter, secrets: StorageAdapter): Committee
 export interface IndexedDbStorageOptions {
   /** Defaults to `globalThis.indexedDB` (the Worker's). */
   readonly indexedDB?: IDBFactory
-  /** Database names, for tests. Default `committee-events` and `committee-secrets`. */
+  /** Database names, for tests. Default `pluribus-events` and `pluribus-secrets`. */
   readonly eventsDatabaseName?: string
   readonly secretsDatabaseName?: string
 }
 
 /**
- * Opens the embedded backend's storage: `committee-events` for the event
- * logs and the projection cache, and `committee-secrets`, a separate
+ * Opens the embedded backend's storage: `pluribus-events` for the event
+ * logs and the projection cache, and `pluribus-secrets`, a separate
  * database, for the OpenRouter key. Call it in the Worker. Resolves once
  * both databases are open, so a broken or blocked database fails here.
  */
-export async function openIndexedDbStorage(options: IndexedDbStorageOptions = {}): Promise<CommitteeStorage> {
+export async function openIndexedDbStorage(options: IndexedDbStorageOptions = {}): Promise<PluribusStorage> {
   const adapterOptions = options.indexedDB === undefined ? {} : { indexedDB: options.indexedDB }
   const eventsSchema: DatabaseSchema = { ...EVENTS_DATABASE, name: options.eventsDatabaseName ?? EVENTS_DATABASE.name }
   const secretsSchema: DatabaseSchema = { ...SECRETS_DATABASE, name: options.secretsDatabaseName ?? SECRETS_DATABASE.name }
@@ -68,7 +68,7 @@ export interface MemoryStorageOptions {
 }
 
 /** The same three stores in memory, with the same behavior as {@link openIndexedDbStorage}. */
-export function createMemoryStorage(options: MemoryStorageOptions = {}): CommitteeStorage {
+export function createMemoryStorage(options: MemoryStorageOptions = {}): PluribusStorage {
   return storageOver(
     openMemoryAdapter(EVENTS_DATABASE, options.events ?? new MemoryDatabase()),
     openMemoryAdapter(SECRETS_DATABASE, options.secrets ?? new MemoryDatabase()),

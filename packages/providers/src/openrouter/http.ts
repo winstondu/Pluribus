@@ -1,5 +1,5 @@
-import { WORDING, providerError, providerErrorCodeForStatus, type ProviderError } from '@committee/protocol'
-import type { CancelSignal } from '@committee/core/ports'
+import { WORDING, providerError, providerErrorCodeForStatus, type ProviderError } from '@pluribus/protocol'
+import type { CancelSignal } from '@pluribus/core/ports'
 
 /**
  * The HTTP layer shared by the three OpenRouter providers: key lookup,
@@ -73,7 +73,7 @@ export function jsonHeaders(key: string): Record<string, string> {
   return {
     Authorization: `Bearer ${key}`,
     'Content-Type': 'application/json',
-    'X-Title': 'Committee',
+    'X-Title': 'Pluribus',
   }
 }
 

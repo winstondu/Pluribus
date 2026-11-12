@@ -13,7 +13,7 @@ import type {
   RetryPlan,
   SectionId,
   Settings,
-} from '@committee/protocol'
+} from '@pluribus/protocol'
 import type { CoreDependencies, JsonValue, Router, RoutingOutcome, RoutingPlan } from '../ports'
 import type { ConversationState } from './state'
 

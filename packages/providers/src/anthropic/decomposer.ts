@@ -1,7 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
-import { providerError } from '@committee/protocol'
-import type { CancelSignal, DecomposeRequest, DecomposeResult, Decomposer, LabelRequest, LabelResult } from '@committee/core/ports'
+import { providerError } from '@pluribus/protocol'
+import type { CancelSignal, DecomposeRequest, DecomposeResult, Decomposer, LabelRequest, LabelResult } from '@pluribus/core/ports'
 import {
   DECOMPOSITION_SYSTEM_PROMPT,
   LABEL_PROMPT,

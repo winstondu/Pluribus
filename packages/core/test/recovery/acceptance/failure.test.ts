@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { WORDING, providerError, type ConversationId, type SectionId } from '@committee/protocol'
+import { WORDING, providerError, type ConversationId, type SectionId } from '@pluribus/protocol'
 import { answer, done, fail, independent, say, spanOf } from '../../../testing'
 import { expectRebuildable } from '../../../testing/acceptance/engine'
 import type { Scenario } from '../../../testing/acceptance/engine'
@@ -211,7 +211,7 @@ describe('failure, stopping and recovery', () => {
         cancel: { label: 'Cancel itinerary' },
       })
       expect(snap.queue.elicitations.map((e) => e.kind)).toEqual(['recovery-choice'])
-      // No default: Committee waits for as long as it takes.
+      // No default: Pluribus waits for as long as it takes.
       await s.t.advance(600_000)
       expect(s.d('itinerary').attemptIds).toHaveLength(0)
       expect(s.d('itinerary').state).toBe('paused')

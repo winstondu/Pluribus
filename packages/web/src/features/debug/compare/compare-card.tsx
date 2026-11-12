@@ -1,4 +1,4 @@
-import type { DecompositionView, FragmentView } from '@committee/protocol'
+import type { DecompositionView, FragmentView } from '@pluribus/protocol'
 import { motion } from 'motion/react'
 import { CompareHeading, FragmentDetail, SourceSection } from './compare-parts'
 

@@ -1,4 +1,4 @@
-import type { ResponseId, ResponseReason, ResponseView, SectionCounts, SectionId } from '@committee/protocol'
+import type { ResponseId, ResponseReason, ResponseView, SectionCounts, SectionId } from '@pluribus/protocol'
 import { AnimatePresence, motion } from 'motion/react'
 import { memo } from 'react'
 import { useResponse, useSection } from '@/backend'
@@ -9,7 +9,7 @@ import { StatusLine } from './marks'
 import { ENTER, EXIT, MOVE, useEntrance, useKept } from './motion'
 import { SectionBlock } from './section'
 
-/** What an additional response is, said quietly beside "Committee" (03: never inserted into the earlier response). */
+/** What an additional response is, said quietly beside "Pluribus" (03: never inserted into the earlier response). */
 const REASON_LABEL: { [R in ResponseReason]: string | null } = {
   answer: null,
   'clarification-question': 'needs one thing from you',
@@ -54,7 +54,7 @@ function ResponseBody({ response }: { response: ResponseView }) {
           dimHeader && 'opacity-35',
         )}
       >
-        <span className="font-medium text-muted-foreground">Committee</span>
+        <span className="font-medium text-muted-foreground">Pluribus</span>
         {reasonLabel ? <span className="text-faint-foreground">{reasonLabel}</span> : null}
         {soleSectionId ? <SoleTitle sectionId={soleSectionId} /> : null}
         {countText ? (

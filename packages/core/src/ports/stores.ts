@@ -1,4 +1,4 @@
-import type { DomainEvent, LogId, PersistedEvent } from '@committee/protocol'
+import type { DomainEvent, LogId, PersistedEvent } from '@pluribus/protocol'
 
 /**
  * Storage ports. The event store is the source of truth; the projection

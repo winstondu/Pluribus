@@ -1,4 +1,4 @@
-import type { BackendClient, PortClient, StandbyReason } from '@committee/protocol'
+import type { BackendClient, PortClient, StandbyReason } from '@pluribus/protocol'
 import type { FixtureBackend } from '@/fixtures'
 import { createScriptedKeyProvision, type KeyProvision } from './key-provision'
 import { createBackendStore, type BackendStore } from './store'
@@ -76,7 +76,7 @@ async function connectWorker(): Promise<Connection> {
 /**
  * Chooses the backend for this page load: `?fixture=<id>` runs one fixture
  * on the scripted backend (add `&manual` to play its steps by hand through
- * `window.__committeeFixture`); otherwise the Worker backend.
+ * `window.__pluribusFixture`); otherwise the Worker backend.
  */
 export function connect(search: string = globalThis.location?.search ?? ''): Promise<Connection> {
   const params = new URLSearchParams(search)

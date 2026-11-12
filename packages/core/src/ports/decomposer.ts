@@ -1,4 +1,4 @@
-import type { ModelProviderName, ProviderError, RequirementScope, TextSpan, WholeRequestBarrier } from '@committee/protocol'
+import type { ModelProviderName, ProviderError, RequirementScope, TextSpan, WholeRequestBarrier } from '@pluribus/protocol'
 import type { CancelSignal } from './cancel'
 
 /**

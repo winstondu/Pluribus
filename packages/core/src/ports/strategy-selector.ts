@@ -1,4 +1,4 @@
-import type { ProviderError, StrategyChoice, StrategySelectionRecord } from '@committee/protocol'
+import type { ProviderError, StrategyChoice, StrategySelectionRecord } from '@pluribus/protocol'
 import type { ChoiceQuestion, NoulQuestion } from './decision-provider'
 
 /**

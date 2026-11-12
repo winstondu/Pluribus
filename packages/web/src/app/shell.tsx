@@ -166,7 +166,7 @@ function NoConversation() {
         <h2 className="display text-balance">{none ? 'Start the first conversation' : 'No conversation is open'}</h2>
         <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
           {none
-            ? 'Committee answers several requests at once in one chat, and shows you how they relate.'
+            ? 'Pluribus answers several requests at once in one chat, and shows you how they relate.'
             : 'Choose one from the list, or start a new one.'}
         </p>
         <Button className="mt-5" onClick={() => void createConversation()}>

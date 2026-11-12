@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, resolveTokenBudget } from '@committee/protocol'
+import { DEFAULT_SETTINGS, resolveTokenBudget } from '@pluribus/protocol'
 import { describe, expect, test } from 'vitest'
 import { COST_GRID_ROWS_PER_SIZE, COST_GRID_SEEDED_MESSAGE, COST_GRID_SIZES, costGridRows, decisionDollars, formatCostGrid, worstCaseCandidateSource } from '../../../testing/routing/referents/cost-grid'
 

@@ -1,4 +1,4 @@
-import type { MessageId, SectionId } from '@committee/protocol'
+import type { MessageId, SectionId } from '@pluribus/protocol'
 
 /**
  * Brings a transcript item into view and marks it for a moment. This is

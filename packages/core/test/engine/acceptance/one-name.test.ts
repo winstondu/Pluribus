@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import type { ConversationSnapshot, DirectiveId } from '@committee/protocol'
+import type { ConversationSnapshot, DirectiveId } from '@pluribus/protocol'
 import type { LabelResult } from '../../../src/ports'
 import { recoveryModule } from '../../../src/recovery/module'
 import { answer, atomic, fail, say } from '../../../testing'

@@ -1,4 +1,4 @@
-import { providerError, type DecisionQuestionRecord, type ProviderError, type ShownSection } from '@committee/protocol'
+import { providerError, type DecisionQuestionRecord, type ProviderError, type ShownSection } from '@pluribus/protocol'
 import type {
   CancelSignal,
   ChoiceAnswer,

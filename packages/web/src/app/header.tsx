@@ -1,4 +1,4 @@
-import type { DebugToggles } from '@committee/protocol'
+import type { DebugToggles } from '@pluribus/protocol'
 import { MenuIcon, PanelRightIcon, ScanSearchIcon } from 'lucide-react'
 import { useActiveConversationId, useApp } from '@/backend'
 import { Button } from '@/components/ui/button'
@@ -29,7 +29,7 @@ export function Header(props: { sidePanelAsSheet: boolean; sidePanelAvailable: b
   const activeId = useActiveConversationId()
   const setSidebarOpen = useUiState((state) => state.setSidebarOpen)
   const change = useChangeSettings()
-  const title = app?.conversations.find((conversation) => conversation.id === activeId)?.title ?? 'Committee'
+  const title = app?.conversations.find((conversation) => conversation.id === activeId)?.title ?? 'Pluribus'
   const debug = app?.settings.debug
   const anyDebug = debug ? DEBUG_VIEWS.some((view) => debug[view.key]) : false
 

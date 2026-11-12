@@ -1,4 +1,4 @@
-import type { ConversationId, ConversationSummary } from '@committee/protocol'
+import type { ConversationId, ConversationSummary } from '@pluribus/protocol'
 import { EllipsisIcon, KeyRoundIcon, PlusIcon, SettingsIcon, Trash2Icon } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'

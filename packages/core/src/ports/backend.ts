@@ -1,4 +1,4 @@
-import type { BackendClient, IdFactory } from '@committee/protocol'
+import type { BackendClient, IdFactory } from '@pluribus/protocol'
 import type { Clock, Timers } from './clock'
 import type { DecisionProvider } from './decision-provider'
 import type { Decomposer } from './decomposer'
@@ -112,7 +112,7 @@ export interface Backend extends BackendClient {
    *
    * Must be awaited before any other call. The caller guarantees that this
    * backend is the only executor over its stores: in the browser the Worker
-   * holds the `committee-backend` Web Lock before it calls `start()`.
+   * holds the `pluribus-backend` Web Lock before it calls `start()`.
    * Starting a second backend over the same stores would record the first
    * one's live attempts as interrupted.
    */

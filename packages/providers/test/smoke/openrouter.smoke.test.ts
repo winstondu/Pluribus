@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { NEVER_CANCELLED, createCancelSource, type ModelStreamEvent } from '@committee/core/ports'
-import { createOpenRouterDecisionProvider, createOpenRouterDecomposer, createOpenRouterModelProvider } from '@committee/providers'
+import { NEVER_CANCELLED, createCancelSource, type ModelStreamEvent } from '@pluribus/core/ports'
+import { createOpenRouterDecisionProvider, createOpenRouterDecomposer, createOpenRouterModelProvider } from '@pluribus/providers'
 
 /**
  * Live smoke suite: real OpenRouter calls, kept few and cheap. Run with

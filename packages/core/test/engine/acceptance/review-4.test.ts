@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { WORDING, type ExchangeNodeView } from '@committee/protocol'
+import { WORDING, type ExchangeNodeView } from '@pluribus/protocol'
 import type { TokenCount } from '../../../src/ports'
 import { answer, atomic, createTestBackend } from '../../../testing'
 import { engineModule } from '../../../src/engine/engine-module'

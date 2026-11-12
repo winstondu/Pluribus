@@ -1,4 +1,4 @@
-import { APP_LOG, type ConversationEvent, type LogExportDocument, type NodeId } from '@committee/protocol'
+import { APP_LOG, type ConversationEvent, type LogExportDocument, type NodeId } from '@pluribus/protocol'
 import { expect, test } from 'vitest'
 import { MemoryEventStore, atomic, createTestBackend, done, say } from '../../testing'
 import { engineModule } from '../../src/engine/engine-module'

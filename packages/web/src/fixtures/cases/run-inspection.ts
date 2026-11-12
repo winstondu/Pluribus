@@ -1,4 +1,4 @@
-import type { RunInspection } from '@committee/protocol'
+import type { RunInspection } from '@pluribus/protocol'
 import { fx, type Fixture } from '@/fixtures'
 import { ALL_DEBUG_VIEWS, PREAMBLE, consumed, decision, debugApp } from '@/features/debug/fixture-support'
 

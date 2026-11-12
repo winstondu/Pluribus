@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, renderShownLine, type AttemptId, type RoutingDecision, type RoutingSettings } from '@committee/protocol'
+import { DEFAULT_SETTINGS, renderShownLine, type AttemptId, type RoutingDecision, type RoutingSettings } from '@pluribus/protocol'
 import { describe, expect, test } from 'vitest'
 import { emptyConversationState, fold, runInspection } from '../../src/engine'
 import { NEVER_CANCELLED, type DecisionContext, type DecisionProvider, type DecisionQuestions, type DecisionRequest, type DecisionResult, type RoutingInput } from '../../src/ports'

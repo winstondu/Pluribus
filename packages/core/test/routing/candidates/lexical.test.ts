@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, type ConversationId, type RoutingDecision, type SectionId, type Settings } from '@committee/protocol'
+import { DEFAULT_SETTINGS, type ConversationId, type RoutingDecision, type SectionId, type Settings } from '@pluribus/protocol'
 import { describe, expect, test } from 'vitest'
 import { NEVER_CANCELLED, type CandidateQuery, type CandidateSection, type DecisionProvider, type DecisionQuestions, type DecisionRequest, type DecisionResult, type RoutingOutcome } from '../../../src/ports'
 import { ROUTING_CORPUS } from '../../../testing/routing/corpus/examples'

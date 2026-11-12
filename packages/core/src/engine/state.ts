@@ -48,7 +48,7 @@ import type {
   TranscriptItemRef,
   UnfinishedOutcome,
   WholeRequestBarrier,
-} from '@committee/protocol'
+} from '@pluribus/protocol'
 
 /**
  * The state of one conversation: a fold of its event log and nothing else.

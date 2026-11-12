@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, applySettingsPatch, normalizeSettings, validateSettingsPatch, type Settings } from '@committee/protocol'
+import { DEFAULT_SETTINGS, applySettingsPatch, normalizeSettings, validateSettingsPatch, type Settings } from '@pluribus/protocol'
 import { act, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, test } from 'vitest'

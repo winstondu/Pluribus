@@ -25,7 +25,7 @@ import type {
   TargetRedirect,
   TextSpan,
   WholeRequestBarrier,
-} from '@committee/protocol'
+} from '@pluribus/protocol'
 import type { CancelSignal } from './cancel'
 import type { DecisionContext } from './context-summary'
 

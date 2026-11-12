@@ -1,4 +1,4 @@
-import type { ClarificationReason, ModelProviderName, ProviderError, TokenUsage } from '@committee/protocol'
+import type { ClarificationReason, ModelProviderName, ProviderError, TokenUsage } from '@pluribus/protocol'
 import type { CancelSignal } from './cancel'
 import type { ModelMessage } from './model-provider'
 

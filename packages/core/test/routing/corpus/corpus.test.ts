@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, REFERENT_STRATEGY_NAMES } from '@committee/protocol'
+import { DEFAULT_SETTINGS, REFERENT_STRATEGY_NAMES } from '@pluribus/protocol'
 import { describe, expect, test } from 'vitest'
 import { ROUTING_CORPUS } from '../../../testing/routing/corpus/examples'
 import { compare, corpusInput, evaluateCorpus, expectationSetFor, formatCorpusReport, oracleDecisionProvider, referenceDecomposer } from '../../../testing/routing/corpus/evaluate'

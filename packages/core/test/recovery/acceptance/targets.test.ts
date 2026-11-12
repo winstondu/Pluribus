@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { WORDING, type SectionId } from '@committee/protocol'
+import { WORDING, type SectionId } from '@pluribus/protocol'
 import { engineModule } from '../../../src/engine'
 import { routingModule } from '../../../src/routing'
 import { routingScenario } from '../../../testing/acceptance/routing'

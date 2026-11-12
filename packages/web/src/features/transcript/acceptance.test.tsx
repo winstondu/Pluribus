@@ -1,4 +1,4 @@
-import { WORDING } from '@committee/protocol'
+import { WORDING } from '@pluribus/protocol'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { expect, test } from 'vitest'
 import { fx, getFixture } from '@/fixtures'

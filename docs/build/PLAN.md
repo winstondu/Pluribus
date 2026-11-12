@@ -1,6 +1,6 @@
-# Committee MVP build plan
+# Pluribus MVP build plan
 
-The contract between the agents building the MVP. `docs/spec/` says what Committee does; this says who builds which files against which interfaces. If this plan is wrong, work around it inside your own paths and report it.
+The contract between the agents building the MVP. `docs/spec/` says what Pluribus does; this says who builds which files against which interfaces. If this plan is wrong, work around it inside your own paths and report it.
 
 This is revision 2. Two reviews of the contracts found gaps; section 10 lists what changed, and section 9 lists the suggestions that were not taken and why.
 
@@ -18,7 +18,7 @@ Field comments in those files state the rule and the Q-number. They are part of 
 - Touch only your paths (section 3). Every file in the repository has exactly one owner there.
 - Libraries are compiled by the web package too, which sets `erasableSyntaxOnly`, `noUnusedLocals` and `noUnusedParameters`: no enums, no namespaces, no constructor parameter properties, no unused bindings in `protocol`, `core`, `storage`, `providers`.
 - `protocol` and `core` compile without DOM or Node globals. There is no `setTimeout`, `AbortSignal`, `console`, `fetch` or `crypto` there, by design: use the `Clock`, `Timers`, `CancelSignal` and `IdFactory` ports.
-- Packages import each other by package root. Two exceptions, both sub-entries of core: `@committee/core/testing` (the fakes) and `@committee/core/ports` (the port interfaces alone). **storage and providers import from `@committee/core/ports`, never from `@committee/core`**, so they compile and test while the engine is being written.
+- Packages import each other by package root. Two exceptions, both sub-entries of core: `@pluribus/core/testing` (the fakes) and `@pluribus/core/ports` (the port interfaces alone). **storage and providers import from `@pluribus/core/ports`, never from `@pluribus/core`**, so they compile and test while the engine is being written.
 - Stored and transmitted data is plain JSON. An absent value is `null`, not an optional field, in events and projections. Commands, which are never stored, may have optional fields.
 - Fixed wording comes from `WORDING` and the formatters in `protocol/src/wording.ts`. Core fills the `text` fields of projections with them; the client renders those fields and uses `WORDING` for its own chrome.
 - Acceptance tests are titled `'<ID> · <condition>'`, one canonical test per ID in the file named in section 6. A supplementary test for the same condition is titled `'<ID> (engine) · …'` or `'<ID> (web) · …'`.
@@ -153,7 +153,7 @@ Available while no section of the split shows answer text and no later message t
 
 ### Routing failure and lost routing
 
-- If the decision provider or decomposer fails transiently (408, 429, 502, 503, an empty 200, a network drop), routing is tried again by the retry setting, like an answer run (11 · "Treatment follows the retry setting"): Standard and Persistent wait the policy's backoff, or `Retry-After` for 429 and 503, and the bubble keeps its routing status meanwhile; the count is in `RouteOptions.routingRetry`, and the policy is `CoreModule.routingRetryPlanner` (recovery's `policyRoutingRetryPlanner`; the engine alone never retries). Otherwise (non-retryable, Manual, a wait the policy does not accept, retries used up) `routing-failed` is recorded and Retry on the request routes again. An outcome no module handles is recorded the same way. Committee never falls back to a guess.
+- If the decision provider or decomposer fails transiently (408, 429, 502, 503, an empty 200, a network drop), routing is tried again by the retry setting, like an answer run (11 · "Treatment follows the retry setting"): Standard and Persistent wait the policy's backoff, or `Retry-After` for 429 and 503, and the bubble keeps its routing status meanwhile; the count is in `RouteOptions.routingRetry`, and the policy is `CoreModule.routingRetryPlanner` (recovery's `policyRoutingRetryPlanner`; the engine alone never retries). Otherwise (non-retryable, Manual, a wait the policy does not accept, retries used up) `routing-failed` is recorded and Retry on the request routes again. An outcome no module handles is recorded the same way. Pluribus never falls back to a guess.
 - `routing-decided` and every event that carries its plan out are appended in one step.
 - **Messages are routed in submission order.** A message's routing starts only once every earlier visible message of its conversation has a routing outcome (decided, failed, or waiting for a target choice), so its candidates include their work: a follow-up that needs a message still being routed waits for its result (C2), and a reply to a section an earlier message revises resolves to the replacement (T3). When a plan is applied, targets on sections superseded since its input was built are redirected again (and recorded, so "Replying to the revised version" shows), and points on replaced nodes move to the replacing node.
 - A message is *waiting for a routing outcome* from each of `message-submitted`, `routing-retried` (Retry on a request whose routing failed), `split-undone`, and the `elicitation-answered` that chose its targets, until a `routing-decided`, a `routing-failed` or a target-ambiguity `elicitation-raised` for it follows. While it waits, its responding bubble shows the routing status.
@@ -163,7 +163,7 @@ Available while no section of the split shows answer text and no later message t
 
 In the embedded deployment an attempt is interrupted only by losing its executor. `Backend.start()` finds attempts with no terminal event and records `attempt-interrupted`. A network drop during a run is a transient `network` failure, not an interruption.
 
-Exactly one backend may run over the local stores. The Worker asks for the Web Lock `committee-backend` before it builds the backend. If another tab holds it, the Worker posts the wire message `{ kind: 'standby', reason: 'another-tab' }`, keeps waiting for the lock, and starts normally when the other tab closes; the page shows `WORDING.openInAnotherTab` meanwhile. A second tab therefore never marks the first tab's live attempts interrupted and never forks a log.
+Exactly one backend may run over the local stores. The Worker asks for the Web Lock `pluribus-backend` before it builds the backend. If another tab holds it, the Worker posts the wire message `{ kind: 'standby', reason: 'another-tab' }`, keeps waiting for the lock, and starts normally when the other tab closes; the page shows `WORDING.openInAnotherTab` meanwhile. A second tab therefore never marks the first tab's live attempts interrupted and never forks a log.
 
 ### Stream and snapshots
 
@@ -247,7 +247,7 @@ Who emits which events, and who handles which commands:
 | core-routing | `split-undone`, `siblings-withdrawn`, `section-superseded` (undo split), `directive-held` (clarification), `elicitation-raised` and `elicitation-answered` (target ambiguity, clarification) | `undo-split`, `answer-elicitation` (target ambiguity; passes otherwise) |
 | core-recovery | `retry-requested`, `directive-paused`, `directive-cancelled` (recovery), `prerequisite-waived`, `prerequisites-changed`, `directive-revised-in-place`, `revision-recorded`, `regenerate-requested`, `section-superseded` (revision, prerequisite revised, regenerate, redo), `superseded-input-noted`, `directive-held` (choice with default), `elicitation-raised` (choice with default, recovery choice), `elicitation-answered` (those two), `elicitation-edited`, `elicitation-defaulted`, `elicitation-withdrawn`, and the node, response and section events of replacements | `retry`, `regenerate`, `continue-without`, `cancel`, `answer-elicitation` (choice with default; passes otherwise) |
 
-**Fakes** live in `packages/core/testing/` and are exported as `@committee/core/testing`. core-engine creates `testing/index.ts` in its first commit with these names, which other agents rely on:
+**Fakes** live in `packages/core/testing/` and are exported as `@pluribus/core/testing`. core-engine creates `testing/index.ts` in its first commit with these names, which other agents rely on:
 
 | Export | Behaviour |
 |---|---|
@@ -270,9 +270,9 @@ A simulated interruption is: dispose the backend, build a new one over the same 
 | `src/openrouter/decomposer.ts` | `createOpenRouterDecomposer`: `decompose` with a `response_format` JSON schema, validated with `zod`, spans checked against the text; and **`label`**, a short noun phrase for an atomic request, on the same decomposition model |
 | `test/**/*.test.ts`, `test/smoke/*.smoke.test.ts` | Unit tests with an injected `fetch`; smoke tests on `anthropic/claude-haiku-5.5` |
 | `tsconfig.json` | Add `"types": ["node"]`: under TypeScript 7 `@types/node` is not included by default, and the smoke tests read `process.env.OPENROUTER_KEY` |
-| `src/index.ts` | Exports the provider factories. Tests import scripted fakes from `@committee/core/testing` |
+| `src/index.ts` | Exports the provider factories. Tests import scripted fakes from `@pluribus/core/testing` |
 
-`getKey: () => Promise<string | null>` is the only way a provider sees the key. `fetch` is injected so the unit tests never touch the network. Import port types from `@committee/core/ports`.
+`getKey: () => Promise<string | null>` is the only way a provider sees the key. `fetch` is injected so the unit tests never touch the network. Import port types from `@pluribus/core/ports`.
 
 ### storage: `packages/storage/**`
 
@@ -282,11 +282,11 @@ A simulated interruption is: dispose the backend, build a new one over the same 
 | `src/indexeddb-adapter.ts`, `src/memory-adapter.ts` | The two adapters (`idb`; tests use `fake-indexeddb`) |
 | `src/event-store.ts`, `src/projection-cache.ts` | `createEventStore(adapter)`, `createProjectionCache(adapter)` implementing the ports, including `EventStoreConflictError` on a gap and atomic appends |
 | `src/secrets-store.ts` | `createSecretsStore(adapter)` over a **separate** IndexedDB database |
-| `src/index.ts` | `openIndexedDbStorage()` → `{ eventStore, projectionCache, secretsStore }`, `createMemoryStorage()`. The conformance suites are the sub-entry `@committee/storage/conformance` (`testing/conformance.ts`), because they import `vitest` and the root entry is bundled into the Worker |
+| `src/index.ts` | `openIndexedDbStorage()` → `{ eventStore, projectionCache, secretsStore }`, `createMemoryStorage()`. The conformance suites are the sub-entry `@pluribus/storage/conformance` (`testing/conformance.ts`), because they import `vitest` and the root entry is bundled into the Worker |
 | `testing/conformance.ts` + tests | `describeEventStore(name, make)`, `describeProjectionCache(name, make)`, `describeSecretsStore(name, make)`: one suite, run against both adapters |
-| `test/core-fakes.test.ts` | Written by **integration**, the one file in this package that is not storage's: runs the same suites against `MemoryEventStore`, `MemoryProjectionCache` and `MemorySecretsStore` from `@committee/core/testing`, so core's tests and the real stores are held to one contract |
+| `test/core-fakes.test.ts` | Written by **integration**, the one file in this package that is not storage's: runs the same suites against `MemoryEventStore`, `MemoryProjectionCache` and `MemorySecretsStore` from `@pluribus/core/testing`, so core's tests and the real stores are held to one contract |
 
-Databases: `committee-events` (logs and cache) and `committee-secrets`. Import port types and `EventStoreConflictError` from `@committee/core/ports`.
+Databases: `pluribus-events` (logs and cache) and `pluribus-secrets`. Import port types and `EventStoreConflictError` from `@pluribus/core/ports`.
 
 ### web: three UI agents and integration share `packages/web`
 
@@ -602,7 +602,7 @@ Supplementary, without being the canonical test: ui-transcript renders P1–P4, 
 | Context warning | At 80 % of the model's limit (`CONTEXT_WARNING_RATIO`), as a note on the section | Leaves room for one more exchange |
 | Context limit on an estimate | A run fails before it starts as `context-length-exceeded` only when `countTokens` is exact. An estimate (`exact: false`) above the limit warns and runs; the provider's `context_length_exceeded` then fails it, non-retryable, if it really is over | The estimate leans high (more so for non-Latin scripts); a false failure would be a wrong non-retryable error |
 | Chunk size for stored output | First text of an attempt at once; then 96 characters or 80 ms, whichever comes first; always before the terminal event (`CoreOptions.outputChunk`) | First text fixes placement; the rest keeps the log small without visible stutter. The same chunks are the stream, so the log and the screen agree |
-| Embedded secrets store | A separate IndexedDB database, `committee-secrets`, opened only in the Worker | Apart from the event log (Q64); the Worker cannot use `localStorage` |
+| Embedded secrets store | A separate IndexedDB database, `pluribus-secrets`, opened only in the Worker | Apart from the event log (Q64); the Worker cannot use `localStorage` |
 | Wording for the concurrency hold | "Waiting for a free slot" (`WORDING.waitingForSlot`), state `ready` | Distinct from "Waiting for capacity" and from a dependency wait |
 | Stage that assigns each fragment its chain and target | After decomposition: one further batched decision call with a question set per fragment over the same candidates. The gate's message-level answers are kept in the decision record | Fragments do not exist before decomposition, and the decision model must still be the one that selects |
 | Detecting a superseded input | The three-kind rule in section 2: a replaced result, an unread correction to a consumed brief, a replaced session-wide requirement. Each is a comparison of the attempt's recorded context with current state. No estimate of whether the result would change | Exact, cheap, and never wrong in the quiet direction |
@@ -629,7 +629,7 @@ Recorded by core-routing when milestone 4 landed. The code is `packages/core/src
 
 **Thresholds** (Q74), by question: `composite` for the gate; `clearlyCorrective` for corrective wording, shared scope, explicit conversation-wide wording and a change to a session-wide requirement; `targetChoice` for inferring a target, with the ambiguity rule below; `dependency` for result dependencies, dependencies between fragments, the whole-request barrier and the pre-selection of affected work; `clarification` for clarifications. The thresholds in force, and `ambiguityFloor`, are recorded on every `RoutingDecision`.
 
-**Target ambiguity.** A section at or above `targetChoice` is inferred; several may be. When the model says the message refers to several sections and one is clear, every section at or above 0.25 (`AMBIGUITY_FLOOR`) is a target too: the second of two referents is consistently scored lower. When none reaches `targetChoice`, two or more sections at or above the floor make the target ambiguous and the user is asked. A single section at the floor is asked about too unless the unit is placed with confidence without it (its handling chain chosen at `targetChoice`, a selected dependency, a requirement change); otherwise the unit would start a new chain and silently lose its referent (11 · "Below the target-choice confidence threshold, Committee elicits the target"; revised in the second review, which found that "one weak candidate is placed by its chain" sent such a reply to a new chain). Eliciting every lone weak candidate cost three live corpus labels, where Jev gives a running or recent section a low score for a message that plainly continues a line. A message whose relation is `new` and is not corrective is never ambiguous. After the user chooses for a composite, each part takes the chosen sections it refers to and keeps any other section it refers to at or above `targetChoice`.
+**Target ambiguity.** A section at or above `targetChoice` is inferred; several may be. When the model says the message refers to several sections and one is clear, every section at or above 0.25 (`AMBIGUITY_FLOOR`) is a target too: the second of two referents is consistently scored lower. When none reaches `targetChoice`, two or more sections at or above the floor make the target ambiguous and the user is asked. A single section at the floor is asked about too unless the unit is placed with confidence without it (its handling chain chosen at `targetChoice`, a selected dependency, a requirement change); otherwise the unit would start a new chain and silently lose its referent (11 · "Below the target-choice confidence threshold, Pluribus elicits the target"; revised in the second review, which found that "one weak candidate is placed by its chain" sent such a reply to a new chain). Eliciting every lone weak candidate cost three live corpus labels, where Jev gives a running or recent section a low score for a message that plainly continues a line. A message whose relation is `new` and is not corrective is never ambiguous. After the user chooses for a composite, each part takes the chosen sections it refers to and keeps any other section it refers to at or above `targetChoice`.
 
 **Which stage assigns each fragment its chain and target.** For an atomic message, the gate. For a composite, the second batched call after decomposition, with a question set per fragment over the same candidates; the gate's message-level answers stay in the decision record's `questions`. Explicit and chosen targets go to the fragments that refer to them (score at or above the floor).
 
@@ -676,7 +676,7 @@ Recorded by integration from the slices' reports, so that the plan matches the c
 
 ### Decisions made by integration
 
-- **One Worker per page.** `src/worker/client.ts` returns one `PortClient` for every call, so React's StrictMode double mount never starts a second Worker that would stand by behind the first. The Worker takes the `committee-backend` lock with `ifAvailable` first; when that fails it posts `standby` and waits for the lock.
+- **One Worker per page.** `src/worker/client.ts` returns one `PortClient` for every call, so React's StrictMode double mount never starts a second Worker that would stand by behind the first. The Worker takes the `pluribus-backend` lock with `ifAvailable` first; when that fails it posts `standby` and waits for the lock.
 - **The model catalog is read when the Worker starts.** Every run's tokens are counted before it starts, and the first count reads OpenRouter's catalog; reading it at start keeps the first run after a load from showing "Waiting for a free slot" while a slot is free.
 - **End-to-end flows** are `packages/web/e2e/run.mjs` (`pnpm e2e`), live against OpenRouter with the cheap model for every generative role; they are not part of `pnpm test`. The live routing corpus runs in `pnpm smoke` (`packages/providers/test/smoke/routing-corpus.smoke.test.ts`).
 
@@ -685,7 +685,7 @@ Recorded by integration from the slices' reports, so that the plan matches the c
 1. **ui-foundation's contract commit** (section 3, "The foundation contract comes first"). Nothing else in `packages/web` starts before it is in the tree.
 2. In parallel: core-engine, providers, storage, the rest of ui-foundation, ui-transcript, ui-debug.
 3. core-routing after core-engine; core-recovery after core-routing.
-4. integration: the Worker entry (take the `committee-backend` lock, post `standby` while waiting, then `servePort(createBackend(…), self)`), `src/worker/client.ts` and `src/worker/system.ts`, `core-fakes.test.ts` in storage, end-to-end and smoke runs, `docs/build/STATUS.md` with what passes.
+4. integration: the Worker entry (take the `pluribus-backend` lock, post `standby` while waiting, then `servePort(createBackend(…), self)`), `src/worker/client.ts` and `src/worker/system.ts`, `core-fakes.test.ts` in storage, end-to-end and smoke runs, `docs/build/STATUS.md` with what passes.
 5. Reviews, one after another, each starting from the previous one's fixes. The specification has many interacting edge cases, so one pass is not enough. Each review reads the spec chapter's "Edge cases" table row by row, not only the acceptance conditions. Reviewers are read-only: a review reports its findings in its result, and the agent that then applies the fixes appends each finding and what was done about it to `docs/build/STATUS.md` (integration creates the file; later fixers append under a heading for their pass).
 
 | Pass | Checks | Against |
@@ -736,7 +736,7 @@ For agents who read revision 1. Each line is a review finding and where its fix 
 | Feature agents built against an unwritten store | The foundation contract and its exact names; step 1 of section 8 |
 | No way to select a run or an independent composite | "Inspect run" and "Inspect decomposition", owned by ui-transcript |
 | Fixture `runs` keyed by directive only; rejected commands and app changes | `runs` by directive then attempt; `FixtureResponse`; `others`; the new cases |
-| storage and providers loaded the engine | `@committee/core/ports` |
+| storage and providers loaded the engine | `@pluribus/core/ports` |
 | providers had no Node types | `"types": ["node"]` in its tsconfig (providers' own change) |
 | Frames carried the whole model input | `StreamedConversationEvent`, `toStreamedEvent` |
 | The run inspector's wait list went stale | The refetch rule under the foundation contract |

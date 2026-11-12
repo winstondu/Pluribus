@@ -1,6 +1,6 @@
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
-import { providerError } from '@committee/protocol'
-import type { CancelSignal, PreparationRequest, PreparationResult, Preparer } from '@committee/core/ports'
+import { providerError } from '@pluribus/protocol'
+import type { CancelSignal, PreparationRequest, PreparationResult, Preparer } from '@pluribus/core/ports'
 import { PREPARATION_PROMPT, parseReadiness, readinessResultSchema, transcriptOf } from '../openrouter/preparer'
 import { callAnthropic, inputTokensOf, resolveAnthropicOptions, textOf, type AnthropicOptions, type ResolvedAnthropicOptions } from './client'
 

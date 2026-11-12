@@ -1,4 +1,4 @@
-import type { KeyCheck, KeyProviderName } from '@committee/protocol'
+import type { KeyCheck, KeyProviderName } from '@pluribus/protocol'
 
 /**
  * How this deployment provides provider keys (11 · "Key handling").

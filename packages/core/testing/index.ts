@@ -1,5 +1,5 @@
 /**
- * @committee/core/testing — port fakes and routing evaluation helpers
+ * @pluribus/core/testing — port fakes and routing evaluation helpers
  * shared by core tests and other packages.
  *
  * A simulated interruption is: dispose the backend, build a new one over the

@@ -1,4 +1,4 @@
-import type { DomainEvent, LogId, PersistedEvent } from '@committee/protocol'
+import type { DomainEvent, LogId, PersistedEvent } from '@pluribus/protocol'
 import { EventStoreConflictError, type CachedState, type EventStore, type ProjectionCache, type SecretName, type SecretsStore } from '../src/ports'
 
 /** In-memory event logs. Appends are atomic and checked for gaps, like the real store. Events are stored as copies. */

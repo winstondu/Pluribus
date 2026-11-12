@@ -1,4 +1,4 @@
-import { providerError, type ProviderError, type TokenUsage } from '@committee/protocol'
+import { providerError, type ProviderError, type TokenUsage } from '@pluribus/protocol'
 import type {
   CancelSignal,
   ChoiceAnswer,
@@ -9,7 +9,7 @@ import type {
   DecisionResult,
   NoulAnswer,
   ScoreAnswer,
-} from '@committee/core/ports'
+} from '@pluribus/core/ports'
 import { isRecord, postJson, resolveOptions, type OpenRouterOptions } from './http'
 
 /**

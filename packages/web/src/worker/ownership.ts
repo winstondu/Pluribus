@@ -1,13 +1,13 @@
 /**
- * Which tab executes work (11 · "Embedded", Q99): only one Committee tab per
+ * Which tab executes work (11 · "Embedded", Q99): only one Pluribus tab per
  * browser profile and origin runs the backend. Ownership is the
- * `committee-backend` Web Lock. A tab that finds it held stands by, which
+ * `pluribus-backend` Web Lock. A tab that finds it held stands by, which
  * the page shows as the already-open state, and keeps waiting in the lock's
  * queue: when the owner releases it (its tab closes, ending its Worker), the
  * next tab in line takes over and starts serving.
  */
 
-export const BACKEND_LOCK = 'committee-backend'
+export const BACKEND_LOCK = 'pluribus-backend'
 
 /** The part of `LockManager` this uses. */
 export interface OwnershipLocks {

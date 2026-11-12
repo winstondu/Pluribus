@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { ModelProviderName } from '@committee/protocol'
-import { NEVER_CANCELLED, type Decomposer, type ModelProvider, type ModelStreamEvent, type Preparer } from '@committee/core/ports'
+import type { ModelProviderName } from '@pluribus/protocol'
+import { NEVER_CANCELLED, type Decomposer, type ModelProvider, type ModelStreamEvent, type Preparer } from '@pluribus/core/ports'
 import { checkOpenRouterKey } from '../src/openrouter/key-check'
 import { createRoutedDecomposer, createRoutedModelProvider, createRoutedPreparer } from '../src/routed'
 

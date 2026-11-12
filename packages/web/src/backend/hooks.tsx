@@ -29,7 +29,7 @@ import {
   type SplitView,
   type TranscriptItemRef,
   type TranscriptProjection,
-} from '@committee/protocol'
+} from '@pluribus/protocol'
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useStore } from 'zustand'
 import type { BackendState, BackendStatus, BackendStore } from './store'

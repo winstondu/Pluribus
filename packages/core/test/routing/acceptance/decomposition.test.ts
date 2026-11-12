@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import type { AttemptStarted, DirectiveId } from '@committee/protocol'
+import type { AttemptStarted, DirectiveId } from '@pluribus/protocol'
 import { answer } from '../../../testing'
 import { routingScenario } from '../../../testing/acceptance/routing'
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import type { AppSnapshot } from '@committee/protocol'
+import type { AppSnapshot } from '@pluribus/protocol'
 import { answer, type TestBackend } from '../../../testing'
 import { expectRebuildable, scenario, type Scenario } from '../../../testing/acceptance/engine'
 

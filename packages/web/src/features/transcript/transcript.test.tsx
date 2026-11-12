@@ -1,4 +1,4 @@
-import { WORDING } from '@committee/protocol'
+import { WORDING } from '@pluribus/protocol'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { expect, test } from 'vitest'
 import { fx, getFixture, type Fixture } from '@/fixtures'
@@ -463,7 +463,7 @@ test('reply group · a group whose sections all ended the same way has no header
     const view = renderWithBackend(<TranscriptPane />, { fixture: withCounts(counts, text) })
     await act(() => view.ready)
     expect(response(view.container, 'ask').querySelector('[data-slot="group-count"]')).toBeNull()
-    expect(response(view.container, 'ask').querySelector('header')?.textContent).toBe('Committee')
+    expect(response(view.container, 'ask').querySelector('header')?.textContent).toBe('Pluribus')
     view.unmount()
   }
   // Mixed results keep the count.

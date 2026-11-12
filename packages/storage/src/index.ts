@@ -1,10 +1,10 @@
 /**
- * @committee/storage — the event store, projection cache and local secrets
+ * @pluribus/storage — the event store, projection cache and local secrets
  * store behind one adapter interface, with an IndexedDB adapter for the
  * embedded backend and an in-memory adapter for tests (11 · "Records and
  * storage", Q58, Q63, Q64).
  *
- * The conformance suites are a separate entry, `@committee/storage/conformance`,
+ * The conformance suites are a separate entry, `@pluribus/storage/conformance`,
  * because they import `vitest` and this entry is bundled into the Worker.
  */
 export type {
@@ -34,7 +34,7 @@ export {
 export {
   createMemoryStorage,
   openIndexedDbStorage,
-  type CommitteeStorage,
+  type PluribusStorage,
   type IndexedDbStorageOptions,
   type MemoryStorageOptions,
 } from './storage'

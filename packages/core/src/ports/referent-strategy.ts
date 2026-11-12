@@ -1,4 +1,4 @@
-import type { DecisionBudget, ProviderError, ReferentStrategyName, SectionId, ShownSection, TreeWalkSettings } from '@committee/protocol'
+import type { DecisionBudget, ProviderError, ReferentStrategyName, SectionId, ShownSection, TreeWalkSettings } from '@pluribus/protocol'
 import type { DecisionContext } from './context-summary'
 import type { NoulQuestion } from './decision-provider'
 import type { AnswerSource, CandidateSection, RoutingCandidates } from './router'

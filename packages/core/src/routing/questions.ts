@@ -1,4 +1,4 @@
-import type { ChainId, DirectiveId, RequirementId, SectionId, SiblingGroupId } from '@committee/protocol'
+import type { ChainId, DirectiveId, RequirementId, SectionId, SiblingGroupId } from '@pluribus/protocol'
 import type { CandidateSection, RoutingInput, UnitReferents } from '../ports'
 import type { Answers, Batch } from './batch'
 import type { Supplied } from './supply'

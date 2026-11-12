@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { compatibleModels } from '@committee/protocol'
-import { NEVER_CANCELLED, type ModelMessage, type ModelStreamEvent } from '@committee/core/ports'
-import { ANTHROPIC_PROBE_MODEL, checkAnthropicKey, createAnthropicDecomposer, createAnthropicModelProvider, createAnthropicPreparer } from '@committee/providers'
+import { compatibleModels } from '@pluribus/protocol'
+import { NEVER_CANCELLED, type ModelMessage, type ModelStreamEvent } from '@pluribus/core/ports'
+import { ANTHROPIC_PROBE_MODEL, checkAnthropicKey, createAnthropicDecomposer, createAnthropicModelProvider, createAnthropicPreparer } from '@pluribus/providers'
 
 /**
  * Live check of the Claude API adapters: one cheap streamed answer, one

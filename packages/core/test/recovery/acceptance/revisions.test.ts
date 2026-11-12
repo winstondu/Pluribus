@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { WORDING, type RequirementId, type ResponseId } from '@committee/protocol'
+import { WORDING, type RequirementId, type ResponseId } from '@pluribus/protocol'
 import { answer, atomic, done, noUnits, say } from '../../../testing'
 import { expectRebuildable } from '../../../testing/acceptance/engine'
 import { A_TEXT, B_TEXT, J_TEXT, inputOf, recoveryScenario, revise, sectionOf, trip } from '../../../testing/acceptance/recovery'

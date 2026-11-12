@@ -1,5 +1,5 @@
 import { describe, expect, expectTypeOf, test } from 'vitest'
-import type { AttemptStarted, ConversationEvent } from '@committee/protocol'
+import type { AttemptStarted, ConversationEvent } from '@pluribus/protocol'
 import type { ModelRequest, ModelStreamEvent } from '../../../src/ports'
 import { answer, fail, independent, say, sequential, spanOf } from '../../../testing'
 import { clone, scenario } from '../../../testing/acceptance/engine'

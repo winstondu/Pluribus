@@ -9,7 +9,7 @@ import {
   type ReplyRelation,
   type SectionId,
   type SiblingGroupId,
-} from '@committee/protocol'
+} from '@pluribus/protocol'
 import type { CandidateGroup, CandidateWork, PlannedUnit, RoutingInput, RoutingPlan } from '../ports'
 import type { BaseRelation, Scored, UnitSignals } from './questions'
 import type { Supplied } from './supply'
@@ -26,7 +26,7 @@ import type { Supplied } from './supply'
  * Below the target-choice threshold a section is not inferred as a target.
  * When a reply has two or more sections at this floor and none reaches the
  * threshold, the target is ambiguous and the user is asked (11 · "Below the
- * target-choice confidence threshold, Committee elicits the target", Q20,
+ * target-choice confidence threshold, Pluribus elicits the target", Q20,
  * Q74). A single section at the floor is asked about too, unless the unit
  * is placed with confidence without it (its handling chain clear, a
  * selected dependency, a requirement change): a weak referent is never
@@ -103,8 +103,8 @@ export function resolveUnitTargets(
     // A message that plainly refers to several sections names a clear one and further ones the model
     // scores lower (Q20). A further one below `targetChoice` is taken without asking only when it
     // changes nothing about where the work runs (a second sibling read through the same join-back);
-    // one that would add a parent or make a join chain is a guess, and Committee never guesses
-    // silently: the user is asked (05, 11 · "Below the target-choice confidence threshold, Committee
+    // one that would add a parent or make a join chain is a guess, and Pluribus never guesses
+    // silently: the user is asked (05, 11 · "Below the target-choice confidence threshold, Pluribus
     // elicits the target").
     if ((signals.several ?? 0) >= thresholds.targetChoice) {
       const accepted = [...inferred]

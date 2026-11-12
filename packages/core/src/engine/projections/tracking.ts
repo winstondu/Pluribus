@@ -1,4 +1,4 @@
-import { deepEqual } from '@committee/protocol'
+import { deepEqual } from '@pluribus/protocol'
 import { STATE_TABLES, type ConversationState } from '../state'
 
 /**

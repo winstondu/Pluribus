@@ -15,7 +15,7 @@ import {
   rolesOnAnthropic,
   validateSettingsPatch,
   type Settings,
-} from '@committee/protocol'
+} from '@pluribus/protocol'
 
 /** The per-role provider: a setting beside the model, validated and described by the backend. */
 describe('per-role model providers', () => {

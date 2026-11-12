@@ -11,7 +11,7 @@ import {
   type Settings,
   type BudgetStopRecord, type CandidateSourceRecord, type RunEndRecord, type StrategySelectionRecord,
   type TextSpan,
-} from '@committee/protocol'
+} from '@pluribus/protocol'
 import type {
   CancelSignal,
   DecisionProvider,

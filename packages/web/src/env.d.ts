@@ -9,5 +9,5 @@ interface ImportMetaEnv {
 
 interface Window {
   /** The fixture backend of a page opened with `?fixture=<id>`, for the gallery's stepper and for e2e tests. */
-  __committeeFixture?: import('./fixtures/types').FixtureBackend
+  __pluribusFixture?: import('./fixtures/types').FixtureBackend
 }

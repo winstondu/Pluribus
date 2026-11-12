@@ -1,4 +1,4 @@
-import type { AttemptStarted, RoutingDecided, StrategySelectionMode } from '@committee/protocol'
+import type { AttemptStarted, RoutingDecided, StrategySelectionMode } from '@pluribus/protocol'
 import { describe, expect, test } from 'vitest'
 import type { DecisionQuestions, DecisionRequest, DecisionResult } from '../../../src/ports'
 import { answer } from '../../../testing'

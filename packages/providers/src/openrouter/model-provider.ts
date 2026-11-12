@@ -1,4 +1,4 @@
-import { compatibleModel, providerError, type ClarificationReason, type ProviderError, type TokenUsage } from '@committee/protocol'
+import { compatibleModel, providerError, type ClarificationReason, type ProviderError, type TokenUsage } from '@pluribus/protocol'
 import type {
   CancelSignal,
   ModelProvider,
@@ -6,7 +6,7 @@ import type {
   ModelStreamEvent,
   ModelStreamTerminal,
   TokenCount,
-} from '@committee/core/ports'
+} from '@pluribus/core/ports'
 import { createParser } from 'eventsource-parser'
 import {
   NO_KEY_ERROR,

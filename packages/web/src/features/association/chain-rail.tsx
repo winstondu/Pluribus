@@ -1,4 +1,4 @@
-import type { ChainAssociation, ChainId } from '@committee/protocol'
+import type { ChainAssociation, ChainId } from '@pluribus/protocol'
 import { useUiState } from '@/app/ui-state'
 import { useChain } from '@/backend'
 import { chainColor } from '@/design/chains'

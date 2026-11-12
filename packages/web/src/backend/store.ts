@@ -6,7 +6,7 @@ import {
   type ConversationId,
   type ConversationSnapshot,
   type StreamFrame,
-} from '@committee/protocol'
+} from '@pluribus/protocol'
 import { createStore, type StoreApi } from 'zustand/vanilla'
 
 /** Where the connection to the backend stands. */
@@ -57,7 +57,7 @@ export interface BackendStoreOptions {
   readonly openFirst?: boolean
 }
 
-const LAST_CONVERSATION_KEY = 'committee:last-conversation'
+const LAST_CONVERSATION_KEY = 'pluribus:last-conversation'
 
 function rememberedConversation(): string | null {
   try {

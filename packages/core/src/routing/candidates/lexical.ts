@@ -1,4 +1,4 @@
-import type { ConversationId, SectionId } from '@committee/protocol'
+import type { ConversationId, SectionId } from '@pluribus/protocol'
 import type { CandidateHit, CandidateQuery, CandidateSection, CandidateSource } from '../../ports'
 
 /**

@@ -1,4 +1,4 @@
-import type { DecisionQuestionRecord, RunInspection, ShownAnswerForm, ShownSectionView } from '@committee/protocol'
+import type { DecisionQuestionRecord, RunInspection, ShownAnswerForm, ShownSectionView } from '@pluribus/protocol'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Pill, Verbatim } from '../parts'
@@ -33,7 +33,7 @@ export function DecisionQuestions({ routing }: { routing: NonNullable<RunInspect
       </summary>
       {decision.source === 'decision-model' && !decision.shownRecorded ? (
         <p className="mt-1.5 text-2xs leading-relaxed text-muted-foreground" data-testid="shown-not-recorded">
-          Recorded before Committee kept what each question showed of its sections: only the questions are shown.
+          Recorded before Pluribus kept what each question showed of its sections: only the questions are shown.
         </p>
       ) : null}
       <ul className="mt-1.5 flex flex-col gap-1.5">

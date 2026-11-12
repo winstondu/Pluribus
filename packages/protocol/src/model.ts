@@ -65,7 +65,7 @@ export type DirectiveState =
   | 'completed'
   /** Ended in an error after any automatic retries. Local to the directive (invariant 5). */
   | 'failed'
-  /** An attempt the user ended deliberately. An attempt Committee ends to replace it is superseded, not stopped. */
+  /** An attempt the user ended deliberately. An attempt Pluribus ends to replace it is superseded, not stopped. */
   | 'stopped'
   /** Cancelled by the user before it started (Q91): queued work inside a stopped request, or a paused request the user cancelled. */
   | 'cancelled'
@@ -157,7 +157,7 @@ export type AttemptState =
   | 'stopped'
   /** Lost with its executor (Q52). */
   | 'interrupted'
-  /** Ended by Committee in order to replace it (Q38). Its dependents follow the replacement and are not paused. */
+  /** Ended by Pluribus in order to replace it (Q38). Its dependents follow the replacement and are not paused. */
   | 'superseded'
   /**
    * The run discovered consequential missing information, stopped, and asked
@@ -814,7 +814,7 @@ export interface SplitMessageRecord {
 
 /** Where one message of a run's input came from. */
 export type ContextOrigin =
-  /** Committee's own fixed instructions to the model. */
+  /** Pluribus's own fixed instructions to the model. */
   | { readonly kind: 'preamble' }
   /** A requirement the user explicitly made session-wide (Q17). */
   | { readonly kind: 'session-requirement'; readonly requirementId: RequirementId }
@@ -1058,7 +1058,7 @@ export interface RedoOption {
   readonly state: 'finished' | 'running' | 'queued'
   /** True for `running` and `queued`. */
   readonly locked: boolean
-  /** The work Committee judges actually affected (Q44). Always true when locked. */
+  /** The work Pluribus judges actually affected (Q44). Always true when locked. */
   readonly preselected: boolean
 }
 

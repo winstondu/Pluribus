@@ -1,4 +1,4 @@
-import type { ConversationFrame, ConversationSnapshot } from '@committee/protocol'
+import type { ConversationFrame, ConversationSnapshot } from '@pluribus/protocol'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { useBackendStore } from '@/backend'
 

@@ -1,4 +1,4 @@
-import type { TextSpan } from '@committee/protocol'
+import type { TextSpan } from '@pluribus/protocol'
 
 /** A run of the original text and the marks that cover it. */
 export interface Segment<M> {

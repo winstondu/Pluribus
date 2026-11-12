@@ -1,4 +1,4 @@
-import { LOG_EXPORT_SCHEMA, LOG_EXPORT_VERSION, type ConversationId, type LogExportDocument, type LogExportFile } from '@committee/protocol'
+import { LOG_EXPORT_SCHEMA, LOG_EXPORT_VERSION, type ConversationId, type LogExportDocument, type LogExportFile } from '@pluribus/protocol'
 import { describe, expect, test } from 'vitest'
 import { answer, type TestBackend } from '../../testing'
 import { routingScenario, type RoutingScenario } from '../../testing/acceptance/routing'
@@ -75,7 +75,7 @@ describe('log export', () => {
     // The routing records are in the events as decided: questions, answers and the plan.
     expect(doc.events.filter((e) => e.type === 'routing-decided')).toHaveLength(3)
     expect(doc.events.some((e) => e.type === 'message-decomposed')).toBe(true)
-    expect(file.filename).toMatch(new RegExp(`^committee-log-${s.c}-\\d{8}-\\d{6}\\.json$`))
+    expect(file.filename).toMatch(new RegExp(`^pluribus-log-${s.c}-\\d{8}-\\d{6}\\.json$`))
   })
 
   test('log export · round-trips: replaying the exported events gives the live state, projections and run inspections', async () => {

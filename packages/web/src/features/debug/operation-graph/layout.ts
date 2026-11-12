@@ -1,4 +1,4 @@
-import type { OperationGraphProjection, OperationId } from '@committee/protocol'
+import type { OperationGraphProjection, OperationId } from '@pluribus/protocol'
 
 /**
  * Where the operation graph draws live work (09 §4): an activity-on-node

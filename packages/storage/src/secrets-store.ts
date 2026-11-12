@@ -1,15 +1,15 @@
-import type { SecretName, SecretsStore } from '@committee/core/ports'
+import type { SecretName, SecretsStore } from '@pluribus/core/ports'
 import type { DatabaseSchema, StorageAdapter } from './adapter'
 
 const SECRETS = 'secrets'
 
 /**
  * Layout of the secrets database. It is a database of its own, never an
- * object store inside `committee-events`, so the key cannot travel with an
+ * object store inside `pluribus-events`, so the key cannot travel with an
  * export, a copy or a dump of the event log or the projection cache (Q64, Q73).
  */
 export const SECRETS_DATABASE: DatabaseSchema = {
-  name: 'committee-secrets',
+  name: 'pluribus-secrets',
   version: 1,
   stores: [SECRETS],
 }

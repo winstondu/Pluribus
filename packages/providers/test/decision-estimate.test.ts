@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { estimateRequestTokens } from '@committee/core'
+import { estimateRequestTokens } from '@pluribus/core'
 import { ESTIMATE_FIXTURE, estimateInput } from '../testing/openrouter/estimate-fixture'
 
 /**

@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, providerError, type RoutingSettings, type Settings, type StrategySelectionMode, type StrategyChoice, type StrategySelectionRecord } from '@committee/protocol'
+import { DEFAULT_SETTINGS, providerError, type RoutingSettings, type Settings, type StrategySelectionMode, type StrategyChoice, type StrategySelectionRecord } from '@pluribus/protocol'
 import { describe, expect, test } from 'vitest'
 import { NEVER_CANCELLED, type DecisionProvider, type DecisionQuestions, type DecisionRequest, type DecisionResult, type RoutingInput, type RoutingOutcome, type RoutingPlan, type StrategySelector } from '../../../src/ports'
 import { compareWithLabel, corpusInput, oracleDecisionProvider, referenceDecomposer, scene, sceneIds, type CorpusExample, type Scene } from '../../../testing/routing/corpus'

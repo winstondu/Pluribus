@@ -6,7 +6,7 @@ import {
   type Placement,
   type PrerequisiteRef,
   type SectionView,
-} from '@committee/protocol'
+} from '@pluribus/protocol'
 import { expect } from 'vitest'
 import type { RoutingInput, RoutingOutcome } from '../../src/ports'
 import { atomic, createTestBackend, type ScriptStep, type TestBackend, type TestBackendOverrides, type UnitSpec } from '..'

@@ -10,7 +10,7 @@ import {
   type OperationStatus,
   type OperationView,
   type PrerequisiteRef,
-} from '@committee/protocol'
+} from '@pluribus/protocol'
 import { activeMembers, groupLabel, withCurrentLabel, prerequisiteLabel, prerequisiteSatisfied, sectionState, unfinishedBehind } from '../queries'
 import type { ConversationState, DirectiveRow } from '../state'
 import type { Memo } from './tracking'

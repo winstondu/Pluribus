@@ -1,5 +1,5 @@
-import type { ModelProviderName } from '@committee/protocol'
-import type { Decomposer, ModelProvider, Preparer } from '@committee/core/ports'
+import type { ModelProviderName } from '@pluribus/protocol'
+import type { Decomposer, ModelProvider, Preparer } from '@pluribus/core/ports'
 
 /**
  * The per-role provider choice, carried out. Core passes each request's

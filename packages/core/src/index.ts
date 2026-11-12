@@ -1,5 +1,5 @@
 /**
- * @committee/core — event log, projections, coordinator, routing pipeline and
+ * @pluribus/core — event log, projections, coordinator, routing pipeline and
  * validation. No I/O: everything outside is injected through the ports.
  *
  * This file only re-exports. Each slice of core adds one line for its own
@@ -10,8 +10,8 @@
  *   export * from './recovery'   // retry policies, revisions, recovery
  *
  * Fakes and routing evaluation helpers are available from
- * `@committee/core/testing`. Storage and providers implement the ports
- * exposed by `@committee/core/ports`.
+ * `@pluribus/core/testing`. Storage and providers implement the ports
+ * exposed by `@pluribus/core/ports`.
  */
 export * from './ports'
 export * from './engine'

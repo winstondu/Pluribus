@@ -1,4 +1,4 @@
-# Committee
+# Pluribus
 
 One visible chat that runs many model calls at once. The specification in `docs/spec/` is authoritative; read `docs/spec/README.md` first and use the glossary's terms with no synonyms. Where a prototype and the spec disagree, the spec wins (`docs/spec/09-debug-views.md` lists the differences).
 
@@ -22,7 +22,7 @@ pnpm workspace, strict TypeScript. Libraries expose their source entry points th
 pnpm install
 pnpm dev                                   # web dev server
 pnpm typecheck                             # all packages
-pnpm --filter @committee/core typecheck    # one package
+pnpm --filter @pluribus/core typecheck    # one package
 pnpm test                                  # vitest: "unit" (node) and "web" (jsdom) projects
 pnpm vitest run --project unit packages/core
 pnpm smoke                                 # provider smoke suites (*.smoke.test.ts)
@@ -31,7 +31,7 @@ pnpm build
 
 ## Conventions
 
-- Keep library `src/index.ts` files to re-exports. Import across packages through their declared entry points, including `@committee/core/ports` for adapter interfaces. Prefer discriminated unions and branded ID types over strings and booleans. No `any`; no non-null `!` outside tests.
+- Keep library `src/index.ts` files to re-exports. Import across packages through their declared entry points, including `@pluribus/core/ports` for adapter interfaces. Prefer discriminated unions and branded ID types over strings and booleans. No `any`; no non-null `!` outside tests.
 - The client never decides placement, ordering, dependencies, or context. It renders the four projections (transcript, queue, genealogy, operation graph) and sends commands.
 - Core is deterministic: no `Date.now()`, timers, randomness, `fetch`, or storage inside it except through injected ports. Tests drive it with the scripted fake provider and a fake clock.
 - Put library suites in `test/`, grouped by source area, and shared test helpers in `testing/`. Keep web suites beside the code as `*.test.ts(x)`. Include the acceptance ID in each acceptance test title.

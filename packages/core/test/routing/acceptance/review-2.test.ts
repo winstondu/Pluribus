@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { WORDING, providerError } from '@committee/protocol'
+import { WORDING, providerError } from '@pluribus/protocol'
 import { answer, createTestBackend, say } from '../../../testing'
 import { engineModule } from '../../../src/engine'
 import { recoveryModule } from '../../../src/recovery/module'

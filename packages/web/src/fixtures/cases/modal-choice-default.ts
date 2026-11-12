@@ -1,4 +1,4 @@
-import type { ElicitationView } from '@committee/protocol'
+import type { ElicitationView } from '@pluribus/protocol'
 import { fx, type Fixture } from '@/fixtures'
 
 const WAIT_MS = 30_000

@@ -1,6 +1,6 @@
 import { correctionText, notStartedInSection, startedInSection, queries, settleWait, formJoinBack, type CommandHandlers, type ConversationState, type DirectiveRow, type PlanApplier, type Reaction, type StartupReaction, type StepContext, type TimerHandler } from '../engine'
 import type { PlannedRevision } from '../ports'
-import type { DirectiveId, ElicitationId, MessageId, RedoOption } from '@committee/protocol'
+import type { DirectiveId, ElicitationId, MessageId, RedoOption } from '@pluribus/protocol'
 import { revisionTargetState, replaceWork, waitForReplacedInputs } from './replace'
 
 /**

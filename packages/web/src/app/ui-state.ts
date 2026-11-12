@@ -1,4 +1,4 @@
-import type { AttemptId, ChainId, DirectiveId, MessageId, OperationId, SectionId, KeyProviderName } from '@committee/protocol'
+import type { AttemptId, ChainId, DirectiveId, MessageId, OperationId, SectionId, KeyProviderName } from '@pluribus/protocol'
 import { createContext, createElement, useContext, type ReactNode } from 'react'
 import { useStore } from 'zustand'
 import { createStore, type StoreApi } from 'zustand/vanilla'

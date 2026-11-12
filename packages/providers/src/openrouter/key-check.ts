@@ -1,4 +1,4 @@
-import type { KeyCheck } from '@committee/protocol'
+import type { KeyCheck } from '@pluribus/protocol'
 import { OPENROUTER_BASE_URL, type FetchLike } from './http'
 
 /**

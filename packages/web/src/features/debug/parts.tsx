@@ -1,4 +1,4 @@
-import type { ChainId } from '@committee/protocol'
+import type { ChainId } from '@pluribus/protocol'
 import type { ReactNode } from 'react'
 import { useGenealogy } from '@/backend'
 import { chainColor } from '@/design/chains'

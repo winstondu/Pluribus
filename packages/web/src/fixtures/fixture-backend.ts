@@ -1,4 +1,4 @@
-import { STATE_VERSION, buildLogExport } from '@committee/core'
+import { STATE_VERSION, buildLogExport } from '@pluribus/core'
 import {
   DEFAULT_SETTINGS,
   EVENT_SCHEMA_VERSION,
@@ -21,7 +21,7 @@ import {
   type SnapshotResult,
   type StreamFrame,
   type SubscriptionFilter,
-} from '@committee/protocol'
+} from '@pluribus/protocol'
 import { fx, isBuilt, withThroughSeq } from './builder'
 import type { Fixture, FixtureBackend, FixtureResponse, FixtureStep } from './types'
 

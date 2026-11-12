@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, MODEL_COMPATIBILITY, describeModelRoles, type ModelProviderName, type ModelRole, type ProviderChoice } from '@committee/protocol'
+import { DEFAULT_SETTINGS, MODEL_COMPATIBILITY, describeModelRoles, type ModelProviderName, type ModelRole, type ProviderChoice } from '@pluribus/protocol'
 import { expect, test } from 'vitest'
 import { BUILT_IN_MODELS, optionsFor, type ModelOption } from './models'
 

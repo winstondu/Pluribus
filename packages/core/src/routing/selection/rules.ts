@@ -1,4 +1,4 @@
-import type { StrategyChoice } from '@committee/protocol'
+import type { StrategyChoice } from '@pluribus/protocol'
 import type { GenealogyShape, StrategySelection, StrategySelector } from '../../ports'
 
 /**

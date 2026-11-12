@@ -1,4 +1,4 @@
-import type { NodeId } from '@committee/protocol'
+import type { NodeId } from '@pluribus/protocol'
 import { create } from 'zustand'
 
 export type DebugTab = 'mini-map' | 'run' | 'compare'

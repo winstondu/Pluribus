@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import type { ConversationEvent, SectionId } from '@committee/protocol'
+import type { ConversationEvent, SectionId } from '@pluribus/protocol'
 import { answer, fail, independent, say, spanOf } from '../../../testing'
 import { recoveryScenario, revise, sectionOf, trip } from '../../../testing/acceptance/recovery'
 

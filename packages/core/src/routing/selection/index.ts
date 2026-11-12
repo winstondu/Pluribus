@@ -1,4 +1,4 @@
-import type { RoutingSettings, StrategyChoice, StrategySelectionMode, StrategySelectionRecord, TreeWalkSettings } from '@committee/protocol'
+import type { RoutingSettings, StrategyChoice, StrategySelectionMode, StrategySelectionRecord, TreeWalkSettings } from '@pluribus/protocol'
 import type { ReferentRequest, ReferentStrategy, SelectorAsk, StrategySelector } from '../../ports'
 import { referentStrategyFor } from '../referents'
 import { createDecisionSelector } from './decision'

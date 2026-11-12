@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { WORDING, providerError, type ProviderError } from '@committee/protocol'
-import type { CancelSignal } from '@committee/core/ports'
+import { WORDING, providerError, type ProviderError } from '@pluribus/protocol'
+import type { CancelSignal } from '@pluribus/core/ports'
 import { CANCELLED_ERROR, abortControllerFor, parseRetryAfter, redact, type FetchLike } from '../openrouter/http'
 
 /**

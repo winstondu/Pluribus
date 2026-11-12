@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { DEFAULT_SETTINGS, REFERENT_STRATEGY_NAMES, STRATEGY_SELECTION_MODES, providerError, type AttemptStarted } from '@committee/protocol'
+import { DEFAULT_SETTINGS, REFERENT_STRATEGY_NAMES, STRATEGY_SELECTION_MODES, providerError, type AttemptStarted } from '@pluribus/protocol'
 import { NEVER_CANCELLED, type ContextSummaryProvider, type DecisionProvider, type DecisionQuestions, type DecisionRequest } from '../../../src/ports'
 import { createRouter } from '../../../src/routing/pipeline'
 import { estimateRequestTokens } from '../../../src/routing/referents'

@@ -1,5 +1,5 @@
-import type { TranscriptItemRef } from '@committee/protocol'
-import { WORDING } from '@committee/protocol'
+import type { TranscriptItemRef } from '@pluribus/protocol'
+import { WORDING } from '@pluribus/protocol'
 import { AnimatePresence, MotionConfig, motion } from 'motion/react'
 import { useEffect, useRef } from 'react'
 import { useUiState } from '@/app/ui-state'

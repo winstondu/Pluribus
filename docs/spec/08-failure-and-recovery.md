@@ -54,7 +54,7 @@ Retry behavior is a user setting (Q47):
   - **Retry activities.** A successful retry unpauses J.
   - **Continue without activities.** J consumes the full join-back with B recorded as failed or stopped.
   - **Cancel itinerary.**
-- There is no default. Committee waits.
+- There is no default. Pluribus waits.
 
 ## Join-back with a member that did not finish
 

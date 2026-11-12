@@ -1,4 +1,4 @@
-import type { SectionId } from '@committee/protocol'
+import type { SectionId } from '@pluribus/protocol'
 import type { ReferentQuestions, ReferentRequest, ReferentSection, RoutingCandidates } from '../../ports'
 import { groupQuestion, ownQuestion, questionId } from './shared'
 import { buildTree, type ReferentTree, type TreeNode } from './tree'

@@ -1,6 +1,6 @@
-# @committee/storage
+# @pluribus/storage
 
-The event store, the projection cache and the local secrets store (11 · "Records and storage", Q58, Q63, Q64, Q69, Q70, Q73). Port types come from `@committee/core/ports`.
+The event store, the projection cache and the local secrets store (11 · "Records and storage", Q58, Q63, Q64, Q69, Q70, Q73). Port types come from `@pluribus/core/ports`.
 
 ## Layout
 
@@ -13,8 +13,8 @@ The event store, the projection cache and the local secrets store (11 · "Record
 | `src/projection-cache.ts` | `createProjectionCache(adapter)` |
 | `src/secrets-store.ts` | `createSecretsStore(adapter)`: the `SecretsStore` port plus `isConfigured` and `clear`; `secretControls(store)` drops the read |
 | `src/storage.ts` | `openIndexedDbStorage(options?)` and `createMemoryStorage(options?)` → `{ eventStore, projectionCache, secretsStore, close }` |
-| `src/index.ts` | Public exports for `@committee/storage` |
-| `testing/conformance.ts` | Shared adapter conformance suites, available as `@committee/storage/conformance` |
+| `src/index.ts` | Public exports for `@pluribus/storage` |
+| `testing/conformance.ts` | Shared adapter conformance suites, available as `@pluribus/storage/conformance` |
 | `test/storage.test.ts` | Runs the conformance suites against both adapters (`fake-indexeddb` for IndexedDB) |
 | `test/core-fakes.test.ts` | Runs the port conformance suites against core's in-memory fakes |
 
@@ -27,7 +27,7 @@ const storage = createMemoryStorage()
 
 ## Databases
 
-`committee-events` (version 1) has four object stores:
+`pluribus-events` (version 1) has four object stores:
 
 | Store | Key | Value |
 |---|---|---|
@@ -36,7 +36,7 @@ const storage = createMemoryStorage()
 | `logs` | `[log]` | `{ log, createdAt }`: the directory of logs |
 | `projections` | `[log]` | `{ throughSeq, stateVersion, state }` |
 
-`committee-secrets` (version 1) has one object store, `secrets`: `[name]` → the value.
+`pluribus-secrets` (version 1) has one object store, `secrets`: `[name]` → the value.
 
 ## Behavior
 
@@ -52,16 +52,16 @@ const storage = createMemoryStorage()
 
 ## Where the embedded secrets store lives
 
-**Decision: a separate IndexedDB database, `committee-secrets`, opened only by the backend in the Web Worker.** (12 lists this as left to the build, Q64; PLAN section 7 records the same choice.)
+**Decision: a separate IndexedDB database, `pluribus-secrets`, opened only by the backend in the Web Worker.** (12 lists this as left to the build, Q64; PLAN section 7 records the same choice.)
 
 Why:
 
-- **Apart from the event log (Q64, Q73).** A separate database, not an object store inside `committee-events`, means nothing that reads, exports, copies or clears the event database can reach the key, and no transaction ever spans both. `createSecretsStore` refuses an adapter whose database has any store but `secrets`, and `openIndexedDbStorage` refuses to give both databases one name.
+- **Apart from the event log (Q64, Q73).** A separate database, not an object store inside `pluribus-events`, means nothing that reads, exports, copies or clears the event database can reach the key, and no transaction ever spans both. `createSecretsStore` refuses an adapter whose database has any store but `secrets`, and `openIndexedDbStorage` refuses to give both databases one name.
 - **Reachable from the Worker.** The backend runs in a Web Worker, which has IndexedDB but not `localStorage` or `sessionStorage`. Keeping the key in the Worker also means the client thread never reads it back: the key prompt sends it once in `change-settings` and forgets it.
 - **Persists across reloads**, like the rest of the app's local data, so the user pastes the key once per browser profile.
 - **Not encrypted at rest.** The browser offers nothing to encrypt it with that the same origin could not also decrypt; a non-extractable `CryptoKey` would protect against a copy of the database files only, at the cost of losing the key whenever that `CryptoKey` is lost. For a key the user pasted into a local app this is the same protection `localStorage` would give, without its exposure to the window.
 
-What the store exposes: `set`, `clear` (the port's `delete`), `isConfigured`, and `get`, the read reserved for the backend (the provider's `getKey`). `secretControls(store)` returns the first three only, for any code that must not see the value. `set` trims surrounding whitespace and refuses an empty value. Every failure is a `SecretsStoreError` that names the operation and never contains the value. The conformance suite checks that, after a key is stored and events and a projection are written, a dump of every store in `committee-events` does not contain it.
+What the store exposes: `set`, `clear` (the port's `delete`), `isConfigured`, and `get`, the read reserved for the backend (the provider's `getKey`). `secretControls(store)` returns the first three only, for any code that must not see the value. `set` trims surrounding whitespace and refuses an empty value. Every failure is a `SecretsStoreError` that names the operation and never contains the value. The conformance suite checks that, after a key is stored and events and a projection are written, a dump of every store in `pluribus-events` does not contain it.
 
 ## Adapter rules
 

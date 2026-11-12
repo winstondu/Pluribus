@@ -8,7 +8,7 @@ import {
   isCompatibleModel,
   normalizeSettings,
   validateSettingsPatch,
-} from '@committee/protocol'
+} from '@pluribus/protocol'
 
 /** The tested compatibility list (Q107). */
 describe('model compatibility list', () => {

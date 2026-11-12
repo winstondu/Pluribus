@@ -6,7 +6,7 @@ import { routingScenario } from '../../../testing/acceptance/routing'
  * Finding of the fourth review that reaches routing: a reply target scored
  * below `targetChoice` is added without asking only when it changes neither
  * the handling chain nor the placement (11 · "Below the target-choice
- * confidence threshold, Committee elicits the target"; 05 "It never guesses
+ * confidence threshold, Pluribus elicits the target"; 05 "It never guesses
  * silently"; C19).
  */
 

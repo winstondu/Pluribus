@@ -1,4 +1,4 @@
-import type { ConversationSnapshot } from '@committee/protocol'
+import type { ConversationSnapshot } from '@pluribus/protocol'
 import type { ConversationState } from '../state'
 import { genealogyProjection } from './genealogy'
 import { operationGraphProjection } from './operation-graph'

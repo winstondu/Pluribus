@@ -1,4 +1,4 @@
-import type { ConversationSnapshot, DirectiveId, RequirementId, SectionView } from '@committee/protocol'
+import type { ConversationSnapshot, DirectiveId, RequirementId, SectionView } from '@pluribus/protocol'
 import type { PlannedRevision } from '../../src/ports'
 import { engineModule } from '../../src/engine'
 import { answer, noUnits, type ScriptStep, type TestBackendOverrides } from '..'

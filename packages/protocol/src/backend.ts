@@ -8,7 +8,7 @@ import { applyPatches } from './patches'
 import type { AppSnapshot, ConversationSnapshot, RunInspection } from './projections'
 
 /**
- * The interface between the client and the Committee backend (10 · Part 2,
+ * The interface between the client and the Pluribus backend (10 · Part 2,
  * Q55, Q62). The same three operations serve a backend embedded in a Web
  * Worker now and one behind a network later:
  *

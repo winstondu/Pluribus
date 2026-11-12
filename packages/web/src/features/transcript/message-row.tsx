@@ -1,5 +1,5 @@
-import type { MessageId, MessageView, ReplyingToView } from '@committee/protocol'
-import { WORDING } from '@committee/protocol'
+import type { MessageId, MessageView, ReplyingToView } from '@pluribus/protocol'
+import { WORDING } from '@pluribus/protocol'
 import { CornerDownLeftIcon, RotateCwIcon, ScanSearchIcon, SquareIcon, Undo2Icon } from 'lucide-react'
 import { Fragment, memo, useId } from 'react'
 import { useUiState } from '@/app/ui-state'

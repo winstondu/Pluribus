@@ -28,7 +28,7 @@ import {
   type TranscriptItemRef,
   type TranscriptProjection,
   type PauseView,
-} from '@committee/protocol'
+} from '@pluribus/protocol'
 import {
   isInFlightState,
   messageVisible,
@@ -555,7 +555,7 @@ function supersededLinkText(cause: SupersessionCause): string {
  * arrives, to the replacement of every section superseded with cause `redo`
  * for it, and to the current section of every directive that was held for it.
  */
-function redoneByDefault(s: ConversationState, section: SectionRow): import('@committee/protocol').ElicitationId | null {
+function redoneByDefault(s: ConversationState, section: SectionRow): import('@pluribus/protocol').ElicitationId | null {
   // Work the user cancelled during the wait never ran, so the default did not redo it.
   if (s.directives[section.directiveId]?.state === 'cancelled') return null
   const replaced = section.replacesSectionId ? s.sections[section.replacesSectionId] : undefined

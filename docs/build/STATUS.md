@@ -1,4 +1,4 @@
-# Committee MVP status
+# Pluribus MVP status
 
 What runs, what was checked, what each review found and what was done about it, and what is still open. Final gate: 2026-11-11, branch `claude/charming-rubin-ty8nfp`.
 
@@ -14,13 +14,13 @@ The app at `/` is the real product. The page holds the client store over a `Port
 - A corrective follow-up ("Sorry, I meant …") supersedes the list and answers in a revision.
 - Stop while streaming keeps the partial text. Retry streams a second attempt in the same section.
 - Reload mid-answer: the attempt is recorded as interrupted. Standard retries it at once; Manual waits for Retry.
-- After a reload, conversations, key status and models are kept. The run inspector shows the recorded input. The key is absent from every store of `committee-events`.
+- After a reload, conversations, key status and models are kept. The run inspector shows the recorded input. The key is absent from every store of `pluribus-events`.
 - Conversations can be created and deleted, and the deletion survives a reload.
 - Markdown answers render: code blocks, tables, light and dark.
 - An invalid key fails routing visibly with Retry. Replacing the key and pressing Retry answers.
-- A second tab stands by ("Committee is open in another tab") and takes over when the first tab closes, with nothing recorded as interrupted.
+- A second tab stands by ("Pluribus is open in another tab") and takes over when the first tab closes, with nothing recorded as interrupted.
 
-The key reaches the Worker in a `change-settings` command and is written to the `committee-secrets` store; the providers read it on each call. It is in no event, projection, log line, screenshot, committed file or built bundle (checked below).
+The key reaches the Worker in a `change-settings` command and is written to the `pluribus-secrets` store; the providers read it on each call. It is in no event, projection, log line, screenshot, committed file or built bundle (checked below).
 
 These are covered only by core and component tests, never end to end: clarification questions, target-ambiguity and choice-with-default panels, Undo split and join chains.
 
@@ -31,10 +31,10 @@ These are covered only by core and component tests, never end to end: clarificat
 | `pnpm install --frozen-lockfile` | Lockfile up to date |
 | `pnpm typecheck` | 5 packages, no errors |
 | `pnpm test` | 50 files, 631 tests passed, 0 failed (unit 543, of which core 288; web 88) |
-| `pnpm --filter @committee/web lint` | Exit 0, warnings only. It exited 1 before this gate; see "Final gate" below |
+| `pnpm --filter @pluribus/web lint` | Exit 0, warnings only. It exited 1 before this gate; see "Final gate" below |
 | `pnpm build` | Succeeds. Worker bundle 298 kB; main chunk 1.9 MB (Streamdown's code, math and Mermaid plugins), with Vite's chunk-size warning |
 | `pnpm smoke` | 2 files, 6 tests passed: four provider smoke tests and the live routing corpus |
-| `COMMITTEE_URL=http://localhost:5199/ pnpm e2e` (dev server with `OPENROUTER_KEY`, cheap model for every generative role) | 13 of 13 flows passed; `overtaking` observed the overtaken case. Screenshots in `docs/build/screenshots/e2e/` |
+| `PLURIBUS_URL=http://localhost:5199/ pnpm e2e` (dev server with `OPENROUTER_KEY`, cheap model for every generative role) | 13 of 13 flows passed; `overtaking` observed the overtaken case. Screenshots in `docs/build/screenshots/e2e/` |
 | Secret scan | The key's value was searched for, without printing it, in the working tree, every commit's tree and patch, and `packages/web/dist`: 0 matches. The only `sk-or-v1-` strings in the repository are placeholder keys in `e2e/run.mjs` and `app.test.tsx` |
 
 ### End-to-end flows (`packages/web/e2e/run.mjs`)
@@ -50,7 +50,7 @@ These are covered only by core and component tests, never end to end: clarificat
 | stopAndRetry | Stop while streaming ("Stopped · partial"), Retry: a second attempt completes in the same section | `05-*` |
 | reloadMidAnswer | Reload while streaming: interrupted, and Standard retries it to completion | `06-*` |
 | reloadUnderManual | The same under Manual: interrupted, no automatic retry; Retry completes it | `06b-*` |
-| persistence | After a reload: conversations, key status and models kept; run inspector shows the recorded input; key absent from `committee-events` | `09-*` |
+| persistence | After a reload: conversations, key status and models kept; run inspector shows the recorded input; key absent from `pluribus-events` | `09-*` |
 | conversations | Create and delete through the sidebar; the deletion survives a reload | `10-*` |
 | markdown | A fenced code block with Streamdown's chrome, and a table when the model writes one, light and dark | `11-*` |
 | invalidKey | An invalid key is rejected by the prompt. A key saved unverified that OpenRouter rejects fails routing visibly ("Could not route this message: User not found", Retry). Replacing the key and Retry answers | `07-*` |
@@ -97,7 +97,7 @@ PLAN §7 has the full reasoning for each.
 | Which earlier work a message refers to | A referent strategy behind one interface, chosen in settings: `tree-walk` (default) or `one-pass`, with a per-routing decision budget. Measured live at about 0.3% of an answer's cost; bounded at 3.7%. See [dependency-decisioning.md](dependency-decisioning.md) |
 | Context warning | At 80 % of the model's limit, shown as a note on the section. A run fails before it starts only when the token count is exact. When the count is an estimate, a run over the limit warns and runs |
 | Chunk size for stored output | First text at once. After that, 96 characters or 80 ms, whichever comes first. Always flushed before the terminal event |
-| Embedded secrets store | A separate IndexedDB database, `committee-secrets`, opened only in the Worker |
+| Embedded secrets store | A separate IndexedDB database, `pluribus-secrets`, opened only in the Worker |
 | Wording for the concurrency hold | "Waiting for a free slot". It is shown only after the scheduler records `directive-slot-held`, which happens when the limit actually holds ready work. Until then the status reads "Responding…" |
 | Stage that assigns fragments their chain and target | Atomic message: the gate. Composite: one further batched decision call after decomposition, with one question set per fragment |
 | Superseded-input detection | Three kinds of replaced input: a replaced result, an unread correction to a brief the run read, and a replaced session-wide requirement. Each is detected by comparing the run's recorded context with current state. There is no estimate of whether the result would change |
@@ -226,7 +226,7 @@ All seven findings were confirmed and fixed in `86fb27c`, with tests in `core/te
 
 ### Final gate
 
-- `pnpm --filter @committee/web lint` exited 1. The e2e helpers `useCheapModels` and `useEnvironmentKey` tripped `rules-of-hooks`. They are renamed `applyCheapModels` and `applyEnvironmentKey`; the affected flows were rerun and pass.
+- `pnpm --filter @pluribus/web lint` exited 1. The e2e helpers `useCheapModels` and `useEnvironmentKey` tripped `rules-of-hooks`. They are renamed `applyCheapModels` and `applyEnvironmentKey`; the affected flows were rerun and pass.
 - The e2e screenshots were regenerated by this run.
 
 ### After the final gate: referent strategies (2026-11-11)
@@ -237,7 +237,7 @@ Closes the round-3 routing blocker and the related major finding; see [dependenc
 |---|---|
 | `pnpm typecheck` | 5 packages, no errors |
 | `pnpm test` | 53 files, 735 tests passed, 0 failed (core 390, web 89) |
-| `pnpm --filter @committee/web lint` | Exit 0, warnings only |
+| `pnpm --filter @pluribus/web lint` | Exit 0, warnings only |
 | `pnpm build` | Succeeds |
 | `pnpm smoke` | 4 files, 13 tests passed. Corpus: tree walk 54/55, one pass 53/55, tree walk with the live decomposer 53/55. J on both siblings 25/25 per strategy; a follow-up naming two sections 10/10 per strategy. The J request through the whole backend with live answers: 4 of 4 (two sent while the siblings ran, two after the join-back) |
 
@@ -251,7 +251,7 @@ Three changes, one commit each: the decision token budget as a setting, with the
 |---|---|
 | `pnpm typecheck` | 5 packages, no errors |
 | `pnpm test` | 58 files, 1,113 tests passed, 0 failed (core 763, web 89) |
-| `pnpm --filter @committee/web lint` | Exit 0, warnings only |
+| `pnpm --filter @pluribus/web lint` | Exit 0, warnings only |
 | `pnpm build` | Succeeds |
 | `pnpm smoke` | 4 files, 28 tests passed. Corpus, 62 examples: one pass 58, tree walk (the default) 61 (60 in one of three runs), selected by rules 61 in all three, selected by the decision model 61 (60 in one of three). J on both siblings 25/25 and a follow-up naming two sections 10/10 with each of nine configurations. The J request through the whole backend with live answers: 4 of 4 |
 
@@ -265,7 +265,7 @@ The user's decisions of 2026-11-12, in [dependency-decisioning.md](dependency-de
 |---|---|
 | `pnpm typecheck` | 5 packages, no errors |
 | `pnpm test` | 58 files, 1,120 tests passed, 0 failed (core 770, web 89) |
-| `pnpm --filter @committee/web lint` | Exit 0, warnings only |
+| `pnpm --filter @pluribus/web lint` | Exit 0, warnings only |
 | `pnpm build` | Succeeds |
 | `pnpm smoke` | 4 files, 28 tests passed. Corpus, 62 examples, one run: one pass 58, tree walk with long runs searched 61, selected by rules (the default) 61, selected by the decision model 61. No score changed: with the default budget no corpus routing reaches a limit, so no question to the user became a placement. The first pass saves the tree walk 11 requests on the corpus (100 → 89). J on both siblings 25/25 and a follow-up naming two sections 10/10 with each of nine configurations. The J request through the whole backend with live answers: 4 of 4 |
 
@@ -286,7 +286,7 @@ The user's decisions of 2026-11-12, in [dependency-decisioning.md](dependency-de
 |---|---|
 | `pnpm typecheck` | 5 packages, no errors |
 | `pnpm test` | 60 files, 1,195 tests: 1,194 passed (core 839, web 95). The one failure is not from this change: `protocol/test/contracts.test.ts › defaults match the specification` counts the debug toggles and was not updated when `debug.comparePlacement` was added (`ddd7e5f`) |
-| `pnpm --filter @committee/web lint` | Exit 0, warnings only |
+| `pnpm --filter @pluribus/web lint` | Exit 0, warnings only |
 | `pnpm build` | Succeeds |
 | `pnpm smoke` | 4 files, 28 tests passed (run twice; the first run's output was not captured). Corpus, 62 examples, one run: one pass 58 (unchanged to the token), tree walk with long runs searched **59 (61 before)**, selected by rules (the default) **61 (unchanged)**, selected by the decision model 61. J on both siblings 25/25 and a follow-up naming two sections 10/10 with each of nine configurations. The J request through the whole backend with live answers: 4 of 4. Cost grid: worst guarded cell 1.99× |
 
@@ -315,7 +315,7 @@ The user: "build a real candidate source … Start with lexical index. Recall th
 |---|---|
 | `pnpm typecheck` | 5 packages, no errors |
 | `pnpm test` | 62 files, 1,360 tests, all passed (core 996, web 95). The recorded figures of `providers/test/decision-tokens.test.ts` that depend on the default were updated (the tree walk's and the rules' corpus totals, and the two ratios over all requests); nothing was loosened |
-| `pnpm --filter @committee/web lint` | Exit 0, warnings only |
+| `pnpm --filter @pluribus/web lint` | Exit 0, warnings only |
 | `pnpm build` | Succeeds |
 | `pnpm smoke` | Run once in full: 5 files, 36 tests passed; its output was not captured, so `referents.smoke.test.ts` was run a second time for the figures (25 tests passed). Corpus, 62 examples, source off → on: one pass 58 → 58 (74 requests, 92,592 tokens both ways), tree walk with long runs searched **59 → 61** (84 → 85 requests, 108,935 → 108,412 tokens), selected by rules (the default) **61 → 61** (83 → 82 requests, 110,263 → 107,841 tokens). J on both siblings 25/25 and a follow-up naming two sections 10/10 with each of twelve configurations. Cost grid: worst guarded cell 1.99×, unchanged; 2.00× on a message that names answers, with or without the source |
 
@@ -339,7 +339,7 @@ The main session's decision: apply the calibrated estimate proposed under "Measu
 |---|---|
 | `pnpm typecheck` | 5 packages, no errors |
 | `pnpm test` | 63 files, 1,363 tests, all passed |
-| `pnpm --filter @committee/web lint` | Exit 0, warnings only |
+| `pnpm --filter @pluribus/web lint` | Exit 0, warnings only |
 | `pnpm build` | Succeeds |
 | `pnpm smoke` (`decision-estimate.smoke.test.ts`; `referents.smoke.test.ts`, the three lexical-source corpus configurations) | Passed. Estimate not below any of 42 reported counts; corpus scores 58, 61, 61 |
 
@@ -368,7 +368,7 @@ For the specification's edits of 2026-11-12 (07 · "Clarification", 08, 10, 11 �
 |---|---|
 | `pnpm typecheck` | 5 packages, no errors |
 | `pnpm test` | 70 files, 1,432 tests, all passed (after the rebase onto `235b68f`) |
-| `pnpm --filter @committee/web lint` | Exit 0, warnings only |
+| `pnpm --filter @pluribus/web lint` | Exit 0, warnings only |
 | `pnpm build` | Succeeds |
 | `pnpm vitest run --config vitest.smoke.config.ts packages/providers/test/smoke/readiness.smoke.test.ts` | 5 of 5 passed, once: both listed models returned `ready` and `clarification-needed` from the preparation step and ended a streamed answer with the signal; an answer that needs nothing completed without it |
 
@@ -388,9 +388,9 @@ Not done: the e2e flows were not rerun, and no browser flow exercises a clarific
 |---|---|
 | `pnpm typecheck` | 5 packages, no errors |
 | `pnpm test` | 73 files, 1,446 tests, all passed (after the rebase onto `d1d86bc`) |
-| `pnpm --filter @committee/web lint` | Exit 0, warnings only, none in the new files |
+| `pnpm --filter @pluribus/web lint` | Exit 0, warnings only, none in the new files |
 | `pnpm build` | Succeeds |
-| `COMMITTEE_URL=http://localhost:5199/ pnpm e2e exportLogs` | Passed: 26 events, 2 runs. The shared setup's model picker step now also matches the picker's "Search the tested models…" placeholder (`e2e/lib.mjs`), which changed with the compatibility list; the other flows were not rerun |
+| `PLURIBUS_URL=http://localhost:5199/ pnpm e2e exportLogs` | Passed: 26 events, 2 runs. The shared setup's model picker step now also matches the picker's "Search the tested models…" placeholder (`e2e/lib.mjs`), which changed with the compatibility list; the other flows were not rerun |
 
 ### What a Point shows, and what the run inspector says was sent (2026-11-12)
 
@@ -406,7 +406,7 @@ The user's report: the run inspector's "questions put to the decision model" sho
 |---|---|
 | `pnpm typecheck` | 5 packages, no errors |
 | `pnpm test` | 74 files, 1,467 tests, all passed (after the rebase onto `141ab9b`) |
-| `pnpm --filter @committee/web lint` | Exit 0, warnings only, none in the new files |
+| `pnpm --filter @pluribus/web lint` | Exit 0, warnings only, none in the new files |
 | `pnpm build` | Succeeds |
 | `pnpm smoke` (`referents.smoke.test.ts`, before the rebase) | Passed; scores above |
 
@@ -419,11 +419,11 @@ pnpm typecheck
 pnpm test                                         # unit (node) and web (jsdom) projects
 pnpm vitest run --project unit packages/core      # one package
 pnpm vitest run --project web packages/web
-pnpm --filter @committee/web lint
+pnpm --filter @pluribus/web lint
 pnpm build
 OPENROUTER_KEY=… pnpm smoke                       # live provider tests and the routing corpus
 OPENROUTER_KEY=… pnpm dev                         # then, in another shell:
-COMMITTEE_URL=http://localhost:5173/ pnpm e2e     # all flows; or name some: pnpm e2e corrective reload
+PLURIBUS_URL=http://localhost:5173/ pnpm e2e     # all flows; or name some: pnpm e2e corrective reload
 ```
 
 On the dev server, `/?fixtures` opens the fixture gallery.

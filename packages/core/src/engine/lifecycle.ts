@@ -11,7 +11,7 @@ import {
   type SectionId,
   type SiblingGroupId,
   type SupersessionCause,
-} from '@committee/protocol'
+} from '@pluribus/protocol'
 import type { JsonValue } from '../ports'
 import type { CommandHandlers, Reaction, RetryPlanner, RouteOptions, RoutingRetryPlanner, StartupReaction, StepContext, TimerHandler } from './module'
 import {

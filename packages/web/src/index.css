@@ -6,7 +6,7 @@
 @source "../node_modules/streamdown/dist";
 
 /*
- * Committee design system.
+ * Pluribus design system.
  *
  * Every color, radius, type size, easing and duration used by the app is a
  * token here. Components never contain a hex value. The system is quiet and
@@ -400,7 +400,7 @@
 /* ───────────────────────── 6 · motion ───────────────────────── */
 
 /* The pending pulse of a responding bubble's status dot. Opacity only. */
-@keyframes committee-pulse {
+@keyframes pluribus-pulse {
   0%,
   100% {
     opacity: 0.35;
@@ -411,7 +411,7 @@
 }
 
 @utility animate-pending {
-  animation: committee-pulse 1.4s ease-in-out infinite;
+  animation: pluribus-pulse 1.4s ease-in-out infinite;
 }
 
 /* A spinner turns at constant speed, and fast: it reads as a faster load. */

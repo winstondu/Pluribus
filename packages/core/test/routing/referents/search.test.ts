@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, type SectionId, type TreeWalkSettings } from '@committee/protocol'
+import { DEFAULT_SETTINGS, type SectionId, type TreeWalkSettings } from '@pluribus/protocol'
 import { describe, expect, test } from 'vitest'
 import type { Probe, ReferentUnit } from '../../../src/ports'
 import { corpusInput, scene, sceneIds, type Scene } from '../../../testing/routing/corpus'

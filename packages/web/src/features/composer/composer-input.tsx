@@ -1,5 +1,5 @@
-import type { SectionId } from '@committee/protocol'
-import { WORDING } from '@committee/protocol'
+import type { SectionId } from '@pluribus/protocol'
+import { WORDING } from '@pluribus/protocol'
 import { ArrowUpIcon, CornerDownLeftIcon, XIcon } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useStore } from 'zustand'

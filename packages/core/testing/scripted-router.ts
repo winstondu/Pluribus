@@ -11,7 +11,7 @@ import {
   type TextSpan,
   type UnitRoutingDecision,
   type WholeRequestBarrier,
-} from '@committee/protocol'
+} from '@pluribus/protocol'
 import type {
   CancelSignal,
   PlannedClarification,

@@ -4,18 +4,18 @@ One JSON file per conversation with everything needed to debug a run and replay 
 
 ## Where it is
 
-- **Button**: the header's debug menu (the scan icon, "Debug views") → "Export full logs". The menu is in the header whether or not a debug view is on. While the backend builds the file the item reads "Preparing export…" and is disabled; then "Saved committee-log-….json" is announced (`role="status"`), or "Export failed: …" (`role="alert"`). File name: `committee-log-<conversation>-<YYYYMMDD-HHMMSS>.json`, UTC, from the backend's injected clock.
+- **Button**: the header's debug menu (the scan icon, "Debug views") → "Export full logs". The menu is in the header whether or not a debug view is on. While the backend builds the file the item reads "Preparing export…" and is disabled; then "Saved pluribus-log-….json" is announced (`role="status"`), or "Export failed: …" (`role="alert"`). File name: `pluribus-log-<conversation>-<YYYYMMDD-HHMMSS>.json`, UTC, from the backend's injected clock.
 - **Backend request**: the snapshot query `{ kind: 'log-export', conversationId }` on `BackendClient` (`packages/protocol/src/backend.ts`), answered with a `LogExportFile` (`packages/protocol/src/log-export.ts`): the document already serialized, as string `chunks`, with `filename`, `mediaType`, `createdAt`, `length` and `eventCount`. It is a snapshot query rather than a new method so the existing Worker wire (`servePort`, `createPortClient`) carries it unchanged and every `BackendClient` (fixture backend included) stays one interface.
 - **Core**: `exportLog` in `packages/core/src/engine/backend.ts` reads the inputs in one queued job (the stored events through the folded state's `throughSeq`, the app log, the projections, the folded state, the settings and the stored key), then builds the file outside the queue so other steps are not held up while a large log serializes. `buildLogExport` (`packages/core/src/engine/log-export.ts`) is pure.
 - **Page**: `LogExportSource` (`packages/web/src/backend/log-export.ts`) has one method, `exportLog(conversationId)`, resolving to `{ kind: 'blob'; blob; filename } | { kind: 'url'; url; filename }`. The embedded source (`backendLogExportSource`) sends the query and wraps the chunks in a Blob without parsing them. A server deployment provides its own source with `LogExportSourceProvider` and returns a download URL; the button does not change. `saveLogExport` clicks a hidden `<a download>`; a Blob goes through an object URL that is revoked afterwards.
 
 ## The document
 
-Schema `committee.log-export`, version 1. Top-level members, in this order, one per line:
+Schema `pluribus.log-export`, version 1. Top-level members, in this order, one per line:
 
 | Member | What it is |
 |---|---|
-| `schema`, `version` | `"committee.log-export"`, `1` |
+| `schema`, `version` | `"pluribus.log-export"`, `1` |
 | `exportedAt`, `exportedAtMs` | The backend clock at export, ISO 8601 and milliseconds |
 | `conversation` | `{ id, title, createdAt }` |
 | `versions` | `{ protocol, eventSchema, state }`: the backend interface, the event schema and core's folded-state version |

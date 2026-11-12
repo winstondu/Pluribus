@@ -1,8 +1,8 @@
-import { DEFAULT_SETTINGS, WORDING } from '@committee/protocol'
+import { DEFAULT_SETTINGS, WORDING } from '@pluribus/protocol'
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, test } from 'vitest'
-import type { KeyCheck } from '@committee/protocol'
+import type { KeyCheck } from '@pluribus/protocol'
 import { keyFormatProblem } from '@/app/key-validation'
 import { createScriptedKeyProvision, type KeyProvision } from '@/backend'
 import { KeyPrompt } from '@/app/key-prompt'
@@ -159,7 +159,7 @@ describe('shell', () => {
     const tested = await screen.findByRole('option', { name: /Claude Sonnet 5.5/ })
     expect(screen.getAllByRole('option')).toHaveLength(2)
     expect(screen.queryByRole('option', { name: /Claude Opus 5.5/ })).toBeNull()
-    expect(screen.getByText(/Only models tested with Committee are offered here/)).toBeInTheDocument()
+    expect(screen.getByText(/Only models tested with Pluribus are offered here/)).toBeInTheDocument()
     await user.click(tested)
     await waitFor(() => expect(store.getState().app?.settings.models.decomposition).toBe('anthropic/claude-sonnet-5.5'))
     // Ordered-message decomposition, a decomposer option beside the decomposition model (Q104): decompose by default.

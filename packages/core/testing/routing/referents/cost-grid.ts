@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, type RoutingSettings } from '@committee/protocol'
+import { DEFAULT_SETTINGS, type RoutingSettings } from '@pluribus/protocol'
 import { NEVER_CANCELLED, type CandidateSource, type DecisionProvider, type DecisionQuestions, type DecisionRequest, type DecisionResult } from '../../../src/ports'
 import { corpusInput, referenceDecomposer } from '../corpus/evaluate'
 import { scene, type Scene } from '../corpus/scene'

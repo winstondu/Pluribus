@@ -1,4 +1,4 @@
-import type { NodeId, SectionId, SiblingGroupId } from '@committee/protocol'
+import type { NodeId, SectionId, SiblingGroupId } from '@pluribus/protocol'
 import type { CandidateGroup, CandidateWork, GroupNode, ReferentNode, ReferentRequest, ReferentTree, SectionNode } from '../../ports'
 
 /**

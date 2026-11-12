@@ -1,4 +1,4 @@
-import { RETRY_POLICIES, type AttemptId, type RetryPlan } from '@committee/protocol'
+import { RETRY_POLICIES, type AttemptId, type RetryPlan } from '@pluribus/protocol'
 import type { ConversationState, RetryPlanner, RoutingRetryPlanner } from '../engine'
 
 /**

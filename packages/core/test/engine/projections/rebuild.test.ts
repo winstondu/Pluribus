@@ -7,7 +7,7 @@ import {
   type Placement,
   type PrerequisiteRef,
   type SectionId,
-} from '@committee/protocol'
+} from '@pluribus/protocol'
 import { atomic, fail, independent, say, spanOf, type ScriptStep, type UnitSpec } from '../../../testing'
 import { fold } from '../../../src/engine/reducers'
 import { emptyConversationState } from '../../../src/engine/state'

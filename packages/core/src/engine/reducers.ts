@@ -10,8 +10,8 @@ import type {
   ResponseId,
   SectionId,
   TranscriptItemRef,
-} from '@committee/protocol'
-import { IN_FLIGHT_STATES } from '@committee/protocol'
+} from '@pluribus/protocol'
+import { IN_FLIGHT_STATES } from '@pluribus/protocol'
 import type {
   AttemptRow,
   ConversationState,

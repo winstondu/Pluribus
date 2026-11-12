@@ -3,7 +3,7 @@ import {
   type DirectiveId,
   type ElicitationView,
   type SectionId,
-} from '@committee/protocol'
+} from '@pluribus/protocol'
 import { LocateIcon, LockIcon } from 'lucide-react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'

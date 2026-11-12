@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
-import type { KeyCheck, KeyCredit } from '@committee/protocol'
+import type { KeyCheck, KeyCredit } from '@pluribus/protocol'
 import { createClient, isBrowserBlocked, isOutOfCredit, resolveAnthropicOptions } from './client'
 import type { FetchLike } from '../openrouter/http'
 

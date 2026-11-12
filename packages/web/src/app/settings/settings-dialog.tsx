@@ -17,7 +17,7 @@ import {
   type Settings,
   type SettingsPatch,
   type StrategySelectionMode,
-} from '@committee/protocol'
+} from '@pluribus/protocol'
 import { CheckIcon, KeyRoundIcon, MinusIcon, PlusIcon } from 'lucide-react'
 import { useEffect, useId, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
@@ -234,7 +234,7 @@ function GeneralSettings({ settings }: { settings: Settings }) {
   const waitLabel = useId()
   const concurrencyLabel = useId()
   return (
-    <Panel title="General" description="How Committee retries failed work, how long it waits before acting on a default, and how much runs at once.">
+    <Panel title="General" description="How Pluribus retries failed work, how long it waits before acting on a default, and how much runs at once.">
       <Row label="Retry policy" labelId={policyLabel} stacked>
         <ChoiceCards
           labelledBy={policyLabel}
@@ -247,7 +247,7 @@ function GeneralSettings({ settings }: { settings: Settings }) {
       <Row
         label="Wait before a default choice runs"
         labelId={waitLabel}
-        description="When a correction affects finished work, Committee pre-selects what to redo and carries it out after this wait unless you choose first."
+        description="When a correction affects finished work, Pluribus pre-selects what to redo and carries it out after this wait unless you choose first."
         stacked
       >
         <CommittedSlider
@@ -479,7 +479,7 @@ const THRESHOLDS: readonly { key: keyof DecisionThresholds; label: string; descr
   {
     key: 'targetChoice',
     label: 'Target choice',
-    description: 'Below this confidence in the best target, Committee asks which section a reply addresses.',
+    description: 'Below this confidence in the best target, Pluribus asks which section a reply addresses.',
   },
   {
     key: 'clearlyCorrective',
@@ -952,7 +952,7 @@ function DebugSettings({ settings }: { settings: Settings }) {
   return (
     <Panel
       title="Debug views"
-      description="Inspection views for seeing how Committee handled a conversation. Margin rails, Focus and the split link are always on."
+      description="Inspection views for seeing how Pluribus handled a conversation. Margin rails, Focus and the split link are always on."
     >
       {DEBUG_VIEWS.map((view) => (
         <DebugRow

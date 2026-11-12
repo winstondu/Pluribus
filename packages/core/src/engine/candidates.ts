@@ -1,4 +1,4 @@
-import { textTokens, type DirectiveId, type NodeId, type SectionId, type StrategySelectionRecord, type TargetRedirect } from '@committee/protocol'
+import { textTokens, type DirectiveId, type NodeId, type SectionId, type StrategySelectionRecord, type TargetRedirect } from '@pluribus/protocol'
 import type { CandidateChain, CandidateGroup, CandidateSection, CandidateWork, RoutingCandidates } from '../ports'
 import {
   activeMembers,

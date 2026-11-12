@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { PROVIDER_ERROR_CLASS, WORDING, type ProviderErrorCode } from '@committee/protocol'
-import { NEVER_CANCELLED, createCancelSource, type ModelStreamEvent } from '@committee/core/ports'
+import { PROVIDER_ERROR_CLASS, WORDING, type ProviderErrorCode } from '@pluribus/protocol'
+import { NEVER_CANCELLED, createCancelSource, type ModelStreamEvent } from '@pluribus/core/ports'
 import { hangingSseResponse, jsonResponse, mockFetch, sseResponse, type RecordedRequest, type Responder } from '../../testing/fetch-mock'
 import { CLARIFICATION_TOOL_NAME } from '../../src/openrouter/model-provider'
 import { createAnthropicDecomposer } from '../../src/anthropic/decomposer'

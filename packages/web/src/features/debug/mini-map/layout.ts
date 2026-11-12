@@ -1,4 +1,4 @@
-import type { ChainId, GenealogyProjection, NodeId, NodeView, SiblingGroupId } from '@committee/protocol'
+import type { ChainId, GenealogyProjection, NodeId, NodeView, SiblingGroupId } from '@pluribus/protocol'
 
 /**
  * Where the mini-map draws the genealogy (09 §1, the Genealogy layout).

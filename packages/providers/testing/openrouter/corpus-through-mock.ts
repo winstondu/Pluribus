@@ -1,5 +1,5 @@
-import { DEFAULT_SETTINGS, type ReferentStrategyName, type Settings, type StrategySelectionMode } from '@committee/protocol'
-import { ROUTING_CORPUS, corpusInput, evaluateCorpus, oracleDecisionProvider, type CorpusExample, type ExpectationSet } from '@committee/core/testing'
+import { DEFAULT_SETTINGS, type ReferentStrategyName, type Settings, type StrategySelectionMode } from '@pluribus/protocol'
+import { ROUTING_CORPUS, corpusInput, evaluateCorpus, oracleDecisionProvider, type CorpusExample, type ExpectationSet } from '@pluribus/core/testing'
 import { createOpenRouterDecisionProvider } from '../../src/openrouter/decision-provider'
 import { createDecisionsApiMock, type MeasuredCall, type TokenCalibration } from './decisions-api-mock'
 

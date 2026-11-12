@@ -1,4 +1,4 @@
-import type { SectionStatus } from '@committee/protocol'
+import type { SectionStatus } from '@pluribus/protocol'
 import { BanIcon, CircleAlertIcon, HistoryIcon, PauseIcon, SquareIcon, UnplugIcon, type LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 

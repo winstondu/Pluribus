@@ -63,7 +63,7 @@ import {
   type UnfinishedOutcome,
   type WaitTargetView,
   type WholeRequestBarrier,
-} from '@committee/protocol'
+} from '@pluribus/protocol'
 
 /**
  * Readable construction of projection snapshots for fixtures.

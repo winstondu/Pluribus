@@ -1,4 +1,4 @@
-import { deepEqual, type DirectiveId, type MessageId, type SupersededInput } from '@committee/protocol'
+import { deepEqual, type DirectiveId, type MessageId, type SupersededInput } from '@pluribus/protocol'
 import { queries, type ConversationState, type Reaction } from '../engine'
 
 /**

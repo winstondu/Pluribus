@@ -32,7 +32,7 @@ export function App() {
   return (
     <div className="gallery">
       <header className="gallery-header">
-        <a className="gallery-brand" href="#chat" aria-label="Committee prototypes home"><span className="gallery-mark" aria-hidden="true">c</span> Committee <span> / design lab</span></a>
+        <a className="gallery-brand" href="#chat" aria-label="Pluribus prototypes home"><span className="gallery-mark" aria-hidden="true">c</span> Pluribus <span> / design lab</span></a>
         <div className="gallery-header-actions"><span className="gallery-fixture">Interactive fixtures</span><button onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')} aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`}>{theme === 'light' ? 'Dark' : 'Light'} theme</button></div>
       </header>
       <div className="gallery-body">
@@ -42,7 +42,7 @@ export function App() {
           <p className="gallery-note">Local sample data.<br />No model calls or API keys.</p>
         </nav>
         <main className="gallery-main">
-          <div className="gallery-page-heading"><div><p className="gallery-eyebrow">Committee / {sample.caption}</p><h1>{sample.label}</h1><p>{sample.description}</p></div><span className="gallery-react-label">React + TypeScript</span></div>
+          <div className="gallery-page-heading"><div><p className="gallery-eyebrow">Pluribus / {sample.caption}</p><h1>{sample.label}</h1><p>{sample.description}</p></div><span className="gallery-react-label">React + TypeScript</span></div>
           <div className="gallery-stage" key={sample.id}><sample.Component /></div>
         </main>
       </div>

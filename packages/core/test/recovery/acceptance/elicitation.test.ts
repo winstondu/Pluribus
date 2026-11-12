@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import type { ElicitationId, ElicitationView, SectionId } from '@committee/protocol'
+import type { ElicitationId, ElicitationView, SectionId } from '@pluribus/protocol'
 import { answer, say } from '../../../testing'
 import { expectRebuildable, type Scenario } from '../../../testing/acceptance/engine'
 import { BRIEF, inputOf, recoveryScenario, revise, sectionOf } from '../../../testing/acceptance/recovery'

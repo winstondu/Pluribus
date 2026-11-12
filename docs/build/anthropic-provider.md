@@ -52,11 +52,11 @@ Whether a key is configured is not asked there: the backend reports it (`AppSnap
 - Server: `serverKeyProvision`, `canProvideKeys: false`. No prompt; the settings say "Configured on the server". A double for tests; no server is built.
 - Fixtures: `createScriptedKeyProvision`.
 
-Both keys follow this path. `change-settings` no longer carries a key, and no React component imports the Worker, `@committee/storage` or `@committee/providers` (asserted in `key-channel.test.ts`).
+Both keys follow this path. `change-settings` no longer carries a key, and no React component imports the Worker, `@pluribus/storage` or `@pluribus/providers` (asserted in `key-channel.test.ts`).
 
 ## Key handling
 
-- Stored only in the local secrets store (`anthropic-key`, beside `openrouter-key`, in the `committee-secrets` database).
+- Stored only in the local secrets store (`anthropic-key`, beside `openrouter-key`, in the `pluribus-secrets` database).
 - Goes page → Worker once, in a `key-request`; no reply carries it. It is never in a command, an event, a projection, the stream, an export or a log. The SDK client is built with logging off.
 - Sent only to `api.anthropic.com`.
 - Settings show only whether it is configured, with replace and remove.

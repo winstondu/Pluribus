@@ -1,4 +1,4 @@
-import type { DecisionBudget, SectionId, ShownSection } from '@committee/protocol'
+import type { DecisionBudget, SectionId, ShownSection } from '@pluribus/protocol'
 import type { Probe, ReferentAsk, ReferentGate, ReferentOperations, ReferentQuestions, ReferentRequest, ReferentUnit, SegmentProbe, ShownSubjects } from '../../ports'
 import { chooseShown, createShowing, OPENING, recordLine, renderLine, type ShownChoice } from '../shown'
 import { estimateDecisionTokens, STATE_TOKENS_PER_CHARACTER } from './ask'

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { PROVIDER_ERROR_CLASS, WORDING } from '@committee/protocol'
-import { NEVER_CANCELLED, createCancelSource, type ModelStreamEvent } from '@committee/core/ports'
+import { PROVIDER_ERROR_CLASS, WORDING } from '@pluribus/protocol'
+import { NEVER_CANCELLED, createCancelSource, type ModelStreamEvent } from '@pluribus/core/ports'
 import { CLARIFICATION_TOOL, CLARIFICATION_TOOL_NAME, carriesClarificationSignal, createOpenRouterModelProvider } from '../../src/openrouter/model-provider'
 import { estimateTokens } from '../../src/openrouter/models'
 import {

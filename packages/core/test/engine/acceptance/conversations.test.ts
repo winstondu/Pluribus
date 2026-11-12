@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { WORDING, type ConversationId } from '@committee/protocol'
+import { WORDING, type ConversationId } from '@pluribus/protocol'
 import { answer, atomic } from '../../../testing'
 import { scenario } from '../../../testing/acceptance/engine'
 

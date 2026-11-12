@@ -16,7 +16,7 @@ import {
   type SectionState,
   type SiblingGroupId,
   type UnfinishedOutcome,
-} from '@committee/protocol'
+} from '@pluribus/protocol'
 import type { ChainRow, ConversationState, DirectiveRow, GroupRow, JoinBackRow, NodeRow, SectionRow } from './state'
 
 /**

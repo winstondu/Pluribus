@@ -1,4 +1,4 @@
-import { providerError, type ProviderErrorCode, type TokenUsage } from '@committee/protocol'
+import { providerError, type ProviderErrorCode, type TokenUsage } from '@pluribus/protocol'
 import type { CancelSignal, ModelProvider, ModelRequest, ModelStreamEvent, TokenCount } from '../src/ports'
 import type { FakeClock } from './fake-clock'
 

@@ -1,4 +1,4 @@
-import type { AttemptStarted, ReferentStrategyName, SectionId } from '@committee/protocol'
+import type { AttemptStarted, ReferentStrategyName, SectionId } from '@pluribus/protocol'
 import { describe, expect, test } from 'vitest'
 import type { CandidateQuery } from '../../../src/ports'
 import { answer } from '../../../testing'

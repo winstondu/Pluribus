@@ -1,5 +1,5 @@
-import type { AttemptId, AttemptView, SectionId, SectionNote, SectionView } from '@committee/protocol'
-import { WORDING } from '@committee/protocol'
+import type { AttemptId, AttemptView, SectionId, SectionNote, SectionView } from '@pluribus/protocol'
+import { WORDING } from '@pluribus/protocol'
 import {
   ArrowDownIcon,
   ArrowUpIcon,

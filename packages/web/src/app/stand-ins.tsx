@@ -1,4 +1,4 @@
-import type { AttemptId, MessageId, ResponseId, SectionId, SectionView } from '@committee/protocol'
+import type { AttemptId, MessageId, ResponseId, SectionId, SectionView } from '@pluribus/protocol'
 import { ArrowUpIcon } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import {
@@ -108,7 +108,7 @@ function ResponseRow({ id }: { id: ResponseId }) {
   return (
     <article className="flex flex-col gap-3" data-response-id={id} data-placement={response.placement}>
       <p className="flex items-baseline gap-2 pl-[calc(var(--spacing-rail)+0.875rem)] text-xs">
-        <span className="font-medium text-muted-foreground">Committee</span>
+        <span className="font-medium text-muted-foreground">Pluribus</span>
         {response.header?.countText ? <span className="tabular text-faint-foreground">{response.header.countText}</span> : null}
       </p>
       {response.routing ? (

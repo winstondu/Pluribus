@@ -1,9 +1,9 @@
-import type { ProviderError, TokenUsage } from '@committee/protocol'
+import type { ProviderError, TokenUsage } from '@pluribus/protocol'
 import type { CancelSignal } from './cancel'
 
 /**
  * Bounded routing questions (Q68, invariant 9). The decision model selects
- * among candidates Committee supplies: it answers yes or no, picks one of
+ * among candidates Pluribus supplies: it answers yes or no, picks one of
  * the named options, or scores. It never writes text; anything rewritten
  * comes from the decomposer.
  *

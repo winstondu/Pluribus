@@ -8,7 +8,7 @@ import {
   type RoutingDecision,
   type RunInspection,
   type UnitRoutingDecision,
-} from '@committee/protocol'
+} from '@pluribus/protocol'
 
 /**
  * Helpers for the debug fixtures: app state with debug views switched on,

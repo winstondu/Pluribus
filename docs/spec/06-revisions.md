@@ -15,7 +15,7 @@ What happens depends on the state of the target (Q35, Q38, Q41):
 | Running, answer text visible | Ended and superseded | Partial text stays, collapsed, marked "Superseded — revised below", linked to A′ | Rewound context: the partial text is not included |
 | Finished | Kept as history, marked superseded | A stays, marked superseded, linked to A′ | A's chain history: A′ is a follow-up that sees A and the correction |
 
-An attempt that Committee ends for a revision is superseded, not stopped: its dependents follow the replacement and are not paused.
+An attempt that Pluribus ends for a revision is superseded, not stopped: its dependents follow the replacement and are not paused.
 
 In the three cases where A had started, A′ is a new response positioned at its own first output. It never streams into A's bubble or reply group.
 
@@ -50,8 +50,8 @@ Dependents follow their actual dependencies (Q36):
 
 Example: "Actually, the trip is four days, not five." This changes the brief that A, B, and J all consumed.
 
-- Committee identifies the work that may need redoing among the brief's consumers and asks the user which to redo, using a **choice with default** ([elicitation](07-elicitation.md), Q42).
-- The pre-selected default is the work Committee judges actually affected. For a four-day trip that is J, the itinerary, not A or B (Q44).
+- Pluribus identifies the work that may need redoing among the brief's consumers and asks the user which to redo, using a **choice with default** ([elicitation](07-elicitation.md), Q42).
+- The pre-selected default is the work Pluribus judges actually affected. For a four-day trip that is J, the itinerary, not A or B (Q44).
 - Affected work that is running stops at once and is always redone; it cannot be deselected. Affected queued work always picks up the change. The user's choice applies to finished work (Q44, Q45, Q84).
 - Chosen finished work is redone as in the tables above. Finished work not chosen keeps its result with the superseded-input note and Regenerate.
 - All future work uses the revised brief.

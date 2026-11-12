@@ -1,4 +1,4 @@
-import { WORDING } from '@committee/protocol'
+import { WORDING } from '@pluribus/protocol'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useBackendStatus, useBackendStatusDetail } from '@/backend'
 import { FIXTURES_ENABLED } from '@/backend/connect'
@@ -22,7 +22,7 @@ export function BackendGate({ children }: { children: ReactNode }) {
   }
   if (status === 'failed') {
     return (
-      <Notice title="Committee could not start" tone="failed">
+      <Notice title="Pluribus could not start" tone="failed">
         {(detail ?? 'The backend did not start').replace(/[.\s]*$/, '.')}
         {FIXTURES_ENABLED ? (
           <>
@@ -47,7 +47,7 @@ function Connecting() {
     return () => clearTimeout(timer)
   }, [])
   return (
-    <div role="status" aria-label="Starting Committee" className="grid h-full place-items-center bg-background">
+    <div role="status" aria-label="Starting Pluribus" className="grid h-full place-items-center bg-background">
       {visible ? <BrandMark className="animate-pending size-9" /> : null}
     </div>
   )

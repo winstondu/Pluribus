@@ -1,4 +1,4 @@
-import type { ExchangeNodeView, GenealogyProjection, JoinBackNodeView, NodeId, NodeState, NodeView } from '@committee/protocol'
+import type { ExchangeNodeView, GenealogyProjection, JoinBackNodeView, NodeId, NodeState, NodeView } from '@pluribus/protocol'
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { useUiState } from '@/app/ui-state'
 import { useApp, useGenealogy } from '@/backend'

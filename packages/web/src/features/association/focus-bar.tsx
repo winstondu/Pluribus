@@ -1,4 +1,4 @@
-import type { ChainAssociation, ChainId } from '@committee/protocol'
+import type { ChainAssociation, ChainId } from '@pluribus/protocol'
 import { XIcon } from 'lucide-react'
 import { useEffect } from 'react'
 import { useUiState } from '@/app/ui-state'

@@ -1,4 +1,4 @@
-import { collapseShownText, type SectionId, type ShownAnswerForm, type ShownPiece, type ShownSection } from '@committee/protocol'
+import { collapseShownText, type SectionId, type ShownAnswerForm, type ShownPiece, type ShownSection } from '@pluribus/protocol'
 import type { AnswerSource, CandidateSection, DecisionContext } from '../ports'
 import { lexicalTerms } from './candidates/lexical'
 import { STATE_TOKENS_PER_CHARACTER } from './referents/ask'
@@ -128,7 +128,7 @@ export function createShowing(options: { readonly answerOf?: ((section: Candidat
     return found
   }
   const line = (s: CandidateSection, n: number, context: DecisionContext | null, choice: ShownChoice = OPENING): Line => {
-    if (s.asksElicitationId) return { form: 'opening', pieces: [{ kind: 'text', text: `S${n}. A question Committee asked the user, still unanswered: ${quote(s.excerpt || s.request)}` }] }
+    if (s.asksElicitationId) return { form: 'opening', pieces: [{ kind: 'text', text: `S${n}. A question Pluribus asked the user, still unanswered: ${quote(s.excerpt || s.request)}` }] }
     if (context?.kind === 'summary') {
       const own = context.own.slice(-OWN_MESSAGES_SHOWN).map((m) => `${m.role === 'assistant' ? 'answer' : 'request'} ${quote(m.content, m.role === 'assistant' ? 280 : 240)}`)
       const after = own.length > 0 ? `; after that: ${own.join('; ')}` : ''

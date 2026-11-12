@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { WORDING } from '@committee/protocol'
-import { NEVER_CANCELLED, createCancelSource } from '@committee/core/ports'
+import { WORDING } from '@pluribus/protocol'
+import { NEVER_CANCELLED, createCancelSource } from '@pluribus/core/ports'
 import { createOpenRouterDecisionProvider } from '../../src/openrouter/decision-provider'
 import { TEST_KEY, jsonResponse, mockFetch, withKey, withoutKey, type Responder } from '../../testing/fetch-mock'
 

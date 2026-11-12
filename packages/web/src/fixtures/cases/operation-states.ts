@@ -1,4 +1,4 @@
-import { WORDING } from '@committee/protocol'
+import { WORDING } from '@pluribus/protocol'
 import { fx, type Fixture } from '@/fixtures'
 import { debugApp } from '@/features/debug/fixture-support'
 

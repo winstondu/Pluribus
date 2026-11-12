@@ -6,7 +6,7 @@ import type {
   ModelRole,
   NodeId,
   ReadinessSource,
-} from '@committee/protocol'
+} from '@pluribus/protocol'
 import type { ModelMessage } from '../ports'
 import type { StepContext } from './module'
 import type { DirectiveRow } from './state'

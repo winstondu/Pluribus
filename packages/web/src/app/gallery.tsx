@@ -38,7 +38,7 @@ export default function Gallery() {
     setPlaying(false)
     let unsubscribe: (() => void) | null = null
     const poll = setInterval(() => {
-      const found = frame.current?.contentWindow?.__committeeFixture
+      const found = frame.current?.contentWindow?.__pluribusFixture
       if (!found || found.fixture.id !== selected?.id) return
       clearInterval(poll)
       setBackend(found)

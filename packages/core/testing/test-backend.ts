@@ -11,7 +11,7 @@ import {
   type SectionId,
   type SettingsPatch,
   type StreamFrame,
-} from '@committee/protocol'
+} from '@pluribus/protocol'
 import type { Backend, CandidateSource, ContextSummariser, ContextSummaryProvider, CoreOptions, ReferentStrategy } from '../src/ports'
 import { createEngine, type EngineInternals } from '../src/engine/backend'
 import { defaultModules } from '../src/engine/engine-module'

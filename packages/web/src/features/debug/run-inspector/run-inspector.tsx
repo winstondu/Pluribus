@@ -20,7 +20,7 @@ import type {
   WaitTargetView,
   PauseReason,
   ReadinessRecord,
-} from '@committee/protocol'
+} from '@pluribus/protocol'
 import type { ReactNode } from 'react'
 import { useUiState } from '@/app/ui-state'
 import { useGenealogy, useRunInspection, useTranscript } from '@/backend'
@@ -342,7 +342,7 @@ function nodeLabel(genealogy: GenealogyProjection, inspection: RunInspection, no
 function originLabel(origin: ContextOrigin, inspection: RunInspection, genealogy: GenealogyProjection): string {
   switch (origin.kind) {
     case 'preamble':
-      return 'Committee’s instructions'
+      return 'Pluribus’s instructions'
     case 'session-requirement':
       return 'Session-wide requirement'
     case 'ancestor-request':

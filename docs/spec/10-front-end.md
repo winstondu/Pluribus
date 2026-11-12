@@ -1,6 +1,6 @@
 # 10 · Front-end interface
 
-Two things live here: what the user sees and can do, and the interface between the client and the Committee backend that makes it possible. The behavior behind each control is specified in documents 02–08; this document is the inventory a front-end builder works from.
+Two things live here: what the user sees and can do, and the interface between the client and the Pluribus backend that makes it possible. The behavior behind each control is specified in documents 02–08; this document is the inventory a front-end builder works from.
 
 The selected chat style is **Sections**, illustrated by the [chat prototype](../../prototypes/ui/chat-directions.html). The prototype shows style only: it predates responding bubbles, first-output placement, and local failure. Visual styling beyond the selected direction is the builder's choice. The inspection views are in [debug views](09-debug-views.md).
 
@@ -32,7 +32,7 @@ The selected chat style is **Sections**, illustrated by the [chat prototype](../
 | Margin rails and Focus | Always-available chain association for each message | [09](09-debug-views.md) |
 | "New output ↓" | Shown when new output arrives while the reader is scrolled away | [03](03-transcript-and-placement.md) |
 
-Opening another conversation does not stop work in the previous one (Q100). A second Committee tab shows an already-open state while the first owns execution (Q99).
+Opening another conversation does not stop work in the previous one (Q100). A second Pluribus tab shows an already-open state while the first owns execution (Q99).
 
 ### Controls
 

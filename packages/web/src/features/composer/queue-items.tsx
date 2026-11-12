@@ -1,4 +1,4 @@
-import type { QueueItemView, RecoveryView, SectionId } from '@committee/protocol'
+import type { QueueItemView, RecoveryView, SectionId } from '@pluribus/protocol'
 import { ClockIcon, PauseIcon } from 'lucide-react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { useStore } from 'zustand'
@@ -116,7 +116,7 @@ function QueueItem({ item }: { item: QueueItemView }) {
   )
 }
 
-/** Retry the prerequisite, continue without it, or cancel the paused request (Q48). Committee waits for as long as it takes. */
+/** Retry the prerequisite, continue without it, or cancel the paused request (Q48). Pluribus waits for as long as it takes. */
 function RecoveryChoice({ item, recovery }: { item: QueueItemView; recovery: RecoveryView }) {
   const command = useCommand()
   return (

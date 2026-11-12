@@ -1,4 +1,4 @@
-import type { Command, CommandResult, ConversationId } from '@committee/protocol'
+import type { Command, CommandResult, ConversationId } from '@pluribus/protocol'
 import { useCallback } from 'react'
 import { toast } from 'sonner'
 import { useActiveConversationId, useSend } from '@/backend'

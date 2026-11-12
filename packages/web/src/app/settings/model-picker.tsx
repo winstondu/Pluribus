@@ -1,4 +1,4 @@
-import type { ProviderChoice } from '@committee/protocol'
+import type { ProviderChoice } from '@pluribus/protocol'
 import { ChevronsUpDownIcon } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import {
@@ -136,7 +136,7 @@ export function ModelPicker(props: { label: string; value: string; choice: Provi
         </ModelSelectorList>
         {listed ? (
           <p data-slot="model-list-note" className="border-t px-3 py-2 text-2xs leading-relaxed text-muted-foreground">
-            Only models tested with Committee are offered here: they can prepare an answer in a structured step and signal, while
+            Only models tested with Pluribus are offered here: they can prepare an answer in a structured step and signal, while
             streaming, that they need to ask you something.
             {groups.some(([, options]) => options.some((model) => model.tested === false))
               ? ' The live test of these models through the Claude API has not been run yet.'

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import type { ElicitationRaised } from '@committee/protocol'
+import type { ElicitationRaised } from '@pluribus/protocol'
 import { answer } from '../../../testing'
 import { routingScenario } from '../../../testing/acceptance/routing'
 

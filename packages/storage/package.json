@@ -1,5 +1,5 @@
 {
-  "name": "@committee/storage",
+  "name": "@pluribus/storage",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -11,8 +11,8 @@
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
-    "@committee/core": "workspace:*",
-    "@committee/protocol": "workspace:*",
+    "@pluribus/core": "workspace:*",
+    "@pluribus/protocol": "workspace:*",
     "idb": "^8.0.4"
   }
 }

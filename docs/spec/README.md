@@ -1,6 +1,6 @@
-# Committee specification
+# Pluribus specification
 
-This folder is the complete, hand-off-able specification for Committee. Everything needed to plan and build the first version is here. The only outside reference is the set of [UI prototypes](../../prototypes/ui/README.md), which show the chosen visual directions.
+This folder is the complete, hand-off-able specification for Pluribus. Everything needed to plan and build the first version is here. The only outside reference is the set of [UI prototypes](../../prototypes/ui/README.md), which show the chosen visual directions.
 
 ## The problem
 
@@ -18,7 +18,7 @@ So a single thread of conversation is serial by construction, and the app has li
 - **Every answer reads everything.** Unrelated earlier topics are fed into each new request, which costs tokens and lets one subject leak into another.
 - **Mixed messages get one blended answer.** A message with two separate requests is answered as one reply, so neither part can finish, fail, or be corrected on its own.
 
-Committee does not remove the limit; one run is still one sequence. It stops forcing everything through a single sequence. Because a run sees only the text it is handed, separate runs with separate contexts can proceed side by side on the same model. The work is then deciding which requests can be separate runs, what each run should read, what truly has to wait for what, and how to show the results as one coherent chat. That is what this specification settles.
+Pluribus does not remove the limit; one run is still one sequence. It stops forcing everything through a single sequence. Because a run sees only the text it is handed, separate runs with separate contexts can proceed side by side on the same model. The work is then deciding which requests can be separate runs, what each run should read, what truly has to wait for what, and how to show the results as one coherent chat. That is what this specification settles.
 
 ## What existing products do about it
 
@@ -44,18 +44,18 @@ What it gives the user: you can redirect a long task without losing its work. Wh
 
 An orchestrating model hands pieces of a task to subagents. Each subagent runs with its own context, several can run at once, and each returns a summary. Anthropic's research system, Claude Code, Codex, and the OpenAI Agents SDK all work this way.
 
-This is real concurrency, and it is close to what Committee does underneath. The differences are in who decides and what the user sees:
+This is real concurrency, and it is close to what Pluribus does underneath. The differences are in who decides and what the user sees:
 
 - **The model decides, inside one turn.** The orchestrator chooses to delegate while answering a single request. The user's conversation is still one line: in Anthropic's system the lead agent waits for each batch of subagents, and in Codex the parent waits and returns one combined response.
 - **The results come back as summaries.** The user reads the orchestrator's account of the work. The subagents' own output is hidden or sits in a side panel.
 - **Subagents do not share context.** Anthropic notes they cannot coordinate with each other, and Cognition argues that parallel agents without shared context make conflicting decisions.
 - **It costs more.** Anthropic reports roughly 15 times the tokens of a chat for its multi-agent system.
 
-### How Committee differs for the user
+### How Pluribus differs for the user
 
-Committee applies concurrency to the conversation itself, where steering and delegation apply it inside one turn.
+Pluribus applies concurrency to the conversation itself, where steering and delegation apply it inside one turn.
 
-| | Steering | Subagent delegation | Committee |
+| | Steering | Subagent delegation | Pluribus |
 |---|---|---|---|
 | What runs at once | One sequence | Several, inside one turn | Several, across the user's own messages |
 | Who decides to split | Nobody; nothing splits | The orchestrating model | Routing, from what the user sent |
@@ -68,13 +68,13 @@ Committee applies concurrency to the conversation itself, where steering and del
 
 In practice the user stops managing the queue. They do not hold a question until the current answer finishes, open a second chat to ask something unrelated, or split a message in two to keep topics apart. They send what they are thinking, and each answer arrives when it is ready.
 
-Committee does not replace either technique. Steering still suits redirecting one long task, and delegation still suits one request that fans out. The first version of Committee has neither, because it has no tools and each directive is a single run.
+Pluribus does not replace either technique. Steering still suits redirecting one long task, and delegation still suits one request that fans out. The first version of Pluribus has neither, because it has no tools and each directive is a single run.
 
 Sources: [Claude Code interactive mode](https://code.claude.com/docs/en/interactive-mode#queue-messages-while-claude-works) · [Codex turn loop](https://github.com/openai/codex/blob/main/codex-rs/core/src/session/turn.rs) · [Cursor 1.4 changelog](https://cursor.com/en/changelog/1-4) · [OpenAI Realtime conversations](https://developers.openai.com/api/docs/guides/realtime-conversations) · [Gemini Live capabilities](https://aistudio.google.com/docs/live-api/capabilities) · [Anthropic multi-agent research system](https://www.anthropic.com/engineering/multi-agent-research-system) · [Claude Code subagents](https://code.claude.com/docs/en/sub-agents) · [Codex subagents](https://developers.openai.com/codex/concepts/subagents) · [Cognition, "Don't build multi-agents"](https://cognition.com/blog/dont-build-multi-agents)
 
 ## Executive summary
 
-Committee is a chat product in which one visible conversation runs many model calls at once. A user can send a second request while the first is still answering, and the second does not wait unless it actually needs the first one's result.
+Pluribus is a chat product in which one visible conversation runs many model calls at once. A user can send a second request while the first is still answering, and the second does not wait unless it actually needs the first one's result.
 
 Three ideas make that work:
 
@@ -82,7 +82,7 @@ Three ideas make that work:
 2. **Work waits only on results it needs.** A dependency means needing a result that is not available yet. Sharing a topic is not a dependency. Dependencies release only when the needed work finishes successfully.
 3. **The transcript shows what happened, in a stable order.** User messages stay in the order sent. A reply takes its place when its first answer text appears and never moves again, so a quick answer can appear above a slow one that was requested earlier.
 
-On top of this, Committee splits a message that contains several independent requests, lets the user correct earlier work without rewriting history, and keeps failure local: one failed part never fails the whole request.
+On top of this, Pluribus splits a message that contains several independent requests, lets the user correct earlier work without rewriting history, and keeps failure local: one failed part never fails the whole request.
 
 The first version is text and read-only (no tools, no edits to outside resources). It runs entirely in the browser, calls models through OpenRouter with the user's own key, and keeps its records in an append-only event log. No LangChain or LangGraph.
 
@@ -101,7 +101,7 @@ Read in order the first time. Each behavior document ends with its acceptance co
 | 04 | [Chains, dependencies, and context](04-chains-dependencies-context.md) | Forks and join-back in detail, result dependencies, what each run reads |
 | 05 | [Reply targets and routing outcomes](05-reply-targets-and-routing.md) | What a follow-up refers to and what kind of work it is |
 | 06 | [Revisions](06-revisions.md) | Correcting earlier work, supersession, effects on dependents, Regenerate |
-| 07 | [Elicitation](07-elicitation.md) | When Committee asks the user, and when it may act on a default |
+| 07 | [Elicitation](07-elicitation.md) | When Pluribus asks the user, and when it may act on a default |
 | 08 | [Failure, stopping, and recovery](08-failure-and-recovery.md) | Retries, stop, paused dependents, interruption |
 | 09 | [Debug views](09-debug-views.md) | Mini-map, association, Compare, operation graph, run inspector, and the prototypes that illustrate them |
 | 10 | [Front-end interface](10-front-end.md) | What the user sees and can do, user settings, and the commands and events between client and backend |

@@ -7,7 +7,7 @@ import {
   type QueueItemView,
   type QueueProjection,
   type WaitTargetView,
-} from '@committee/protocol'
+} from '@pluribus/protocol'
 import { prerequisiteLabel, sectionTitle, unfinishedBehind, withCurrentLabel } from '../queries'
 import type { ConversationState, DirectiveRow } from '../state'
 import type { Memo } from './tracking'

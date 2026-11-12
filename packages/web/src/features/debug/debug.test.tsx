@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, WORDING, type OperationStatus } from '@committee/protocol'
+import { DEFAULT_SETTINGS, WORDING, type OperationStatus } from '@pluribus/protocol'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'

@@ -8,7 +8,7 @@ import {
   type DirectiveReadinessEstablished,
   type ElicitationId,
   type SectionId,
-} from '@committee/protocol'
+} from '@pluribus/protocol'
 import { engineModule } from '../../../src/engine'
 import { expectRebuildable, scenario, type Scenario } from '../../../testing/acceptance/engine'
 import { recoveryModule } from '../../../src/recovery/module'

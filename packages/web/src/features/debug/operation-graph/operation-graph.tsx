@@ -1,4 +1,4 @@
-import type { OperationGraphProjection, OperationId, OperationStatus, OperationView } from '@committee/protocol'
+import type { OperationGraphProjection, OperationId, OperationStatus, OperationView } from '@pluribus/protocol'
 import {
   BanIcon,
   CheckIcon,

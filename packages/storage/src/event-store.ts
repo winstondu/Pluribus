@@ -1,8 +1,8 @@
-import { EventStoreConflictError, type EventStore } from '@committee/core/ports'
-import type { DomainEvent, LogId, PersistedEvent } from '@committee/protocol'
+import { EventStoreConflictError, type EventStore } from '@pluribus/core/ports'
+import type { DomainEvent, LogId, PersistedEvent } from '@pluribus/protocol'
 import type { DatabaseSchema, StorageAdapter, WriteTransaction } from './adapter'
 
-/** Object stores of the `committee-events` database. */
+/** Object stores of the `pluribus-events` database. */
 export const EVENT_STORES = {
   /** `[log, seq]` → the event exactly as appended, at the schema version it was written with. */
   events: 'events',
@@ -16,7 +16,7 @@ export const EVENT_STORES = {
 
 /** Layout of the database holding the event logs and the projection cache. Never holds a secret. */
 export const EVENTS_DATABASE: DatabaseSchema = {
-  name: 'committee-events',
+  name: 'pluribus-events',
   version: 1,
   stores: [EVENT_STORES.events, EVENT_STORES.attemptOutput, EVENT_STORES.logs, EVENT_STORES.projections],
 }

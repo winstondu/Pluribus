@@ -1,4 +1,4 @@
-import { IN_FLIGHT_STATES, type DirectiveId, type NodeId, type SectionId, type SiblingGroupId } from '@committee/protocol'
+import { IN_FLIGHT_STATES, type DirectiveId, type NodeId, type SectionId, type SiblingGroupId } from '@pluribus/protocol'
 import { FIRST_PASS_SECTIONS, firstPassSectionIds } from './referents/first-pass'
 import type { AnswerSource, CandidateChain, CandidateGroup, CandidateSection, CandidateWork, DecisionContext, ReferentSection, RoutingInput } from '../ports'
 import { createShowing, renderLine, shownWords, type Line, type Showing, type ShownChoice } from './shown'

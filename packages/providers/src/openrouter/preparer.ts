@@ -1,5 +1,5 @@
-import { providerError, type ClarificationReason, type TokenUsage } from '@committee/protocol'
-import type { CancelSignal, ModelMessage, PreparationRequest, PreparationResult, PreparedReadiness, Preparer } from '@committee/core/ports'
+import { providerError, type ClarificationReason, type TokenUsage } from '@pluribus/protocol'
+import type { CancelSignal, ModelMessage, PreparationRequest, PreparationResult, PreparedReadiness, Preparer } from '@pluribus/core/ports'
 import { z } from 'zod'
 import { isRecord, postJson, resolveOptions, type OpenRouterOptions, type ResolvedOptions } from './http'
 

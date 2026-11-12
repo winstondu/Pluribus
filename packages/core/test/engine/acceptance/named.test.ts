@@ -11,7 +11,7 @@ import {
   type NodeId,
   type ResponseId,
   type SectionId,
-} from '@committee/protocol'
+} from '@pluribus/protocol'
 import { answer, atomic, fail, independent, noUnits, say, spanOf } from '../../../testing'
 import type { CoreModule } from '../../../src/engine/module'
 import { assembleContext } from '../../../src/engine/context'

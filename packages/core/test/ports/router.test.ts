@@ -1,5 +1,5 @@
 import { describe, expectTypeOf, test } from 'vitest'
-import type { NodeId } from '@committee/protocol'
+import type { NodeId } from '@pluribus/protocol'
 import type {
   CandidateChain,
   PlannedClarification,

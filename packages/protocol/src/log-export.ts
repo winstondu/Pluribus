@@ -15,7 +15,7 @@ import type { Settings } from './settings'
  * download. `docs/build/log-export.md` describes how to read it.
  */
 
-export const LOG_EXPORT_SCHEMA = 'committee.log-export'
+export const LOG_EXPORT_SCHEMA = 'pluribus.log-export'
 export const LOG_EXPORT_VERSION = 1
 export const LOG_EXPORT_MEDIA_TYPE = 'application/json'
 
@@ -122,10 +122,10 @@ export interface LogExportFile {
   readonly eventCount: number
 }
 
-/** `committee-log-<conversation>-<timestamp>.json`, the timestamp in UTC as `YYYYMMDD-HHMMSS`. Pure. */
+/** `pluribus-log-<conversation>-<timestamp>.json`, the timestamp in UTC as `YYYYMMDD-HHMMSS`. Pure. */
 export function logExportFilename(conversationId: ConversationId, at: number): string {
   const iso = new Date(at).toISOString()
   const stamp = `${iso.slice(0, 4)}${iso.slice(5, 7)}${iso.slice(8, 10)}-${iso.slice(11, 13)}${iso.slice(14, 16)}${iso.slice(17, 19)}`
   const safe = conversationId.replace(/[^A-Za-z0-9_-]/g, '_')
-  return `committee-log-${safe}-${stamp}.json`
+  return `pluribus-log-${safe}-${stamp}.json`
 }

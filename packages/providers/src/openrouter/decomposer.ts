@@ -1,4 +1,4 @@
-import { providerError, type ProviderError, type TextSpan } from '@committee/protocol'
+import { providerError, type ProviderError, type TextSpan } from '@pluribus/protocol'
 import type {
   CancelSignal,
   DecomposeRequest,
@@ -9,7 +9,7 @@ import type {
   Decomposition,
   LabelRequest,
   LabelResult,
-} from '@committee/core/ports'
+} from '@pluribus/core/ports'
 import { z } from 'zod'
 import { isRecord, postJson, resolveOptions, type OpenRouterOptions, type ResolvedOptions } from './http'
 
@@ -121,7 +121,7 @@ type Proposal = z.infer<typeof proposalSchema>
 
 // ───────────────────────────── prompt ─────────────────────────────
 
-export const DECOMPOSITION_SYSTEM_PROMPT = `You split a chat message into fragments for Committee, an assistant that answers independent parts of a message in parallel.
+export const DECOMPOSITION_SYSTEM_PROMPT = `You split a chat message into fragments for Pluribus, an assistant that answers independent parts of a message in parallel.
 
 The message has already been judged composite. Split conservatively anyway:
 - A fragment is one independent intent that can be answered on its own.

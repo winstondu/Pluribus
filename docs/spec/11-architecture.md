@@ -1,6 +1,6 @@
 # 11 · Architecture
 
-The accepted technical design for Committee, by area. Question numbers in parentheses trace each statement to its source decision; where a later answer conflicts with an earlier one, only the later one is stated. Terms are defined in the [glossary](glossary.md).
+The accepted technical design for Pluribus, by area. Question numbers in parentheses trace each statement to its source decision; where a later answer conflicts with an earlier one, only the later one is stated. Terms are defined in the [glossary](glossary.md).
 
 Related specifications:
 
@@ -31,9 +31,9 @@ Every part of the design must preserve these. Invariants 1 to 10 come from the a
 
 ### Portable backend
 
-The Committee backend comprises the orchestrator and the coordinator (scheduling, dependency tracking, context assembly). It runs either embedded in the client or on a server. Both deployments are TypeScript and share as much code as possible behind one interface (Q55, Q62; ADR-0005). A client-only design is not the target: the server deployment must remain possible.
+The Pluribus backend comprises the orchestrator and the coordinator (scheduling, dependency tracking, context assembly). It runs either embedded in the client or on a server. Both deployments are TypeScript and share as much code as possible behind one interface (Q55, Q62; ADR-0005). A client-only design is not the target: the server deployment must remain possible.
 
-- **Embedded:** the backend runs in a Web Worker. Closing the tab is the interrupted case (Q52, Q62). Only one active Committee tab executes work per browser profile/origin; a second tab shows an already-open state until ownership is released (Q99). Switching conversations in the owning tab leaves background work running under the app-wide concurrency limit (Q100).
+- **Embedded:** the backend runs in a Web Worker. Closing the tab is the interrupted case (Q52, Q62). Only one active Pluribus tab executes work per browser profile/origin; a second tab shows an already-open state until ownership is released (Q99). Switching conversations in the owning tab leaves background work running under the app-wide concurrency limit (Q100).
 - **Server:** the client talks to the backend over WebSocket, or SSE plus POST (Q62). The server backend and its store are built after the embedded one (Q63, Q66).
 
 Interrupted execution in either deployment is recovered by the retry setting (Q52, Q54).
@@ -154,7 +154,7 @@ Both the original text and any generated rewrite are recorded (Q59). Whether tri
 ### Decision thresholds
 
 - The decision model is pinned to a versioned model, not a moving alias (Q74).
-- Below the target-choice confidence threshold, Committee elicits the target (Q20, Q74). The one exception is a routing whose [decision budget](#decision-budget) was reached.
+- Below the target-choice confidence threshold, Pluribus elicits the target (Q20, Q74). The one exception is a routing whose [decision budget](#decision-budget) was reached.
 - Below the "clearly corrective" threshold, a reply is treated as additional work rather than a revision (Q37, Q74).
 - Thresholds are tuned on the labelled routing corpus and are a frontend setting sent to the backend (Q74).
 
@@ -171,7 +171,7 @@ This section was settled after Q98, by the user's instructions of 2026-11-11 and
 - **Input.** One unit (the message, or one fragment of a composite) and the genealogy as supplied candidates: the current answer sections, the work behind them, the chains, and the sibling groups with their join-backs. Nothing else is read (invariant 9).
 - **Output.** The unit's referents: the answer sections it may refer to, each with a confidence, and the probability that it refers to several at once. A section that is not returned is not a referent.
 - **A strategy scores; it places nothing.** Everything after it is the same whichever strategy was used, and is binding:
-  - A referent at or above the target-choice threshold is a reply target. Below it, Committee elicits the target; it never guesses ([05](05-reply-targets-and-routing.md), [07](07-elicitation.md); Q20, Q74). The one exception is a routing whose decision budget was reached: it uses the best node found so far and does not ask ([Decision budget](#decision-budget)).
+  - A referent at or above the target-choice threshold is a reply target. Below it, Pluribus elicits the target; it never guesses ([05](05-reply-targets-and-routing.md), [07](07-elicitation.md); Q20, Q74). The one exception is a routing whose decision budget was reached: it uses the best node found so far and does not ask ([Decision budget](#decision-budget)).
   - Two or more members of one sibling group are the whole group: the unit depends on the full join-back, never on a subset (invariant 4; Q30; C9, C19).
   - Placement is a new chain, a continuation, or a new join chain whose parents are leaves ([Placement in the genealogy](#placement-in-the-genealogy); Q76, Q86; C20).
   - Dependencies are acyclic, and a plan that breaks a rule is repaired where it has one correct reading and refused otherwise ([Pipeline](#pipeline), stage 3).
@@ -395,7 +395,7 @@ Treatment follows the retry setting (Q47, Q75):
 | `context_length_exceeded` | Non-retryable (Q67, Q82). |
 | Mid-stream error chunk (`finish_reason: "error"` under HTTP 200) | Fails the attempt, then follows the retry setting. |
 
-Stopping aborts the request. Committee does not work around providers that keep billing after an abort (Q75).
+Stopping aborts the request. Pluribus does not work around providers that keep billing after an abort (Q75).
 
 ### Claude API error mapping
 
@@ -448,7 +448,7 @@ The backend can also export a conversation's full log: every stored event in ord
 
 ## Appendix: integration facts
 
-Facts, not decisions, researched and dated **2026-11-10**. They may go out of date. Committee reaches Jev only through OpenRouter Decisions (Q68), so the direct TypeSafe API details are background, not constraints on the build.
+Facts, not decisions, researched and dated **2026-11-10**. They may go out of date. Pluribus reaches Jev only through OpenRouter Decisions (Q68), so the direct TypeSafe API details are background, not constraints on the build.
 
 ### OpenRouter
 
@@ -476,4 +476,4 @@ Facts, not decisions, researched and dated **2026-11-10**. They may go out of da
 - `jev-1.14.0` (the current `jev-latest`): $0.042 per million input tokens, output free; 64k context per request, 32k per question. Pin a versioned model when tuning thresholds.
 - Errors 400, 401, 413, 422, 429, 529; back off on 429 and 529. No streaming.
 - The SDK's `dangerouslyAllowBrowser` defaults off, with a warning about key exposure.
-- Observed, not documented: CORS allows only `https://console.typesafe.ai`, so the direct API cannot be called from Committee's browser or Worker.
+- Observed, not documented: CORS allows only `https://console.typesafe.ai`, so the direct API cannot be called from Pluribus's browser or Worker.

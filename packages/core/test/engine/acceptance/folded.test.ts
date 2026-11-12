@@ -14,7 +14,7 @@ import {
   type QueueItemId,
   type ResponseId,
   type SectionId,
-} from '@committee/protocol'
+} from '@pluribus/protocol'
 import { answer, fail, say, sequential, spanOf } from '../../../testing'
 import { assembleContext } from '../../../src/engine/context'
 import { computeWait } from '../../../src/engine/lifecycle'

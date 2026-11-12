@@ -39,7 +39,7 @@ import {
   type StreamFrame,
   type SubscriptionFilter,
   type Unsubscribe,
-} from '@committee/protocol'
+} from '@pluribus/protocol'
 import {
   DEFAULT_CORE_OPTIONS,
   createCancelSource,
@@ -1113,7 +1113,7 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
         return
       }
       case 'cancelled': {
-        // A cancellation Committee asked for was recorded by whoever asked, and the run is no longer live.
+        // A cancellation Pluribus asked for was recorded by whoever asked, and the run is no longer live.
         // One it did not ask for is the provider ending the run: a transient failure, never a silent hang.
         ctx.flushOutput(attemptId)
         live.delete(attemptId)

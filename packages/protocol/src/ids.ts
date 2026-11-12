@@ -53,7 +53,7 @@ export type JoinBackId = Brand<string, 'JoinBackId'>
 /** Parallel forks sharing one starting context. */
 export type SiblingGroupId = Brand<string, 'SiblingGroupId'>
 
-/** One question Committee put to the user. */
+/** One question Pluribus put to the user. */
 export type ElicitationId = Brand<string, 'ElicitationId'>
 
 /** One entry above the composer. */

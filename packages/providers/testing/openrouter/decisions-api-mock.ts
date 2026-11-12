@@ -1,5 +1,5 @@
 import { countTokens } from 'gpt-tokenizer/encoding/o200k_base'
-import { NEVER_CANCELLED, type ChoiceAnswer, type DecisionProvider, type NoulAnswer, type ScoreAnswer, type DecisionQuestion, type DecisionQuestions, type DecisionRequest } from '@committee/core/ports'
+import { NEVER_CANCELLED, type ChoiceAnswer, type DecisionProvider, type NoulAnswer, type ScoreAnswer, type DecisionQuestion, type DecisionQuestions, type DecisionRequest } from '@pluribus/core/ports'
 import type { FetchLike } from '../../src/openrouter/http'
 
 /**

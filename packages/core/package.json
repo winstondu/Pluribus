@@ -1,5 +1,5 @@
 {
-  "name": "@committee/core",
+  "name": "@pluribus/core",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -12,6 +12,6 @@
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
-    "@committee/protocol": "workspace:*"
+    "@pluribus/protocol": "workspace:*"
   }
 }

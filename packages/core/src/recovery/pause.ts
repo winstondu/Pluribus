@@ -1,4 +1,4 @@
-import type { DirectiveId, PauseCause, PrerequisiteRef } from '@committee/protocol'
+import type { DirectiveId, PauseCause, PrerequisiteRef } from '@pluribus/protocol'
 import { queries, settleWait, type CommandHandlers, type ConversationState, type DirectiveRow, type Reaction } from '../engine'
 
 /**
@@ -6,7 +6,7 @@ import { queries, settleWait, type CommandHandlers, type ConversationState, type
  * directive whose prerequisite failed, was stopped, was interrupted or was
  * cancelled, and is not retrying, is paused with a recovery choice on its
  * queue item. It never runs on a subset of siblings (F5), and there is no
- * default: Committee waits for Retry, Continue without or Cancel.
+ * default: Pluribus waits for Retry, Continue without or Cancel.
  */
 
 /** The first prerequisite of `d` that is unsatisfied because work behind it ended unfinished, if any. */

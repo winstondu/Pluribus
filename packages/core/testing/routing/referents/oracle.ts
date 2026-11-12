@@ -1,4 +1,4 @@
-import type { DecisionBudget } from '@committee/protocol'
+import type { DecisionBudget } from '@pluribus/protocol'
 import type { Probe, ReferentOperations, ReferentUnit } from '../../../src/ports'
 import type { ReferentTree, TreeNode } from '../../../src/routing/referents/tree'
 

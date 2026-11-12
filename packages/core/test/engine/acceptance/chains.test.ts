@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import type { AttemptStarted, ConversationEvent, DirectiveId, ElicitationId } from '@committee/protocol'
+import type { AttemptStarted, ConversationEvent, DirectiveId, ElicitationId } from '@pluribus/protocol'
 import { answer, atomic, fail, independent, spanOf } from '../../../testing'
 import type { CoreModule } from '../../../src/engine/module'
 import { clone, expectRebuildable, scenario, seqOf, type Scenario } from '../../../testing/acceptance/engine'

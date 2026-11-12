@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import type { ConversationEventBody, MessageId, SectionId } from '@committee/protocol'
+import type { ConversationEventBody, MessageId, SectionId } from '@pluribus/protocol'
 import type { RoutingPlan } from '../../../src/ports'
 import { supersedeSection, type CoreModule } from '../../../src/engine'
 import { answer } from '../../../testing'

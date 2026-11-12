@@ -77,7 +77,7 @@ export function anthropicFallbackPatch(settings: Pick<Settings, 'modelProviders'
  * section 7, "Threshold tuning"). All are probabilities in [0, 1].
  */
 export interface DecisionThresholds {
-  /** Below this confidence for the best target, Committee elicits the target instead of inferring it (Q20). */
+  /** Below this confidence for the best target, Pluribus elicits the target instead of inferring it (Q20). */
   readonly targetChoice: number
   /** Below this, a reply is additional work, not a revision (Q37). */
   readonly clearlyCorrective: number

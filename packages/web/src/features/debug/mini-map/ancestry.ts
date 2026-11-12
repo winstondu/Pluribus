@@ -1,4 +1,4 @@
-import type { ChainId, GenealogyProjection, NodeId } from '@committee/protocol'
+import type { ChainId, GenealogyProjection, NodeId } from '@pluribus/protocol'
 
 /**
  * Reading the genealogy projection for the mini-map: the nodes one node's

@@ -1,5 +1,5 @@
 /**
- * @committee/protocol — the types and tiny pure helpers shared by the client
+ * @pluribus/protocol — the types and tiny pure helpers shared by the client
  * and the backend. No I/O, no dependencies.
  *
  * - ids, ulid: branded identifiers and the ULID helper

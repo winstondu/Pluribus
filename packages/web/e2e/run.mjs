@@ -4,7 +4,7 @@
  * models. Not part of `pnpm test`.
  *
  *   OPENROUTER_KEY=… pnpm dev                       # the dev server offers the key to the prompt
- *   COMMITTEE_URL=http://localhost:5173/ pnpm e2e   # every flow
+ *   PLURIBUS_URL=http://localhost:5173/ pnpm e2e   # every flow
  *   pnpm e2e overtaking reload                      # some flows, by name
  *
  * Screenshots go to docs/build/screenshots/e2e/. Each flow prints what it saw
@@ -321,7 +321,7 @@ async function secondTab({ browser }) {
     })
     // A second tab of the same profile stands by: it never starts a backend over the same stores.
     const second = await open(context, 'second-tab')
-    await second.page.getByText('Committee is open in another tab').waitFor({ timeout: 20_000 })
+    await second.page.getByText('Pluribus is open in another tab').waitFor({ timeout: 20_000 })
     await shot(second.page, '08-second-tab-standby')
     // The first tab's live answer is not touched: it finishes in one attempt, never marked interrupted.
     await settled(first.page)
@@ -329,7 +329,7 @@ async function secondTab({ browser }) {
     assert(firstAttempts.length === 1 && firstAttempts[0] === 'completed', `the first tab's answer completed in one attempt (${firstAttempts})`)
     await first.page.close()
     // The second tab takes over once the first is gone, and shows the same conversation as it was left.
-    await second.page.getByText('Committee is open in another tab').waitFor({ state: 'detached', timeout: 20_000 })
+    await second.page.getByText('Pluribus is open in another tab').waitFor({ state: 'detached', timeout: 20_000 })
     await waitReady(second.page)
     await until(second.page, () => document.querySelector('[data-attempt-id]') !== null, undefined, { what: 'the conversation in the second tab' })
     const secondAttempts = await second.page.locator('[data-attempt-id]').evaluateAll((els) => els.map((e) => e.getAttribute('data-state')))
@@ -381,7 +381,7 @@ async function persistence({ page }) {
   const leaked = await page.evaluate(async (secret) => {
     if (!secret) return false
     const db = await new Promise((resolve, reject) => {
-      const request = indexedDB.open('committee-events')
+      const request = indexedDB.open('pluribus-events')
       request.onsuccess = () => resolve(request.result)
       request.onerror = () => reject(request.error)
     })
@@ -398,7 +398,7 @@ async function persistence({ page }) {
     db.close()
     return found
   }, process.env.OPENROUTER_KEY ?? '')
-  assert(leaked === false, 'the key appears nowhere in committee-events')
+  assert(leaked === false, 'the key appears nowhere in pluribus-events')
   log('key absent from the event log and projection cache')
 }
 
@@ -459,10 +459,10 @@ async function exportLogs({ page }) {
   mkdirSync(review, { recursive: true })
   const [download] = await Promise.all([page.waitForEvent('download'), item.click()])
   const filename = download.suggestedFilename()
-  assert(/^committee-log-cnv_[0-9A-Z]+-\d{8}-\d{6}\.json$/.test(filename), `the file is named committee-log-<conversation>-<timestamp>.json (${filename})`)
+  assert(/^pluribus-log-cnv_[0-9A-Z]+-\d{8}-\d{6}\.json$/.test(filename), `the file is named pluribus-log-<conversation>-<timestamp>.json (${filename})`)
   const text = readFileSync(await download.path(), 'utf8')
   const doc = JSON.parse(text)
-  assert(doc.schema === 'committee.log-export' && doc.version === 1, 'the file is a log export, version 1')
+  assert(doc.schema === 'pluribus.log-export' && doc.version === 1, 'the file is a log export, version 1')
   assert(doc.events.length > 0 && doc.events.every((e, i) => e.seq === i + 1), 'every event of the log, in order')
   const decided = doc.events.filter((e) => e.type === 'routing-decided')
   assert(decided.length >= 1, 'the routing decision is in the log')

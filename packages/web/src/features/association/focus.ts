@@ -1,4 +1,4 @@
-import type { ChainId, FocusSet, MessageId, SectionId } from '@committee/protocol'
+import type { ChainId, FocusSet, MessageId, SectionId } from '@pluribus/protocol'
 import { useStore } from 'zustand'
 import { useUiState } from '@/app/ui-state'
 import { useBackendStore } from '@/backend'

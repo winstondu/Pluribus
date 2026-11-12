@@ -1,4 +1,4 @@
-import type { StrategyChoice, StrategySelectionFallback } from '@committee/protocol'
+import type { StrategyChoice, StrategySelectionFallback } from '@pluribus/protocol'
 import type { SelectorQuestions, StrategySelection, StrategySelector } from '../../ports'
 import { FURTHER_REQUEST_ROOM, TRUNK_SKIP, chooseByRules } from './rules'
 

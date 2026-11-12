@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { createBackend } from '@committee/core'
-import { MemoryEventStore, MemoryProjectionCache, MemorySecretsStore } from '@committee/core/testing'
+import { createBackend } from '@pluribus/core'
+import { MemoryEventStore, MemoryProjectionCache, MemorySecretsStore } from '@pluribus/core/testing'
 import {
   DEFAULT_SETTINGS,
   createIdFactory,
@@ -10,8 +10,8 @@ import {
   type DirectiveId,
   type MessageId,
   type SectionId,
-} from '@committee/protocol'
-import { createOpenRouterDecisionProvider, createOpenRouterDecomposer, createOpenRouterModelProvider, createOpenRouterPreparer } from '@committee/providers'
+} from '@pluribus/protocol'
+import { createOpenRouterDecisionProvider, createOpenRouterDecomposer, createOpenRouterModelProvider, createOpenRouterPreparer } from '@pluribus/providers'
 
 /**
  * The spec's J request through the whole embedded backend, live: the real

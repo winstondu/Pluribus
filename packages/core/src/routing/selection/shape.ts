@@ -1,4 +1,4 @@
-import { textTokens } from '@committee/protocol'
+import { textTokens } from '@pluribus/protocol'
 import type { GenealogyShape, ReferentRequest, RunShape } from '../../ports'
 import { buildTree, segmentFrom, type TreeNode } from '../referents/tree'
 import { FURTHER_REQUEST_ROOM } from './rules'

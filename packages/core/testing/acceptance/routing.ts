@@ -1,4 +1,4 @@
-import type { ConversationEvent, ConversationId, DirectiveId, MessageId } from '@committee/protocol'
+import type { ConversationEvent, ConversationId, DirectiveId, MessageId } from '@pluribus/protocol'
 import type { DecisionQuestions, DecisionRequest, DecisionResult, DecomposeResult, DecomposedFragment } from '../../src/ports'
 import { createTestBackend, spanOf, type TestBackend, type TestBackendOverrides } from '..'
 import { engineModule } from '../../src/engine'
@@ -58,7 +58,7 @@ function numbered(state: string, letter: string): Map<number, string> {
   for (const line of state.split('\n')) {
     const m = new RegExp(`^${letter}(\\d+)\\. "([^"]*)"`).exec(line)
     if (m?.[1] && m[2] !== undefined) out.set(Number(m[1]), m[2])
-    const q = new RegExp(`^${letter}(\\d+)\\. A question Committee asked`).exec(line)
+    const q = new RegExp(`^${letter}(\\d+)\\. A question Pluribus asked`).exec(line)
     if (q?.[1]) out.set(Number(q[1]), 'Question')
     const g = new RegExp(`^${letter}(\\d+)\\. The parallel requests "([^"]*)"`).exec(line)
     if (g?.[1] && g[2] !== undefined) out.set(Number(g[1]), g[2])

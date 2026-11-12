@@ -1,5 +1,5 @@
-import { COST_GRID_SIZES, costGridRows } from '@committee/core/testing'
-import type { DecisionQuestions } from '@committee/core/ports'
+import { COST_GRID_SIZES, costGridRows } from '@pluribus/core/testing'
+import type { DecisionQuestions } from '@pluribus/core/ports'
 import { createOpenRouterDecisionProvider } from '../../src/openrouter/decision-provider'
 import { corpusThroughMock, settingsFor } from './corpus-through-mock'
 import { contentCharacters, createDecisionsApiMock, type WireDecisionBody } from './decisions-api-mock'

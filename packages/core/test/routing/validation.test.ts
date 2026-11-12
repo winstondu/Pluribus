@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { asId, type DirectiveId, type FragmentId } from '@committee/protocol'
+import { asId, type DirectiveId, type FragmentId } from '@pluribus/protocol'
 import { NEVER_CANCELLED, type PlannedUnit, type RoutingPlan } from '../../src/ports'
 import { ROUTING_CORPUS, corpusInput, oracleDecisionProvider, referenceDecomposer, scene, sceneIds } from '../../testing/routing/corpus'
 import type { CorpusExample } from '../../testing/routing/corpus'
@@ -207,7 +207,7 @@ describe('validation', () => {
         },
         decomposer: referenceDecomposer(e),
       }).route(corpusInput(e), NEVER_CANCELLED)
-    // 11 · "Below the target-choice confidence threshold, Committee elicits the target" (Q20, Q74):
+    // 11 · "Below the target-choice confidence threshold, Pluribus elicits the target" (Q20, Q74):
     // with no confident line the unit would start a new chain and silently lose its referent.
     const unsure = await route(0.3)
     expect(unsure.kind).toBe('target-ambiguity')

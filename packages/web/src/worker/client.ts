@@ -1,4 +1,4 @@
-import { createPortClient, type PortClient, type StandbyReason } from '@committee/protocol'
+import { createPortClient, type PortClient, type StandbyReason } from '@pluribus/protocol'
 import type { KeyProvision } from '@/backend/key-provision'
 import { createWorkerKeyProvision, type KeyPort } from './key-channel'
 
@@ -10,7 +10,7 @@ import { createWorkerKeyProvision, type KeyPort } from './key-channel'
  *
  * One Worker per page. React's StrictMode runs the app's connect effect
  * twice in development; a second Worker would find the first one holding the
- * `committee-backend` lock and stand by forever. So every call returns the
+ * `pluribus-backend` lock and stand by forever. So every call returns the
  * same client, and standby is reported to every caller's hook, including
  * one that connects after it was announced.
  */
@@ -29,7 +29,7 @@ interface Connection {
 let connection: Connection | null = null
 
 function open(): Connection {
-  const worker = new Worker(new URL('./backend.worker.ts', import.meta.url), { type: 'module', name: 'committee-backend' })
+  const worker = new Worker(new URL('./backend.worker.ts', import.meta.url), { type: 'module', name: 'pluribus-backend' })
   const hooks = new Set<Hooks>()
   const opened: Connection = {
     hooks,

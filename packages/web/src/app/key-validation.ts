@@ -1,4 +1,4 @@
-import type { KeyProviderName } from '@committee/protocol'
+import type { KeyProviderName } from '@pluribus/protocol'
 
 /**
  * What the key prompt knows about a provider's keys without asking anyone:

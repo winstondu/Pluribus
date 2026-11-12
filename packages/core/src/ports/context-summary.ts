@@ -1,4 +1,4 @@
-import type { ConsumedMessage, ConversationId, DirectiveId, NodeId } from '@committee/protocol'
+import type { ConsumedMessage, ConversationId, DirectiveId, NodeId } from '@pluribus/protocol'
 
 /**
  * Context summaries for decisions (11 · "Context summaries for decisions";

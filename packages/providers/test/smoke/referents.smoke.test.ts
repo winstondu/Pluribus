@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_SETTINGS, type CandidateSourceName, type ReferentStrategyName, type Settings, type StrategySelectionMode, type TreeWalkSettings } from '@committee/protocol'
-import { createDecisionSelector, type StrategySelector } from '@committee/core'
+import { DEFAULT_SETTINGS, type CandidateSourceName, type ReferentStrategyName, type Settings, type StrategySelectionMode, type TreeWalkSettings } from '@pluribus/protocol'
+import { createDecisionSelector, type StrategySelector } from '@pluribus/core'
 import {
   COST_GRID_ROWS_PER_SIZE,
   COST_GRID_SIZES,
@@ -11,8 +11,8 @@ import {
   formatCostGrid,
   type CorpusResult,
   type CostGridRow,
-} from '@committee/core/testing'
-import { createOpenRouterDecisionProvider } from '@committee/providers'
+} from '@pluribus/core/testing'
+import { createOpenRouterDecisionProvider } from '@pluribus/providers'
 
 /**
  * The referent strategies against the live decision model

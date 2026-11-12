@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { MODEL_COMPATIBILITY } from '@committee/protocol'
-import { NEVER_CANCELLED, type ModelMessage, type ModelStreamEvent } from '@committee/core/ports'
-import { createOpenRouterModelProvider, createOpenRouterPreparer } from '@committee/providers'
+import { MODEL_COMPATIBILITY } from '@pluribus/protocol'
+import { NEVER_CANCELLED, type ModelMessage, type ModelStreamEvent } from '@pluribus/core/ports'
+import { createOpenRouterModelProvider, createOpenRouterPreparer } from '@pluribus/providers'
 
 /**
  * Live check of what the compatibility list claims (Q107): every listed

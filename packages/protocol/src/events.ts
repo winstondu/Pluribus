@@ -130,7 +130,7 @@ export interface RoutingDecided extends ConversationEnvelope<'routing-decided'> 
  * Routing could not be completed because the decision provider or the
  * decomposer failed. The message stays in the transcript; its provisional
  * responding bubble shows the failure, and Retry on the request routes it
- * again. Committee does not guess.
+ * again. Pluribus does not guess.
  */
 export interface RoutingFailed extends ConversationEnvelope<'routing-failed'> {
   readonly messageId: MessageId
@@ -829,7 +829,7 @@ export interface SectionPlaced extends ConversationEnvelope<'section-placed'> {
 export interface SectionSuperseded extends ConversationEnvelope<'section-superseded'> {
   readonly sectionId: SectionId
   readonly directiveId: DirectiveId
-  /** The running attempt Committee ended, if one was in flight. Its state becomes `superseded`. */
+  /** The running attempt Pluribus ended, if one was in flight. Its state becomes `superseded`. */
   readonly endedAttemptId: AttemptId | null
   /** Whether any answer text or failure notice was visible. False means the bubble is dropped. */
   readonly hadVisibleOutput: boolean
@@ -923,7 +923,7 @@ export interface RegenerateRequested extends ConversationEnvelope<'regenerate-re
 
 // ═══════════════════════════ elicitations ═══════════════════════════
 
-/** Committee asked the user to decide something (07). */
+/** Pluribus asked the user to decide something (07). */
 export interface ElicitationRaised extends ConversationEnvelope<'elicitation-raised'> {
   readonly elicitation: ElicitationRecord
 }

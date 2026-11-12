@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { WORDING, type ConversationSnapshot, type ResponseId, type SectionId } from '@committee/protocol'
+import { WORDING, type ConversationSnapshot, type ResponseId, type SectionId } from '@pluribus/protocol'
 import { answer, done, fail, independent, say, spanOf } from '../../../testing'
 import { A_TEXT, recoveryScenario, revise, sectionOf, trip } from '../../../testing/acceptance/recovery'
 

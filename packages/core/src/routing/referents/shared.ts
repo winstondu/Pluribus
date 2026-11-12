@@ -1,5 +1,5 @@
 import type { BestNodeFound, NoulQuestion, ReferentUnit, ScoredSection } from '../../ports'
-import type { SectionId } from '@committee/protocol'
+import type { SectionId } from '@pluribus/protocol'
 import { ancestorsOfAll, rank, type GroupNode, type ReferentTree, type SectionNode, type TreeNode } from './tree'
 
 /**

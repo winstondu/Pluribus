@@ -1,4 +1,4 @@
-import { LOG_EXPORT_MEDIA_TYPE, type BackendClient, type ConversationId } from '@committee/protocol'
+import { LOG_EXPORT_MEDIA_TYPE, type BackendClient, type ConversationId } from '@pluribus/protocol'
 import { createContext, useContext, useMemo } from 'react'
 import { useBackend } from './hooks'
 

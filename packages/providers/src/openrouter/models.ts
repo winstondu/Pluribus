@@ -1,4 +1,4 @@
-import type { ModelMessage } from '@committee/core/ports'
+import type { ModelMessage } from '@pluribus/core/ports'
 import { isRecord, readKey, type ResolvedOptions } from './http'
 
 /**

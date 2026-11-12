@@ -1,4 +1,4 @@
-import type { DecisionBudget, ProviderError, SectionId, TreeWalkSettings } from '@committee/protocol'
+import type { DecisionBudget, ProviderError, SectionId, TreeWalkSettings } from '@pluribus/protocol'
 import type { GroupProbe, PointProbe, Probe, ReferentOperations, ReferentResult, ReferentStrategy, ReferentUnit, RunEndTaken, SegmentProbe, SeveralProbe, UnitReferents } from '../../ports'
 import { createDecisionOperations, type OperationsFactory } from './operations'
 import { bestNodeFound, referentsFromScores } from './shared'

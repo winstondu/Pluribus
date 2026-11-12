@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import type { ConversationSnapshot, TranscriptItemRef } from '@committee/protocol'
+import type { ConversationSnapshot, TranscriptItemRef } from '@pluribus/protocol'
 import { answer, independent, say, spanOf } from '../../../testing'
 import { scenario, type Scenario } from '../../../testing/acceptance/engine'
 

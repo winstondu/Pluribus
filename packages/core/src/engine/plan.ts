@@ -15,7 +15,7 @@ import {
   type SiblingGroupId,
   type SiblingMember,
   type SplitMessageRecord,
-} from '@committee/protocol'
+} from '@pluribus/protocol'
 import type { PlannedUnit, RoutingPlan } from '../ports'
 import { resolveTargets } from './candidates'
 import type { PlanApplier, PlanTarget, StepContext } from './module'

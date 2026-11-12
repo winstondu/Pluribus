@@ -1,6 +1,6 @@
 # 09 · Debug views
 
-The views that let a user (and a developer) see what Committee actually did: which chain handled each message, what each run read, how a composite message was split, and what work is waiting on what. Terms in bold are defined in the [glossary](glossary.md).
+The views that let a user (and a developer) see what Pluribus actually did: which chain handled each message, what each run read, how a composite message was split, and what work is waiting on what. Terms in bold are defined in the [glossary](glossary.md).
 
 Each view below says what it shows, what was selected, and which prototype in [`prototypes/ui/`](../../prototypes/ui/README.md) illustrates it. Every view separates **Decided** (the user chose it, or it follows from a cited answer) from **Prototype detail** (present in the sample but never chosen; the build may change it). The prototypes are style samples built before several behaviors changed; [Where the prototypes are out of date](#where-the-prototypes-are-out-of-date) lists every known difference. Where a prototype and this document disagree, this document is current.
 
@@ -82,7 +82,7 @@ Which chain handled each user message and each answer section, drawn as a colore
 
 ### What it shows
 
-How Committee split a composite message: the exact original text beside each **fragment**'s rewritten instruction, with the shared requirements each fragment inherited and where they came from. Its purpose is to let a lost constraint be traced to decomposition instead of being blamed on the answering model (original discussion, “Run inspector proposal”).
+How Pluribus split a composite message: the exact original text beside each **fragment**'s rewritten instruction, with the shared requirements each fragment inherited and where they came from. Its purpose is to let a lost constraint be traced to decomposition instead of being blamed on the answering model (original discussion, “Run inspector proposal”).
 
 ### Decided
 

@@ -481,7 +481,7 @@ export interface WaitTargetView {
   readonly directiveIds: readonly DirectiveId[]
 }
 
-/** The recovery choice on a paused queue item (Q48). No default; Committee waits. */
+/** The recovery choice on a paused queue item (Q48). No default; Pluribus waits. */
 export interface RecoveryView {
   readonly elicitationId: ElicitationId
   readonly cause: PauseCause

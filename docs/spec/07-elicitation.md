@@ -1,6 +1,6 @@
 # 07 · Elicitation
 
-When Committee asks the user to decide, and when it may go ahead on its own.
+When Pluribus asks the user to decide, and when it may go ahead on its own.
 
 ## The four kinds
 
@@ -8,7 +8,7 @@ When Committee asks the user to decide, and when it may go ahead on its own.
 |---|---|---|---|
 | **Target ambiguity** | An untargeted reply could plausibly address different answer sections (target confidence below the threshold). Not raised when routing the reply reached its [decision budget](11-architecture.md#decision-budget): the best node found so far is used | The reply is not acted on | Never. The user chooses among existing sections (Q10, Q20, Q74) |
 | **Clarification** | Missing information, or incompatible user requirements, blocks a directive | Unaffected work proceeds; the affected answer waits | Never (Q23, Q26, Q34) |
-| **Choice with default** | Committee can propose a reasonable action, but its scope is the user's call | Affected running work stops; affected queued work holds; unaffected work continues | Yes (Q42, Q44–Q46) |
+| **Choice with default** | Pluribus can propose a reasonable action, but its scope is the user's call | Affected running work stops; affected queued work holds; unaffected work continues | Yes (Q42, Q44–Q46) |
 | **Recovery choice** | A dependency-queued request's prerequisite failed, was stopped, or was interrupted | The request stays paused | Never (Q48, Q52) |
 
 **Where each appears.** Clarification questions are additional responses in the transcript. The recovery choice is on the paused request's queue item. Target-ambiguity and choice-with-default elicitations appear as a modal above the composer (Q95).
@@ -29,7 +29,7 @@ When Committee asks the user to decide, and when it may go ahead on its own.
 
 Used for a revision to a shared requirement ([revisions](06-revisions.md#revising-a-shared-requirement)).
 
-- Committee lists the work it judges may need redoing and pre-selects the work it judges actually affected. This is a bounded selection among existing items (Q44).
+- Pluribus lists the work it judges may need redoing and pre-selects the work it judges actually affected. This is a bounded selection among existing items (Q44).
 - The default is carried out when the user sends another message without answering, or when the wait elapses. The wait is a user setting, 30 seconds by default (Q45).
 - The deadline persists across tab closure. If it has elapsed when the app restarts, the default executes once after recovery without asking again (Q101).
 - The choice stays editable until the default is carried out. What happened is then recorded on the work itself: if the work was still in flight, the redone work carries a small note at its bottom, for example "Redid J by default"; if it had already finished, the redo is a new response (Q45, Q95).
@@ -39,7 +39,7 @@ Used for a revision to a shared requirement ([revisions](06-revisions.md#revisin
 
 ## Recovery choice
 
-Shown on the paused request's queue item, naming the cause, for example "Paused — activities failed". The choices are to retry the prerequisite, continue without it, or cancel the paused request ([failure and recovery](08-failure-and-recovery.md#dependents-of-work-that-did-not-finish)). Committee waits for as long as it takes.
+Shown on the paused request's queue item, naming the cause, for example "Paused — activities failed". The choices are to retry the prerequisite, continue without it, or cancel the paused request ([failure and recovery](08-failure-and-recovery.md#dependents-of-work-that-did-not-finish)). Pluribus waits for as long as it takes.
 
 ## Acceptance conditions
 

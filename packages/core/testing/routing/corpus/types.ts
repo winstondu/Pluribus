@@ -1,4 +1,4 @@
-import type { RequirementScope, WholeRequestBarrier } from '@committee/protocol'
+import type { RequirementScope, WholeRequestBarrier } from '@pluribus/protocol'
 import type { Scene } from './scene'
 
 /**

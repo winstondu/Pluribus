@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
-import { createBackend } from '@committee/core'
-import type { Backend } from '@committee/core/ports'
-import { servePort, type BackendMessage, type ClientMessage, type WirePort } from '@committee/protocol'
+import { createBackend } from '@pluribus/core'
+import type { Backend } from '@pluribus/core/ports'
+import { servePort, type BackendMessage, type ClientMessage, type WirePort } from '@pluribus/protocol'
 import {
   checkAnthropicKey,
   checkOpenRouterKey,
@@ -15,8 +15,8 @@ import {
   createRoutedDecomposer,
   createRoutedModelProvider,
   createRoutedPreparer,
-} from '@committee/providers'
-import { openIndexedDbStorage, type CommitteeStorage } from '@committee/storage'
+} from '@pluribus/providers'
+import { openIndexedDbStorage, type PluribusStorage } from '@pluribus/storage'
 import { serveKeys, type KeyPort, type KeyService } from './key-channel'
 import { createKeyService } from './key-service'
 import { runAsOwner, type OwnershipLocks } from './ownership'
@@ -29,7 +29,7 @@ import { createSystemIds, systemClock, systemTimers } from './system'
  * (`key-channel.ts`): the one place a provider key is checked and stored.
  *
  * Exactly one executor may run over the local stores (PLAN §2, "Interruption
- * and the single executor"; Q99). The Worker asks for the `committee-backend`
+ * and the single executor"; Q99). The Worker asks for the `pluribus-backend`
  * Web Lock before it opens storage (`ownership.ts`). If another tab holds it,
  * the page is told `standby` and this Worker keeps waiting; it builds and
  * starts the backend when the other tab closes and its lock is released. The
@@ -57,7 +57,7 @@ const keysReady = new Promise<KeyService>((resolve) => {
 servePort(backendReady, port)
 serveKeys(scope as unknown as KeyPort, keysReady)
 
-async function build(storage: CommitteeStorage): Promise<Backend> {
+async function build(storage: PluribusStorage): Promise<Backend> {
   // The only way a provider sees the key: read from the secrets store on each call.
   const getKey = (): Promise<string | null> => storage.secretsStore.get('openrouter-key')
   const getAnthropicKey = (): Promise<string | null> => storage.secretsStore.get('anthropic-key')

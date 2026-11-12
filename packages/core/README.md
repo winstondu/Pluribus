@@ -1,22 +1,22 @@
-# @committee/core
+# @pluribus/core
 
 The deterministic core: event log, reducers, projections, context assembly, placement, scheduling and the coordinator. No I/O; every dependency comes in through `src/ports` (`CoreDependencies`). The contracts are `packages/protocol` and `docs/build/PLAN.md`.
 
 | Path | Owner | Contents |
 |---|---|---|
-| `src/ports/` | architect | The port interfaces (`@committee/core/ports`) |
+| `src/ports/` | architect | The port interfaces (`@pluribus/core/ports`) |
 | `src/engine/` | core-engine | State, a reducer for every event, the four projections and the run inspection, context assembly, plan application and placement, the lifecycle reactions, the coordinator (`createBackend`) |
 | `src/routing/` | core-routing | The routing pipeline, validation, clarification and target elicitation, Undo split |
 | `src/recovery/` | core-recovery | Retry policies, paused dependents and the recovery choice, revisions, the choice with default, Regenerate, join-back re-formation, superseded-input notes |
 | `test/` | By source area | Test suites, including acceptance and projection rebuild tests |
-| `testing/` | By source area | Shared scenarios, port fakes, and routing evaluation helpers. Other packages can use the fakes and evaluation helpers from `@committee/core/testing`. |
+| `testing/` | By source area | Shared scenarios, port fakes, and routing evaluation helpers. Other packages can use the fakes and evaluation helpers from `@pluribus/core/testing`. |
 
 ## Using it (the web integration)
 
-Import from the package root. Importing `@committee/core` registers the routing and recovery modules, so `createBackend` runs all three slices (engine, routing, recovery, in that order) and uses the routing pipeline as its router when `deps.router` is absent:
+Import from the package root. Importing `@pluribus/core` registers the routing and recovery modules, so `createBackend` runs all three slices (engine, routing, recovery, in that order) and uses the routing pipeline as its router when `deps.router` is absent:
 
 ```ts
-import { createBackend } from '@committee/core'
+import { createBackend } from '@pluribus/core'
 const backend = createBackend({ modelProvider, decisionProvider, decomposer, eventStore, projectionCache, secretsStore, clock, timers, ids })
 await backend.start()   // folds every log, records lost attempts as interrupted (retried per policy), routes lost messages again, resumes timers
 ```

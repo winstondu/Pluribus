@@ -1,4 +1,4 @@
-# Committee
+# Pluribus
 
 One visible chat that runs many model calls at once. Several requests can be answered in parallel, follow-ups wait for the answers they need, corrections supersede what they correct, and every run reads exactly the context it is shown to read. The backend runs in the browser, in a Web Worker, and talks to OpenRouter directly.
 
@@ -13,7 +13,7 @@ pnpm install
 pnpm dev            # http://localhost:5173
 ```
 
-On first open, the key prompt asks for an OpenRouter API key. It is stored in this browser only (IndexedDB database `committee-secrets`), never in the conversation history. If `OPENROUTER_KEY` is set in the environment of `pnpm dev`, the prompt offers "Use the key from this environment"; production builds never contain it.
+On first open, the key prompt asks for an OpenRouter API key. It is stored in this browser only (IndexedDB database `pluribus-secrets`), never in the conversation history. If `OPENROUTER_KEY` is set in the environment of `pnpm dev`, the prompt offers "Use the key from this environment"; production builds never contain it.
 
 Default models (changeable in Settings, per role): answers and join-chain synthesis `anthropic/claude-sonnet-5.5`, decomposition `anthropic/claude-haiku-5.5`, decisions `typesafe/jev-1.13`.
 
@@ -28,8 +28,8 @@ pnpm vitest run --project unit packages/core     # one package
 pnpm build                                       # all packages; the app lands in packages/web/dist
 OPENROUTER_KEY=… pnpm smoke                      # live OpenRouter calls and the routing corpus
 OPENROUTER_KEY=… pnpm dev                        # then, in another shell:
-COMMITTEE_URL=http://localhost:5173/ pnpm e2e    # Playwright flows in Chromium, live models
-pnpm --filter @committee/web lint
+PLURIBUS_URL=http://localhost:5173/ pnpm e2e    # Playwright flows in Chromium, live models
+pnpm --filter @pluribus/web lint
 ```
 
 `pnpm smoke` and `pnpm e2e` make real, paid calls on cheap models.

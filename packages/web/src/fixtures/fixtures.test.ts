@@ -1,5 +1,5 @@
 import { createScriptedKeyProvision } from '@/backend/key-provision'
-import { applyPatches, diffSnapshots, type ConversationFrame, type StreamFrame } from '@committee/protocol'
+import { applyPatches, diffSnapshots, type ConversationFrame, type StreamFrame } from '@pluribus/protocol'
 import { describe, expect, test } from 'vitest'
 import { createFixtureBackend, fixtures, fx, getFixture, type Fixture } from '@/fixtures'
 

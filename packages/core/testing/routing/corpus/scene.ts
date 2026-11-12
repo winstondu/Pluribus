@@ -12,7 +12,7 @@ import {
   type SectionId,
   type SectionState,
   type SiblingGroupId,
-} from '@committee/protocol'
+} from '@pluribus/protocol'
 import type { CandidateChain, CandidateGroup, CandidateSection, CandidateWork, RoutingCandidates } from '../../../src/ports'
 
 /**

@@ -1,4 +1,4 @@
-import type { ClarificationReason } from '@committee/protocol'
+import type { ClarificationReason } from '@pluribus/protocol'
 import type { CancelSignal, ModelMessage, PreparationRequest, PreparationResult, Preparer } from '../src/ports'
 
 type Answer = PreparationResult | ((request: PreparationRequest) => PreparationResult | Promise<PreparationResult>)

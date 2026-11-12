@@ -1,4 +1,4 @@
-import { joinLabels, type DirectiveId, type ElicitationId, type MessageId, type ResponseId, type SiblingGroupId } from '@committee/protocol'
+import { joinLabels, type DirectiveId, type ElicitationId, type MessageId, type ResponseId, type SiblingGroupId } from '@pluribus/protocol'
 import type { CoreDependencies, PlannedClarification, Router } from '../ports'
 import {
   queries,

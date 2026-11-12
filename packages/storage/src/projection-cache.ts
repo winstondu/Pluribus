@@ -1,4 +1,4 @@
-import type { CachedState, ProjectionCache } from '@committee/core/ports'
+import type { CachedState, ProjectionCache } from '@pluribus/core/ports'
 import type { StorageAdapter } from './adapter'
 import { EVENT_STORES } from './event-store'
 

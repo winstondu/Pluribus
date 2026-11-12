@@ -1,4 +1,4 @@
-import type { BackendClient } from '@committee/protocol'
+import type { BackendClient } from '@pluribus/protocol'
 import { render, type RenderResult } from '@testing-library/react'
 import type { ReactElement, ReactNode } from 'react'
 import { AppEnvironmentProvider, createEnvironment } from '@/app/environment'

@@ -1,4 +1,4 @@
-import { renderShownLine, type AttemptId, type DirectiveId, type NodeId, type RoutingDecision, type RunInspection, type ShownSectionView } from '@committee/protocol'
+import { renderShownLine, type AttemptId, type DirectiveId, type NodeId, type RoutingDecision, type RunInspection, type ShownSectionView } from '@pluribus/protocol'
 import { barrierOf, nodeParents, sectionTitle, unsatisfiedPrerequisites } from '../queries'
 import { computeWait } from '../lifecycle'
 import type { ConversationState } from '../state'

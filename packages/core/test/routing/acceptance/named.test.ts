@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { providerError, type AttemptStarted, type MessageDecomposed, type SectionId } from '@committee/protocol'
+import { providerError, type AttemptStarted, type MessageDecomposed, type SectionId } from '@pluribus/protocol'
 import type { CoreModule } from '../../../src/engine'
 import { answer } from '../../../testing'
 import { routingScenario } from '../../../testing/acceptance/routing'

@@ -5,7 +5,7 @@ import {
   type NodeState,
   type NodeView,
   type SiblingGroupView,
-} from '@committee/protocol'
+} from '@pluribus/protocol'
 import { chainLabel, currentJoinBack, nodeParents, resolvePoint } from '../queries'
 import type { ConversationState, NodeRow } from '../state'
 import type { Memo } from './tracking'

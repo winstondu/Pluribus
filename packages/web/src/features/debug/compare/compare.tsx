@@ -1,4 +1,4 @@
-import type { DecompositionView, MessageId, TranscriptProjection } from '@committee/protocol'
+import type { DecompositionView, MessageId, TranscriptProjection } from '@pluribus/protocol'
 import { XIcon } from 'lucide-react'
 import { useUiState } from '@/app/ui-state'
 import { useApp, useTranscript } from '@/backend'

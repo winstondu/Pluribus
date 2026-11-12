@@ -10,7 +10,7 @@ import type {
   Requirement,
   RequirementId,
   UnfinishedOutcome,
-} from '@committee/protocol'
+} from '@pluribus/protocol'
 import type { ContextChain } from '../ports'
 import { currentResult, nodeParents, unfinishedOutcome } from './queries'
 import type { ConversationState, Correction, DirectiveRow } from './state'
@@ -26,7 +26,7 @@ import type { ConversationState, Correction, DirectiveRow } from './state'
  * It is computed once, when the attempt starts (Q29), and never again.
  */
 
-/** Committee's fixed instructions to the model. */
+/** Pluribus's fixed instructions to the model. */
 export const PREAMBLE =
   'You are one participant in a chat that answers several requests at once. ' +
   'Answer only the last request, using the conversation before it as its context. ' +

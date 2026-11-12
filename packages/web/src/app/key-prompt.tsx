@@ -1,4 +1,4 @@
-import type { KeyCheck, KeyProviderName } from '@committee/protocol'
+import type { KeyCheck, KeyProviderName } from '@pluribus/protocol'
 import {
   ArrowUpRightIcon,
   CheckIcon,
@@ -25,7 +25,7 @@ import { useUiState } from './ui-state'
 
 /**
  * The key prompt: the first-run experience, and the way a key is added or
- * replaced later. It asks for the OpenRouter key, which Committee needs,
+ * replaced later. It asks for the OpenRouter key, which Pluribus needs,
  * and offers the optional Anthropic key in a section that is closed until
  * asked for. Opened for the Anthropic key alone (from the settings), it
  * shows that field only.
@@ -246,7 +246,7 @@ function KeyPromptBody({ keys, subject, onDone }: { keys: KeyProvision; subject:
         <DialogDescription className="mt-2.5 text-sm leading-relaxed text-muted-foreground">
           {anthropicOnly
             ? 'With an Anthropic key, answers, synthesis and decomposition can run on the Claude API, billed to your Anthropic account. The key is kept in this browser, used from this browser, and sent only to Anthropic.'
-            : 'Committee runs every answer on models you reach through OpenRouter, billed to your account. The key is kept in this browser and sent only to OpenRouter.'}
+            : 'Pluribus runs every answer on models you reach through OpenRouter, billed to your account. The key is kept in this browser and sent only to OpenRouter.'}
         </DialogDescription>
 
         <KeyField draft={primary} label="API key" disabled={busy} saving={saving} error={error} className="mt-5" />
@@ -483,7 +483,7 @@ function StatusLine({ provider, check, saving, error }: { provider: KeyProviderN
     id = 'blocked'
     tone = 'bad'
     icon = <ShieldAlertIcon />
-    text = `${check.result.reason} Committee calls ${name} from this browser, so this key cannot be used here.`
+    text = `${check.result.reason} Pluribus calls ${name} from this browser, so this key cannot be used here.`
   } else if (check.result.status === 'offline') {
     id = 'offline'
     tone = 'warn'

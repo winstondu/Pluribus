@@ -14,7 +14,7 @@ import path from 'node:path'
 const require = createRequire(import.meta.url)
 const { chromium } = require('playwright')
 
-export const BASE_URL = process.env.COMMITTEE_URL ?? 'http://localhost:5173/'
+export const BASE_URL = process.env.PLURIBUS_URL ?? 'http://localhost:5173/'
 export const SCREENSHOTS = path.resolve(import.meta.dirname, '../../../docs/build/screenshots/e2e')
 export const CHEAP_MODEL = 'anthropic/claude-haiku-5.5'
 

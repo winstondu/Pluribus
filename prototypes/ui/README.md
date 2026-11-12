@@ -1,4 +1,4 @@
-# Committee UI prototypes
+# Pluribus UI prototypes
 
 The rebuilt **React + TypeScript components and runnable preview** are in [`../react`](../react/README.md). The HTML files here remain the original visual exploration sources.
 

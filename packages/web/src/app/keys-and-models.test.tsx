@@ -1,4 +1,4 @@
-import type { KeyCheck } from '@committee/protocol'
+import type { KeyCheck } from '@pluribus/protocol'
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, test } from 'vitest'

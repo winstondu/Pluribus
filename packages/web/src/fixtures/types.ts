@@ -6,7 +6,7 @@ import type {
   KeyProviderName,
   ConversationSnapshot,
   RunInspection,
-} from '@committee/protocol'
+} from '@pluribus/protocol'
 
 /**
  * A scripted state of the app: the projections of one open conversation,

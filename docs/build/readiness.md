@@ -23,7 +23,7 @@ What the step costs when it does run: one non-streaming call on the decompositio
 
 A preparation step that fails establishes nothing, so no answer is generated: the directive's attempt is recorded as failed before it reads anything, and the retry setting applies as for any execution error. Core does not guess `ready`.
 
-The port is `Preparer` (`packages/core/src/ports/preparer.ts`), a required member of `CoreDependencies`. `ScriptedPreparer` (`@committee/core/testing`) answers `ready` unless scripted and records every request. `createOpenRouterPreparer` (`packages/providers/src/openrouter/preparer.ts`) sends the run's input as one quoted transcript under a strict JSON schema, so the model judges the request and cannot answer it.
+The port is `Preparer` (`packages/core/src/ports/preparer.ts`), a required member of `CoreDependencies`. `ScriptedPreparer` (`@pluribus/core/testing`) answers `ready` unless scripted and records every request. `createOpenRouterPreparer` (`packages/providers/src/openrouter/preparer.ts`) sends the run's input as one quoted transcript under a strict JSON schema, so the model judges the request and cannot answer it.
 
 ## Timing (Q105)
 

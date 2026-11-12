@@ -1,4 +1,4 @@
-# Committee glossary
+# Pluribus glossary
 
 A single visible conversation containing independently progressing agent work, with explicit relationships between requests, context, and results.
 
@@ -68,7 +68,7 @@ One execution of a directive. A revision stops or supersedes the affected attemp
 A change to previously requested work, signalled by corrective or replacing wording, that supersedes affected work rather than adding a fork or result-dependent follow-up. Work that has not started is updated in place and nothing is superseded.
 
 **Superseded**:
-The state of an attempt or result replaced by a revision, including a running attempt that Committee ends in order to replace it. It is retained, not rewritten, and is no longer the prerequisite for work that follows. Work that depended on it follows the replacement; it is not paused.
+The state of an attempt or result replaced by a revision, including a running attempt that Pluribus ends in order to replace it. It is retained, not rewritten, and is no longer the prerequisite for work that follows. Work that depended on it follows the replacement; it is not paused.
 _Avoid_: Deleted, failed
 
 **Superseded-input note**:
@@ -113,7 +113,7 @@ _Avoid_: Queued, dependency-queued
 The answer section or sections addressed by a follow-up, selected explicitly or inferred from its meaning. A target identifies referenced context without by itself deciding whether work is a revision, fork, or join.
 
 **Elicitation**:
-Committee asking the user to decide something it will not or cannot decide alone: which section a reply addresses, missing information, which work to redo, or how to recover.
+Pluribus asking the user to decide something it will not or cannot decide alone: which section a reply addresses, missing information, which work to redo, or how to recover.
 
 **Clarification continuation**:
 Additional responses that ask for missing information and later deliver the affected results, remaining associated with the original request without reopening its earlier answer.

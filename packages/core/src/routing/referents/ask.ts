@@ -1,4 +1,4 @@
-import { CHARACTERS_PER_TOKEN, resolveTokenBudget, textTokens, type DecisionBudget, type DecisionCostGuard, type ProviderError, type RoutingSettings } from '@committee/protocol'
+import { CHARACTERS_PER_TOKEN, resolveTokenBudget, textTokens, type DecisionBudget, type DecisionCostGuard, type ProviderError, type RoutingSettings } from '@pluribus/protocol'
 import type { CancelSignal, DecisionProvider, DecisionQuestions, ReferentAsk, ReferentAskResult, ReferentQuestions, ShownSubjects } from '../../ports'
 import { Batch, ask as askBatch, type Answers } from '../batch'
 
