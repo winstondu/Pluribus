@@ -175,9 +175,51 @@ This section was settled after Q98, by the user's instructions of 2026-11-11 and
   - Dependencies are acyclic, and a plan that breaks a rule is repaired where it has one correct reading and refused otherwise ([Pipeline](#pipeline), stage 3).
 - **Given targets are used as given.** An explicit reply target, or one the user chose in a target-ambiguity elicitation, is not scored and no strategy is consulted (Q10, Q20).
 
+### The search problem
+
+Finding referents is a search over the genealogy, stated here once so that every strategy is a way of carrying it out.
+
+- **The graph.** The answer sections, and each sibling group's join-back as a node of its own, joined by continuation. The context of a node is the node and its ancestors.
+- **What is hidden.** For a unit there is a set of **relevant nodes**: the sections it actually refers to. No strategy sees this set; it can only ask.
+- **What is sought.** The **deepest relevant nodes**: every relevant node that has no relevant descendant. This one definition gives the rules of the stage:
+  - an ancestor of a relevant node is dropped, because the descendant's context already holds it;
+  - inside an unbranched run the answer is the last relevant node, not the end of the run and not every relevant node in it: continuing from there carries everything relevant and nothing after it;
+  - two or more deepest relevant nodes in one sibling group are the whole group (invariant 4).
+  - A correction is the exception: it seeks the relevant nodes themselves, ancestors included ([06](06-revisions.md#revising-a-shared-requirement)).
+- **Two modes of one search.**
+
+| | Exact | Best effort |
+|---|---|---|
+| Finds | Every deepest relevant node | The best answer obtainable within the [decision budget](#decision-budget) |
+| Stops when | Nothing unexamined could be relevant | The budget is reached |
+| Returns | The whole set | The best node found so far |
+
+  Best effort is the exact search made interruptible: the same steps, the most promising first. Routing always runs in best effort; exact is the search with no budget, and is what the build's tests check a strategy against.
+
+### Operations
+
+A strategy reaches the genealogy and the decision model only through a fixed set of operations behind one interface. A strategy is then policy alone: which operations to use next, where to split, and when to stop. How each operation is carried out is injected, so a strategy is tested with no decision model at all, and the means of an operation can change without touching a strategy.
+
+Each operation that asks has a **subject**, what the question is about, and a **shown context**, what the decision model is given to judge it by. Only the subject counts for what the answer may be used for.
+
+| Operation | Subject | Shown context | What its answer may do | Costs budget |
+|---|---|---|---|---|
+| **Point** | One section, by itself | Some of the section's ancestry | Confirm the section as a referent | Yes |
+| **Group** | One sibling group as a whole, as the join-back it is or will be | Its members | Confirm the group, which resolves to every member (Q30) | Yes |
+| **Segment** | A contiguous part of one unbranched run | Some of the sections at the top of the run | Say where to look next. It confirms nothing | Yes |
+| **Several** | The unit: does it refer to more than one section at once | The sections asked about | Admit a merely plausible further referent beside a clear one, where that changes nothing about where the work runs; tell a search whether to go on after its first find | Yes |
+| **Estimate** | A section or a part of an unbranched run | None: it is computed, not asked | Order and prune what is asked. It confirms nothing | No |
+| **Structure** | The genealogy: roots, continuations, the unbranched run of a node, ancestors, recency | | Read from the backend's records | No |
+| **Describe** | How a section is shown in a question: its title, the request it answered, its context chain, or a [context summary](#context-summaries-for-decisions) | | | No |
+| **Cost** | The size of a question before it is sent, and what is left of the budget | | Questions of one step are sent as one request | No |
+
+- **Only Point and Group confirm.** This is the rule that a unit is placed on a section only if that section was asked about by itself (DA3).
+- **There is no question about everything built on a node.** A no to such a question would hide a whole part of the conversation on the strength of a few titles. Lines are followed one unbranched run at a time instead.
+- **Estimate has no implementation in the first version.** It is the place for a lexical or embedding index over the sections; with none, nothing is ordered or pruned by it.
+
 ### Referent strategies
 
-How referents are found is a **referent strategy** behind one interface. The pipeline is handed a strategy and never asks which one it has, so a strategy can be replaced without touching the rules above. Two exist. Both start from the same first pass.
+How referents are found is a **referent strategy** behind one interface. The pipeline is handed a strategy and never asks which one it has, so a strategy can be replaced without touching the rules above. Two exist. Both are written against the [operations](#operations) alone, and both start from the same first pass.
 
 **First pass**
 
@@ -189,29 +231,32 @@ How referents are found is a **referent strategy** behind one interface. The pip
 
 | | One pass | Tree walk |
 |---|---|---|
-| Asks about, after the first pass | Every answer section the routing request lists (the most recent ones), and each sibling group among them as a whole | The genealogy level by level from every root, only along lines that are relevant |
-| Requests | The routing request that is sent anyway. No further request | That request, and one more for each branching level it descends and each step of a search, within the [decision budget](#decision-budget) |
+| Asks about, after the first pass | Every answer section the routing request lists (the most recent ones), and each sibling group among them as a whole | The genealogy from its starting nodes downward, one unbranched run at a time, only along lines that are relevant |
+| Requests | The routing request that is sent anyway. No further request | That request, and one more for each level it descends and each step of a search, within the [decision budget](#decision-budget) |
 | Reach | The listed sections. An older section is never asked about | Any section, however old |
 
 Terms the tree walk uses. A **branch point** is a place where a line of work splits: a node with two or more continuations, a sibling group's join-back among them. An **unbranched run** is the answers of one line between two branch points, each continuing the one before; it is not a model run. The **trunk** of a root is its first unbranched run, down to the first branch point, or to its tip when the line never splits; the last answer of a trunk is its **base**.
 
 **One pass**
 
-- One yes-or-no question per listed section, one per sibling group as a whole, and whether the unit refers to several sections, all in the routing request.
+- A Point for each listed section, a Group for each sibling group among them, and Several, all in the routing request. Nothing is searched and nothing older is reached.
 
 **Tree walk**
 
-- The trunks are asked about first, in the routing request as far as it lists them. Each further level is one further request that shows only that level's sections.
-- It descends below an unbranched run only when one of its sections, or the question "does the unit refer to anything built on this?", is at least plausible. Nothing below an irrelevant line is asked about, apart from the first-pass sections.
-- **Search of long unbranched runs.** An unbranched run too long to ask about section by section is searched: its sections are put in chunks, each chunk is one question that names its sections by the requests they answered, and only the sections of a relevant chunk are then asked about one by one. The requests it needs grow with the logarithm of its length. Old single answers that nothing was built on count as one unbranched run.
+- **Starting nodes.** The walk starts from every root, and from any **candidate sections** it is handed besides. Candidates come from a candidate source, an injected port; its intended use is retrieval, the sections an index over the conversation finds closest to the unit. The first version ships a source that returns none, so the walk starts from the roots.
+- **No starting node is an ancestor of another.** Before the walk, the roots and the candidates are reduced to the set in which no node is an ancestor of another: an ancestor is dropped in favor of its descendant, whose context holds it. A root with a candidate below it therefore gives way to the candidate.
+- **A dropped ancestor is not lost.** It is taken up again as a starting node when the node that displaced it turns out not to be relevant, and when Several says the unit refers to more than one section, so that a second referent on another line under the same root is still found (C9, C19).
+- **At a starting node** the walk examines the part of the node's unbranched run from the top of the run down to the node: by a Point for each section when the part is short, by a search when it is long.
+- **Search of a long unbranched run.** The search looks for the last relevant section. "Does the unit refer to anything after this position?" is a Segment, and along one unbranched run its answer changes from yes to no only once, so the position is found by halving, or by asking about several parts in one request; the requests it needs grow with the logarithm of the run's length. The section found is then confirmed by a Point before it can be a referent. Old single answers that nothing was built on count as one unbranched run.
+- **Descent.** Below an unbranched run that is relevant, each continuing unbranched run is examined in the same way, and a sibling group's join-back by a Group. Nothing is examined below an unbranched run that is not relevant, apart from the first-pass sections and the starting nodes.
 - **Start at the trunk base** (optional, off by default). Of each trunk only the base is asked about by itself; the answers before it are searched, however few.
 - **Hop between branch points** (optional, off by default). Below a branch point, of each unbranched run only its last answer is asked about by itself; the answers skipped are searched.
 
 **Both strategies**
 
-- A sibling group is asked about as a whole, as the join-back it is or will be, beside its members. A group judged relevant resolves to every member (Q30).
-- An ancestor of a relevant node is dropped: the descendant's context already holds it. The exception is a correction, which may name work its descendants only consumed ([06](06-revisions.md#revising-a-shared-requirement)); for a unit with clearly corrective wording the ancestor is kept.
-- **A unit is placed on a section only if that section was asked about by itself.** A yes to a question about several sections (a chunk, or "anything built on this") only says where to look next. It makes none of those sections a referent, and a unit is never placed on a neighboring section because of it. When a search cannot be finished, the sections it did not get to ask about by themselves are not referents.
+- A sibling group is asked about as a whole, by a Group, beside its members. A group judged relevant resolves to every member (Q30).
+- The result is the deepest relevant nodes, so an ancestor of a relevant node is dropped. The exception is a correction, which may name work its descendants only consumed ([06](06-revisions.md#revising-a-shared-requirement)); for a unit with clearly corrective wording the ancestor is kept.
+- **A unit is placed on a section only if that section was asked about by itself.** A yes to a question about several sections (a Segment) only says where to look next. It makes none of those sections a referent, and a unit is never placed on a neighboring section because of it. When a search cannot be finished, the sections it did not get to ask about by themselves are not referents.
 
 What a strategy cannot reach it does not guess at: the unit is routed as if it referred to nothing there.
 
@@ -232,7 +277,7 @@ A guard on what routing one message may cost in decision-model work. It applies 
 - **The routing request draws from the budget first.** When it would not fit with every section it normally lists, it lists fewer, the most recent, down to the first-pass sections alone. One request is always sent, because a message has to be routed: when even the smallest does not fit, it is sent and nothing follows it.
 - **Two requests are counted but never refused**, because no plan can be made without them: the confirmation that a requirement was made session-wide (Q17), and the question which consumers a shared-requirement revision affects (Q44).
 - **The budget is a hard stop.** When a limit is reached, the strategy sends nothing that does not fit. It asks about the listed sections it has not yet asked about in one request if that still fits, and otherwise keeps what it has scored. Nothing further is asked, of the decision model or of the user.
-- **Best node found so far.** A routing whose budget was reached does not elicit the target. Referents at or above the target-choice threshold are reply targets as always. Where the rules of the stage would otherwise ask the user which section is meant, the unit is placed on the best node found so far, although its score is below the target-choice threshold. The candidates are the sections that were asked about by themselves and the sibling groups that were asked about as a whole, as far as they are at least plausible (the threshold the tree walk descends on). Among them:
+- **Best node found so far.** A routing whose budget was reached does not elicit the target. Referents at or above the target-choice threshold are reply targets as always. Where the rules of the stage would otherwise ask the user which section is meant, the unit is placed on the best node found so far, although its score is below the target-choice threshold. It is chosen from the sections confirmed by a Point and the sibling groups confirmed by a Group, as far as they are at least plausible (the threshold the tree walk descends on). Among them:
   1. a node with a plausible descendant is passed over for the descendant, whose context already holds it. A correction is the exception, as for [both strategies](#referent-strategies);
   2. of the rest, the highest score is taken;
   3. on equal scores, the most recent.
@@ -293,14 +338,16 @@ With the routing decision of each message ([Inspection](#inspection)), in additi
 
 | Part | In the first version |
 |---|---|
-| Referent strategy interface; the first pass; one pass; tree walk with search of long unbranched runs, trunk base, and hops | Implemented. The configured strategy, used when strategy selection is off, is the tree walk with long unbranched runs searched; the two switches are off |
+| Referent strategy interface; the operations behind one interface; the first pass; one pass; tree walk with the search for the last relevant section of a long unbranched run, trunk base, and hops | Implemented. The configured strategy, used when strategy selection is off, is the tree walk with long unbranched runs searched; the two switches are off |
+| Candidate source for the tree walk's starting nodes | Interface, with a source that returns none. Retrieval over the conversation is beyond the first version |
+| Estimate | Operation defined, with no implementation: nothing is ordered or pruned by it |
 | Rules after the strategy: thresholds, elicitation, no subset bypass, acyclicity, leaf repair | Implemented. Unchanged, except that a routing whose decision budget was reached does not elicit the target |
 | Decision budget: token budget (absolute or relative), bound against the answer, backstops, the routing request drawing from it, the hard stop and the best node found so far | Implemented |
 | Summary provider | Interface, with a pass-through that returns the real context chain |
 | Background summarizer | Interface, with an implementation that produces nothing |
 | Summary policy, recording, staleness, and invalidation | Design only |
 | Strategy selection: the interface, the rules, the decision-model mode, reuse, recording | Implemented. Rules is the default; off and the decision model are available |
-| Optimization: tuning the thresholds and the budget's figures, the size of unbranched run that is searched, the selector's rules, summary policies, and the quality of a learned or model-based selector | Beyond the first version |
+| Optimization: tuning the thresholds and the budget's figures, the size of unbranched run that is searched, how much context a Point and a Segment show, the selector's rules, summary policies, a lexical or embedding index behind Estimate and the candidate source, and the quality of a learned or model-based selector | Beyond the first version |
 
 What the build measured, and where it falls short of this, is in [the build status](../build/STATUS.md).
 

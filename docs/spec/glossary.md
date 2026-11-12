@@ -142,10 +142,25 @@ A place where a line of work splits into two or more continuations, including th
 
 **Unbranched run**:
 The answers of one line of work between two branch points, each continuing the one before.
-_Avoid_: Run (which is one model call: "a run's context"), segment
+_Avoid_: Run (which is one model call: "a run's context"), segment (which is the operation that asks about part of an unbranched run), stretch
 
 **Trunk**:
 The first unbranched run of a line of work that starts from nothing: from its first answer to its first branch point, or to its latest answer when it never splits. Its last answer is the trunk base.
+
+**Relevant node**:
+A section, or a sibling group's join-back, that a message or fragment actually refers to. Routing cannot see which nodes are relevant; it can only ask.
+
+**Deepest relevant nodes**:
+The relevant nodes that have no relevant descendant. They are what dependency attachment looks for: the context of each holds every relevant node above it. Inside an unbranched run this is the last relevant section.
+_Avoid_: Best leaf, leaves (a deepest relevant node need not be a leaf)
+
+**Operation**:
+One of the fixed things a referent strategy can do: Point (ask about one section by itself), Group (ask about a sibling group as a whole), Segment (ask about part of an unbranched run), Several (ask whether the message refers to more than one section), and the ones that ask nothing: Estimate, Structure, Describe, Cost. Only Point and Group can confirm a referent.
+_Avoid_: Question (for an operation that asks nothing), tool
+
+**Candidate sections**:
+Sections handed to the tree walk as starting nodes in addition to the roots, for example the ones a retrieval index finds closest to the message. A candidate is where the walk starts looking; it is not a referent until a Point confirms it.
+_Avoid_: Candidates (for the sections the best node found so far is chosen from), hits
 
 **First-pass sections**:
 The few most recent answer sections that no later one of them builds on. Every routing asks about each of them by itself before anything else.
