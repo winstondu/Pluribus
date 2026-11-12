@@ -4,6 +4,7 @@ import type { DecisionProvider } from './decision-provider'
 import type { Decomposer } from './decomposer'
 import type { ModelProvider } from './model-provider'
 import type { ContextSummariser, ContextSummaryProvider } from './context-summary'
+import type { CandidateSource } from './referent-operations'
 import type { ReferentStrategy } from './referent-strategy'
 import type { Router } from './router'
 import type { StrategySelector } from './strategy-selector'
@@ -42,6 +43,12 @@ export interface CoreDependencies {
    * injected referent strategy is used as it is: nothing is selected.
    */
   readonly strategySelector?: StrategySelector
+  /**
+   * Sections a tree walk starts at besides the roots, for each unit that is
+   * routed: in practice the hits of a retrieval over the conversation. Left
+   * out, a walk starts at the roots alone.
+   */
+  readonly candidateSource?: CandidateSource
   /**
    * What the decision model is shown for a node while
    * `settings.routing.useSummaryIfAvailable` is on. Left out, the backend

@@ -2,6 +2,8 @@
 
 Specified in [11 · Architecture, "Dependency attachment"](../spec/11-architecture.md#dependency-attachment): the stage's contract, the two referent strategies, the decision budget and strategy selection. This document is the build record behind it: the measurements, the departures and what is open. Where the two disagree the spec wins. The spec calls a run of only children an "unbranched run", because in the spec a run is one model call; this document and the code say "run".
 
+**Changed again on 2026-11-12** by the user's decisions recorded under ["The model, the operations, and the search"](#the-model-the-operations-and-the-search): the question "does it refer to anything built on this?" is removed; the operations a search uses sit behind one interface, and the two strategies are policies over it; a long unbranched run is searched for its last relevant node; a tree walk can start at candidate nodes besides the roots. The sections "Strategy 2: tree walk", "Long runs" and the cost tables before that section describe the walk as it was until then and are marked where they no longer hold.
+
 **Changed on 2026-11-12** by the user's decisions recorded under ["The hard stop, the best node found so far, the first pass, and rules by default"](#the-hard-stop-the-best-node-found-so-far-the-first-pass-and-rules-by-default): the budget is a hard stop and never a reason to ask the user; every routing starts with a first pass; strategy selection defaults to the rules. Statements below that predate it are marked where they no longer hold. The cost and score tables before that section were measured before the change.
 
 Build-time record for the routing change of 2026-11-11. It closes the round-3 blocker "the spec's own J request is silently placed on one sibling" and the related "follow-up naming two sections raises the target-ambiguity prompt".
@@ -52,8 +54,9 @@ interface ReferentStrategy {
 - A strategy returns, per unit (the message, or each part of a composite), a score for every section it kept, and the probability that the unit refers to several sections. It has no I/O: it states questions and reads probabilities.
 - Everything after it is unchanged and the same for every strategy: `resolveUnitTargets` (target-choice threshold, ambiguity floor, the question to the user), `derivePlacement` (two or more members of a group become the group; an open group is waited for), `validatePlan` (acyclic, no subset of a sibling group, leaves for join chains). Only supplied sections are accepted from a strategy (invariant 9).
 - Both strategies share the wording, the question IDs and the last step, `referentsFromScores` (`routing/referents/shared.ts`).
+- Since 2026-11-12 each strategy is a **policy** over `ReferentOperations` (`packages/core/src/ports/referent-operations.ts`) and holds no wording, question ID or budget arithmetic of its own: see ["The model, the operations, and the search"](#the-model-the-operations-and-the-search).
 
-Files: `routing/referents/` (`tree.ts`, `shared.ts`, `one-pass.ts`, `tree-walk.ts`, `ask.ts`, `index.ts`).
+Files: `routing/referents/`: `tree.ts` (structure), `shared.ts` (wording, IDs, scores to referents), `operations.ts` (the operations over the decision provider and the guard), `search.ts` (the policy interface and the adapter to `ReferentStrategy`), `one-pass.ts` and `tree-walk.ts` (the two policies), `oracle.ts` (the operations over a labelled set, for tests), `first-pass.ts`, `ask.ts` (the guard), `index.ts`.
 
 ### The context tree
 
@@ -79,6 +82,8 @@ This is the previous behaviour plus the group question and the ancestor rule.
 
 ### Strategy 2: tree walk
 
+**Until 2026-11-12.** The walk as it is now is under ["The search"](#the-search). What changed: step 2's question about "the answers built on" a branch point is gone, so step 4 descends on the nodes of the segment alone; the roots are one start set among others.
+
 Breadth-first from every root, pruned where a line of work is not relevant:
 
 1. A **level** is a set of segments. A segment is a node and the run of only children below it, down to the next branch point (a node with two or more children, a group node among them).
@@ -99,14 +104,16 @@ Added 2026-11-11 on three requests from the user:
 >
 > the guard is that for up to a 1 million tokens conversation, for various reasonable assumptions of turns and shape structure, we should not cost more than two times haiku.
 
+**Changed 2026-11-12**: a searched run is searched for its **last** relevant section, not for every relevant chunk; see ["The search"](#the-search). The chunk question, its wording, the size of a chunk, the fan-out, the most recent answer beside it and the rule that a chunk's score never becomes a section's score are unchanged, and so is the evidence table below.
+
 A **run** is a segment's only children: the answers of one line of work between two places where it splits. The **trunk** of a root is its first run, from the root to the first branch point, or to the tip when the line never splits; its **base** is that last node. The sections of a run are now either **listed** (asked about one by one, as before) or **searched**.
 
 **Search.** The sections are put into chunks, each as many as can be listed within `searchRunsOverTokens` (1,500 estimated input tokens, about 12 full-length sections). A chunk is one question that names its sections by the request each answered (at most 80 characters): "Does the new message refer to one of these earlier answer sections, each named by the request it answered: S25 ("…"), S26 ("…"), …: reply to it, build on it, compare or combine it with another answer, or correct it?". Then:
 
-- every chunk at or above the floor (0.25) is followed: its sections are listed in the next request, with their full lines, and scored one by one. Two relevant chunks are both followed in that one request; no relevant chunk ends the search and nothing in the run is a referent;
+- *(until 2026-11-12; now only for a correction and for old one-answer roots)* every chunk at or above the floor (0.25) is followed: its sections are listed in the next request, with their full lines, and scored one by one. Two relevant chunks are both followed in that one request; no relevant chunk ends the search and nothing in the run is a referent;
 - a run with more than 24 chunks (`SEARCH_FANOUT`) is first asked about in 24 groups of chunks, and a relevant group is split again. Requests grow with log₂₄ of the run's length: one round of chunks up to about 290 sections, two up to about 7,000;
 - a request with chunk questions also shows the most recent answer and asks about it (`m_recent`, not read). Without that alternative the model has nothing to prefer;
-- a relevant chunk counts for its segment like a relevant node: the walk descends below the run's end;
+- a relevant chunk counts for its segment like a relevant node: the walk descends below the run's end (still so);
 - a section is **never taken as a referent from a chunk's score**. It is asked about by itself first. When the budget ends a search between the chunk and its sections, the sections of the relevant chunk are not candidates at all: they were never asked about by themselves (DA3). Until 2026-11-12 they were reported at just under the target-choice threshold, so that the user was asked which one is meant; the budget is now a hard stop and never a reason to ask.
 
 Which sections are searched:
@@ -152,7 +159,7 @@ The two switches are independent. Neither changes what happens below the end of 
 | Proposed | Built | Reason (measured) |
 |---|---|---|
 | Check a node's **full context** against the message | One line per node: title, request (≤ 240 characters), opening of the answer (≤ 280) | Full context costs tokens proportional to cumulative context; see the calculation below. It is also worse: asked about six nodes one request each, "Make that shorter" scored 0.79 to 0.93 on all six; in one request with the alternatives side by side it scored 0.68 on the latest answer and ≤ 0.34 on the others |
-| Descend when the node is relevant | Descend when the node **or anything built on it** is relevant | Relevance is not inherited downward. "Compare the itinerary with the sky explanation" scores the brief 0.07, so a walk that prunes on the brief alone never finds the itinerary below it. The extra question scored 0.90 there and 0.03 for unrelated messages |
+| Descend when the node is relevant | *Until 2026-11-12:* descend when the node **or anything built on it** is relevant. *Now:* as proposed | The question was removed on the user's decision: "It feels too lossy on a wrong 'no'." What it was added for still holds and is what the removal costs: "Compare the itinerary with the sky explanation" scores the brief 0.07, so a walk that prunes on the brief alone never finds the itinerary below it, unless it is a first-pass section or a start candidate. The extra question scored 0.90 there and 0.03 for unrelated messages |
 | One step per node ("bfs check its children") | One step per branch point; runs of only children are one segment | A conversation that only ever continues one chain is a path. Walking it node by node is one request per turn; as a segment it is one request, the pipeline's own |
 | Remove every ancestor of a relevant node | The same, except for a correction | See above: a correction may name the brief its descendants only consumed |
 | Several surviving siblings resolve to the full join-back | The same. It is work continuing from the join-back on the base chain, not a join chain | 01: "Work that needs several siblings of the same group never uses a join chain" |
@@ -175,6 +182,8 @@ One exchange (request and answer) is about 1,750 tokens. The cheapest measured a
 ### Formulae
 
 Symbols: N answer sections; R roots; W = 24, the pipeline's window; D, the depth of the tree in segments (branching levels); b, children per branch point; ρ, the fraction of a level's segments that are relevant; F = 262, the fixed tokens of a request; ℓ ≈ 85, a section's line (a live-style section: title, request, 280 characters of answer); q ≈ 40, one yes/no about it; u ≈ 30 to 120, a "built on it" question (it names up to 12 answers); g ≈ 30, a group question; σ ≈ 40, the message repeated in a further request; c ≈ 1,750, one exchange in full.
+
+Since 2026-11-12 the "built on it" question is removed: the u·B terms below are gone, a level is asked only below a segment that is itself plausible, and a searched run is charged one opened chunk when a section is confirmed (the "r chunks relevant" row holds for a correction only).
 
 The pipeline's own request costs F + P + ℓ·min(N, W) whichever strategy runs, with P ≈ 700 for its other questions (composite, relation, handling chain, dependencies, clarification). The strategy adds:
 
@@ -426,7 +435,7 @@ From what was measured above, when each setting pays:
 
 | Rule | Evidence |
 |---|---|
-| **One pass** when every answer is listed in the pipeline's request | Inside the window the two strategies routed every corpus example the same (58/62 and 61/62 differ only by the three examples beyond the window); one pass needs no further request |
+| **One pass** when every answer is listed in the pipeline's request | Inside the window the two strategies routed every corpus example the same (58/62 and 61/62 differ only by the three examples beyond the window); one pass needs no further request. Since 2026-11-12 one pass is the better of the two inside the window: it asks about every listed section, and the walk no longer asks below a root that is not plausible (two corpus examples) |
 | **One pass** when the routing may use fewer than 6,000 decision tokens | The pipeline's request takes up to 5,400 with its full window and a level of the walk about 600. With less, the walk asks about the roots in the pipeline's request and cannot descend, so answers below a root go unasked **even when they are listed**, except the first-pass sections; one pass asks about every listed answer in that same request. Until 2026-11-12 the test was: with 3,000 tokens the configured tree walk places J on nothing, the rules' one pass on both siblings. With the first pass the siblings, being the most recent answers, are asked about either way and both place J on them; the rule still matters for listed answers that are neither roots nor in the first pass |
 | **Tree walk** otherwise, **long runs searched** | Only the walk reaches answers older than the window; the search is the only setting that found a referent the walk could not (59/62 → 61/62) and changes nothing inside the window |
 | **Start at the trunk base** when the longest trunk has 12 or more listed answers before its last and ends in a split | −23 tokens per skipped answer, +1,900 and a request when one of them is referred to. A trunk that has split is history more often than subject; a trunk that never splits is the conversation itself and replies to its earlier answers are the normal case, so there it stays off |
@@ -499,7 +508,7 @@ Live, `typesafe/jev-1.13`, reference decompositions, 2026-11-11. The corpus grew
 - `hopBetweenBranchPoints`: **off**. Same score, 0.2% fewer tokens, 2% more requests on the corpus. It pays when replies go to the ends of runs (−18% on that example) and costs a request when they go inside one (+4% to +8%). It also needs the end of a hop asked twice to be right. Turn it on for trees with long branch runs where follow-ups address the latest state of each branch.
 - No size trigger was added to the switches: the size trigger is the third setting, which the user asked for in its own right ("some threshold of amount of node context").
 
-**Configured strategy: tree walk** (what runs when strategy selection is `off`; with the default, `rules`, the rules choose one pass inside the window and the tree walk beyond it). Within the window the two are equal on every example. The difference is the conversation longer than the window, where one pass loses the referent without asking, which is the kind of silent wrong placement this change exists to remove. The price is 12% more decision tokens on the corpus (0.32% of an answer instead of 0.28%) and one more request of about 0.15 s when a message refers into a branched line of work; an unrelated message, or one in a conversation that does not branch, costs the same or less. The guard bounds the worst case at 3.7%. One pass stays selectable (Settings → Routing → Referents) for anyone who prefers a single request.
+**Configured strategy: tree walk** (what runs when strategy selection is `off`; with the default, `rules`, the rules choose one pass inside the window and the tree walk beyond it). Within the window the two are equal on every example (until 2026-11-12; since then the walk misses two examples inside the window that one pass routes, see "What removing the question costs", so the configured strategy matters only with strategy selection off, and one pass is then the safer choice for conversations inside the window). The difference is the conversation longer than the window, where one pass loses the referent without asking, which is the kind of silent wrong placement this change exists to remove. The price is 12% more decision tokens on the corpus (0.32% of an answer instead of 0.28%) and one more request of about 0.15 s when a message refers into a branched line of work; an unrelated message, or one in a conversation that does not branch, costs the same or less. The guard bounds the worst case at 3.7%. One pass stays selectable (Settings → Routing → Referents) for anyone who prefers a single request.
 
 ## The hard stop, the best node found so far, the first pass, and rules by default
 
@@ -595,9 +604,201 @@ One run of the whole `pnpm smoke` after the change. "Before" is the 2026-11-11 t
 - **Cost grid** (`pnpm smoke`, 360 cells): the worst guarded cell is still **1.99×** (one pass, bushy, 120-token exchanges). The tree walk in nested forks with 120-token exchanges is now 1.97× to 1.98× (1.93× to 1.94× before): its smallest request lists five leaves and asks 14 questions where it listed four sections and asked 9. With 300-token exchanges the tree walk's worst is 1.93× in nested forks. The rows of the grid table above are from before the change.
 - Not measured live: a routing where the best node found so far is actually used. The corpus has no example that reaches the budget with a plausible candidate below the threshold; the behaviour is covered by the deterministic tests only.
 
+## The model, the operations, and the search
+
+Added 2026-11-12 on the user's decisions:
+
+> Let's not have "below" as an operation. It feels too lossy on a wrong "no".
+
+> Extract the operations behind one interface. This keeps our search algorithm much purer and better abstracted.
+
+> Change the stretch search to find the last relevant node.
+
+> If the stretch is relevant, we may want to check if the relevant part is all just in the first half of the stretch or not, hence the binary search.
+
+> In our "tree walk" algorithm, we can take in a different set of candidate nodes, which will be on top of the starting with root nodes. In practice, we will be providing the rag hits as nodes. Note that we still need a pass to reduce the provided candidates + all true roots to the "non-ancestor" set before starting the actual walk, or in other words the set where no node is an ancestor of another node.
+
+> while the point operation asks a node by itself, under the hood the decision model is provided some of the ancestry context to help the decisioning.
+
+> It must obviously include some of the nodes at the root of the stretch as context for the decision, but the decision should be asked only about the stretch.
+
+> For each node's full context, check relevancy. If it is relevant, bfs check its children (as well as the join group, if there are multiple children, as that is an artificial node).
+
+The user's word for an unbranched run is "stretch". This document says unbranched run, or run, as the glossary does.
+
+### The model
+
+- The genealogy is a graph of answer sections and join-backs. A join-back is an artificial node for a sibling group: a child of every member.
+- The **context** of a node is the node and its ancestors.
+- For a unit there is a hidden set of **relevant** nodes. Dependency selection returns the **deepest relevant nodes**: every relevant node that has no relevant descendant.
+- Consequences, all of which were rules before and are now one statement:
+  - an ancestor of a relevant node is dropped (a correction keeps it, 06);
+  - inside an unbranched run the answer is the **last relevant node**: not the end of the run, and not every relevant node of it;
+  - two or more members of one sibling group become the whole group (Q30).
+- **Exact and best effort are one search.** With no budget it runs to its end. With the decision budget, which is a hard stop, a round that does not fit is not sent and what a Point or a Group confirmed so far stands, with the best node found so far (`bestNodeFound`, unchanged).
+- **What "exact" needs.** A walk descends only below a run that is plausible. So it returns exactly the deepest relevant nodes when relevance is inherited upward along a line of work (a relevant node's context is relevant, which is what the model says), or, without that, when every deepest relevant node is a start candidate or a first-pass section. A relevant node below a run the decision model finds unrelated, with neither, is not reached. See "What removing the question costs".
+
+### The operations
+
+One interface, `ReferentOperations` (`packages/core/src/ports/referent-operations.ts`). A search calls nothing else.
+
+```ts
+type Probe =
+  | { kind: 'point'; unit: ReferentUnit; node: SectionNode }       // this one node, asked about by itself
+  | { kind: 'group'; unit: ReferentUnit; node: GroupNode }         // a sibling group as a whole: its join-back
+  | { kind: 'segment'; unit: ReferentUnit; nodes: readonly SectionNode[] } // anything in this part of an unbranched run
+  | { kind: 'several'; unit: ReferentUnit }                        // more than one section at once
+
+interface ReferentOperations {
+  known(probe: Probe): number | null                 // the latest answer, as a probability of yes; null when not asked
+  ask(round: readonly Probe[]): Promise<ProbeRoundResult> // one round is one decision request: answered | refused (limit) | failed
+  rides(probe: Probe): boolean                       // whether the routing request, sent anyway, can carry it
+  estimate(unit: ReferentUnit, nodes: readonly ReferentNode[]): number | null // a free prior; never confirms
+  describe(node: ReferentNode): string               // what a question shows for the node
+  size(probe: Probe): number                         // what the probe adds to a round, in estimated input tokens
+  fits(round: readonly Probe[], reserve?: readonly Probe[]): keyof DecisionBudget | null // the first limit the round, and a reserve round after it, would pass
+  remaining(): DecisionBudget                        // what the budget still allows
+}
+
+interface CandidateSource {                          // CoreDependencies.candidateSource
+  candidates(query: { unit: ReferentUnit; text: string; sections: readonly CandidateSection[] }): Promise<readonly SectionId[]>
+}
+```
+
+| Operation | Costs | What it is | Default implementation (`routing/referents/operations.ts`) |
+|---|---|---|---|
+| **Point** | decision | Does the unit refer to this one node, asked about by itself. The only way a section becomes a referent | `m_s<n>`, the section's line, and in a further request the nearest answers it was built on as context |
+| **Group** | decision | Does it build on a sibling group as a whole. The only way a group becomes a referent | `m_j<i>`, unchanged |
+| **Segment** | decision | Does it refer to anything in this contiguous part of an unbranched run. Directs the search; confirms nothing (DA3) | `m_c<first>_<last>`: the chunk question, each section named by its request; the first answers of the run as context |
+| **Several** | decision | Does it refer to more than one section. Read by `derive.ts`, and by the walk for reinstating (below) | `m_several`, unchanged |
+| **Estimate** | free | A relevance prior for a node or a part. Never confirms | Returns no estimate. No policy consults it yet: a lexical or embedding prior goes here |
+| **Structure** | free | Roots, children, the unbranched run of a node, ancestors, the non-ancestor set, recency | Pure functions over the tree: `routing/referents/tree.ts` (`stretchOf`, `segmentFrom`, `ancestorsOf`, `reduceToNonAncestors`, `joinBacksOf`, `rank`). Where a run is split is the policy's choice, from `size` |
+| **Describe** | free | How a node is shown in a question | The section's line (title, request, opening of the answer), or the stored summary and the section's own content where the summary provider has one |
+| **Cost** | free | The size of a probe before sending, whether a round fits, what is left | The guard's estimate (`ask.ts`), through `ReferentAsk`. The probes of one round are batched into one decision request |
+
+- **A strategy is a policy** (`ReferentPolicy` in `routing/referents/search.ts`): `opening(input, ops)` names the probes it wants in the routing request, `search(input, ops)` runs the rounds. `strategyFromPolicy(policy, operations?)` makes it the `ReferentStrategy` the pipeline is handed, with the decision-backed operations unless another factory is given. `one-pass.ts` and `tree-walk.ts` import only the port, `search.ts` and `tree.ts`; a test reads their imports and fails on a question ID, a wording, a token estimate or a decision-provider type in them.
+- **The test double** (`createOracleOperations` in `routing/referents/oracle.ts`): the operations over a labelled set of relevant nodes, with a budget counted in rounds and probes. `search.test.ts` runs both policies with it and no decision provider at all.
+- **Not injectable through `CoreDependencies`.** The operations are a port by shape and are swapped by building a strategy (`strategyFromPolicy`) and injecting that as `referentStrategy`. The first pass, which the pipeline adds to its request for every strategy, uses the default wording and IDs; a second injection point would have to keep the two in step.
+
+### What a probe shows
+
+- **In the routing request** nothing is added: its state text lists the window's sections and lines of work already.
+- **Point, in a further request.** After the lines of the sections asked about: "Where they come from, for context only (no question is about the answers named here unless it names them itself):", then one line per parent, `S7 and S8 build on S5 ("request…"), which builds on S3 ("request…").` The nearest **two** ancestors (`POINT_ANCESTRY`), each by its request cut at 80 characters, or by its number alone when its own line is in the request. Sections that follow one another in a run get one line for the first and `S36 to S47 are consecutive answers of one line of work.` A section whose line is a stored summary gets none: the summary stands for the work before it.
+- **Segment.** The question names only the part's sections. Context: `S41 to S198 are consecutive answers of one line of work that starts with S1 ("…"), S2 ("…") and builds on S9 ("…").` The first **two** answers of the run (`SEGMENT_LEAD`) when the part does not start there, and the **one** node the run was built on. The parts of one run in one request share the line. A part that starts at the top of a root's run has no line.
+- **Cost.** About 12 to 30 tokens per context line; one to three lines in a typical further request. Measured on the corpus below.
+
+### The removed question
+
+`underQuestion`, the `m_u<n>` and `m_uj<i>` IDs and the descent on them are gone from the code, the tests and the oracles. A routing recorded earlier keeps the questions it asked: `RoutingDecision.questions` is a list of records by ID and no stored shape changed, so `STATE_VERSION` is unchanged.
+
+### The search
+
+`treeWalkPolicy` (`routing/referents/tree-walk.ts`). One pass is unchanged in what it asks: its request is the same, token for token.
+
+1. **Start set** (`startSet`): the roots and the start candidates of the unit, reduced to their **non-ancestor set** by `reduceToNonAncestors` (`tree.ts`): a node that is an ancestor of another is dropped in favour of its descendant, the same direction as the first pass. With no candidates it is the roots.
+2. **Starting at a node** examines the part of its unbranched run from the run's top down to the node. A root's run is examined whole.
+3. **Examining a part of a run.**
+   - A sibling group is asked about as a whole (Group): the group node at the top of a run, and the group any section of the part is a member of.
+   - At a start, the sections the routing request lists are asked about by themselves in that request.
+   - **A confirmed section stands for everything above it in the run**: sections above the last one a Point confirmed (at the target-choice threshold) are not asked about. Its context holds them, and `referentsFromScores` would drop them.
+   - The other sections that were not asked about: by themselves in one round when that costs at most `searchRunsOverTokens`; otherwise the part is **searched for its last relevant node**.
+4. **The search of a run** (find the last relevant node). "Is anything relevant in this part?" is asked for up to 24 parts in one round (Segment; a part is as many sections as can be listed within `searchRunsOverTokens`, and more than 24 parts are grouped into 24 and split again). The **latest** plausible part is opened: when it can be listed, its sections are asked about by themselves, and only that makes one a referent. So a run of any length costs rounds logarithmic in its length, and one part's Points.
+   - **When the Point does not confirm.** A Segment's yes confirms nothing. When no section of the opened part scores at the target-choice threshold, the search goes on in the **next plausible part before it**, one part a round, as long as the budget allows. A part that was not plausible is never opened. Sections of an opened part that scored between the floor and the threshold are reported with their own score, as always.
+   - **Corrections.** A corrective unit needs the relevant nodes themselves, not only the deepest: it may name work its descendants only consumed (06). For it every plausible part is opened, side by side in one round, and nothing above a confirmed section is skipped; `referentsFromScores` keeps the ancestors. This is the search as it was before.
+   - **Old single answers** that nothing was built on are not a line of work: every relevant one is a deepest relevant node. They are pooled into one run and searched for all of them, as before.
+5. **Descent.** As soon as anything in a run is plausible (0.25), the rest of the run and every child run are examined: the runs below its end, and the join-back of a sibling group one of its sections is a member of. Nothing is examined below a run that is not plausible. The first round of a part settles this, so the runs below are taken up while a search of the run goes on.
+6. **Reinstating**, two safeguards for what dropping an ancestor from the start set can hide:
+   - (a) a start that displaced an ancestor and is **not plausible** hands over to the nearest nodes it displaced (the roots and candidates above it, reduced to their non-ancestor set), which become starts;
+   - (b) when Several is at the target-choice threshold, the displaced ancestors of **every** start are started as well, so that a second referent in another branch is found.
+   Both go tier by tier up to the roots, each tier after the one before has finished. What was asked is not asked again: a run records how far down it was examined, so a reinstated root that reaches the run of an earlier start examines only the rest of it.
+7. **Rounds.** Everything every unit wants next is one round, one decision request. The first round rides in the routing request as far as that request lists what it names.
+8. **Budget.** Before a round the walk checks that the round and its fallback both fit (`fits`). The fallback is the one-pass probes for listed nodes it has not asked. It is now a round like any other, showing only the sections it asks about, not the routing request's whole state text. Otherwise as before: `one-pass` or `partial`, and the best node found so far.
+
+The walk is written as steps that say what they want answered next; steps under way are a flat list, so a tree thousands of branch points deep is walked without nesting.
+
+### Start candidates
+
+- **Port.** `CandidateSource` (`CoreDependencies.candidateSource`, threaded like the other routing ports; `createTestBackend` takes it too). Asked once per unit before the routing request is put together: the message, or each part of a composite, with its text and the conversation's answer sections. Not asked for an explicit or chosen reply target.
+- **Default: none.** No retrieval is built. The tests use scripted sources.
+- **Rules.** Only answer sections of this conversation are accepted (invariant 9); at most 12 per unit (`MAX_START_CANDIDATES`); a source that rejects is a source with nothing to say. A candidate is a place to look and never a referent: it is asked about like any other node. One pass ignores candidates.
+- **In the request.** `ReferentRequest.startCandidates`, by unit key.
+- **What a candidate changes.** Its run from the top down to it rides in the routing request when listed, and the root above it is not asked about. An unlisted candidate is examined in the first further request with its ancestry as context.
+
+### The two switches
+
+Both still work and are tested in each combination (`referents.test.ts`, `search.test.ts`, the corpus, the cost grid).
+
+- **What they mean now.** With a switch on, of a part only its **last** section is asked about by itself at once, and the sections skipped (two or more) are one Segment per part, however few; the last is asked about again beside the sections a search opens. `startAtTrunkBase` applies to a root's run, `hopBetweenBranchPoints` to every other run.
+- **Neither is redundant, both matter less.** Without a switch a run over `searchRunsOverTokens` is searched anyway, and now a confirmed section already spares everything above it. What a switch still changes is a **short** run: one Segment instead of a Point per section.
+- **Evidence** (live, below): `startAtTrunkBase` saves 2,002 tokens on the corpus (1.8%), all of it on the three 200-section-chain examples, where two Segment questions replace 23 Points in the routing request (5,377 against 6,086 tokens for a reply to the latest answer); the score is the same. `hopBetweenBranchPoints` changes **nothing** on the corpus now: the same 84 requests and 108,935 tokens to the token. Its one corpus scene with runs below a split (`deep-run-*`) is no longer descended into, and where it would have paid before, a reply to the end of a run, the end is a first-pass section and, confirmed, already spares the run above it with the switch off. What is left for it is a short run that is plausible while its end is not confirmed.
+- The rules of the strategy selector for the two switches (`TRUNK_SKIP`, `HOP_SKIP`) are unchanged.
+
+### What removing the question costs
+
+- **Where.** A referent that is neither a first-pass section nor a start candidate, below a run the decision model does not find plausible. The corpus has three such examples (`CorpusExample.below`): `live-referent-beyond-window` (the itinerary, below the brief and the sibling group, older than the window), `deep-run-middle-section` (day 2 of five day plans below the itinerary) and `deep-run-other-branch` (the second of four answers in the other branch).
+- **With decisions strictly as labelled** (the oracle answers "no" for the brief) the tree walk misses all three, and the default, by rules, misses the first: inside the window the rules choose one pass, which asks about every listed section. `corpus.test.ts` expects exactly that.
+- **Live** the brief is plausible for "Swap days 2 and 3 of the Kyoto itinerary", so `live-referent-beyond-window` is found, in three requests as before. It is not plausible for "Make the day 2 plan less packed" or "Which of those hostels has private rooms with a bathroom?": the walk asks nothing below the brief, the ends of the two runs (first pass) are not confirmed, and the reply continues the end of its line (D5, H4) through its handling chain. It reads the section meant, which is in the end's context, and does not branch from it. Configured tree walk: **61/62 → 59/62**. The default (rules): **61/62, unchanged**.
+- **Why.** The question existed because relevance, as the decision model answers a Point, is not inherited upward: the brief scored 0.07 for a message about the itinerary below it. The model above says a relevant node's context is relevant; the decision model's answer about a root by itself does not.
+- **What recovers it**, in the order the user intends: a **candidate source** (a retrieval hit on D2 or H2 is a start: both examples are routed as labelled in `corpus.test.ts` with a scripted source that names the referent, and so is the third); a real **Estimate** (a lexical or embedding prior to rank the runs below a root); or wording the Point of a root so that "the line of work it starts" counts, which is the removed question under another name and was not done.
+
+### Departures
+
+| From | Built | Why |
+|---|---|---|
+| "exact: finds all deepest relevant nodes" | Exact when relevance is inherited upward along a line, or the deepest relevant nodes are start candidates or first-pass sections | The brief also says nothing is examined below a run that is not relevant. Both hold together only under that condition; the tests state it |
+| "On a relevant stretch, search for the last relevant node" by bisection | 24-ary, batched: up to 24 parts a round | The tokens of a round are the sections it names, whatever the fan-out; halving costs a request each time (measured 2026-11-11, "Long runs") |
+| Short runs "may still be asked point by point" | They are, in one round | As before |
+| The found node "is then confirmed with a Point" | Every section of the opened part is asked about by itself in one round, not only the last | One request either way; the part is at most what `searchRunsOverTokens` lists, and the neighbours give the decision model something to compare with |
+| Candidates "on top of the starting with root nodes" | A root that a candidate displaced is not asked about unless reinstated | That is the reduction the user asked for; safeguards (a) and (b) bring it back |
+| Estimate | On the interface, returns nothing, and no policy calls it | No estimator was to be built |
+| Operations "a port" | A port by interface; injected by building a strategy, not through `CoreDependencies` | See "The operations" |
+| Fallback request | Shows only the sections it asks about | It is a round like the others; it is smaller, so it fits more often |
+| 11 · "Tree walk": "It descends below an unbranched run only when one of its sections, or the question 'does the unit refer to anything built on this?', is at least plausible" | Only the sections, the group and the parts of the run | The question is removed. The spec text is the main session's to change |
+| 11 · "Search of long unbranched runs": "only the sections of a relevant chunk are then asked about one by one" | Only the latest relevant part, then the one before it when no Point confirms; every relevant part for a correction and for old single answers | The last relevant node |
+| 11 · "Start at the trunk base" and "Hop between branch points" | The same, and the skipped sections are searched for the last relevant one | |
+
+### Measured
+
+Live, `typesafe/jev-1.13`, 2026-11-12, reference decompositions, 62 examples, one run of the whole `pnpm smoke` (run twice: the first run's output was not captured, so the figures are the second's). "Before" is the table under "The hard stop … · Measured".
+
+| Configuration | Score | Requests | Tokens reported | Per routing | Before: score, requests, tokens |
+|---|---|---|---|---|---|
+| One pass | 58/62 | 74 | 92,592 | 1.19 requests, 1,493 tokens | 58/62, 74, 92,592 |
+| Tree walk, runs listed | 57/62 | 78 | 93,343 | 1.26, 1,506 | 59/62, 83, 99,798 |
+| Tree walk, long runs searched (the configured strategy) | 59/62 | 84 | 108,935 | 1.35, 1,757 | 61/62, 89, 115,461 |
+| + trunk base | 59/62 | 84 | 106,933 | 1.35, 1,725 | 61/62, 89, 113,431 |
+| + hops | 59/62 | 84 | 108,935 | 1.35, 1,757 | 61/62, 92, 116,419 |
+| + both | 59/62 | 84 | 106,933 | 1.35, 1,725 | 61/62, 92, 114,389 |
+| **Selected by rules (the default)** | **61/62** | **83** | **110,263** | **1.34, 1,778** | 61/62, 83, 110,364 |
+| Selected by the decision model | 61/62 | 126 | 145,438 | 2.03, 2,346 | 61/62, 126, 145,539 |
+| Selected by the decision model, shown the message | 61/62 | 126 | 147,132 | 2.03, 2,373 | 61/62, 126, 147,233 |
+
+| Case (requests, tokens; ✗ = not routed as labelled) | Tree walk | Before |
+|---|---|---|
+| `live-referent-beyond-window` | 3, 5,282 | 3, 5,251 |
+| `long-chain-old-section` (reply to the 3rd of 200) | 3, 7,972 | 3, 8,043 |
+| `long-chain-latest-section`, `long-chain-unrelated` | 2, 6,086; 2, 6,080 | the same |
+| `long-roots-old-section` | 3, 9,699 | 3, 9,699 |
+| `deep-run-middle-section` | ✗ 1, 1,874: continues D5 | 2, 3,534 |
+| `deep-run-end-section` | 1, 1,876 | 2, 3,538 |
+| `deep-run-other-branch` | ✗ 1, 1,877: continues H4 | 2, 3,540 |
+
+- **One pass is unchanged to the token**: the same request.
+- **The tree walk loses two examples and 5.7% of its tokens** (84 requests against 89). The loss is the removed question, as above. The saving is the same thing: no question about what is built on a branch point, and no request below a root that is not plausible.
+- **The default, by rules, keeps its score**, with the same 83 requests and 101 fewer tokens: 34 routings are one pass, six the tree walk.
+- **The J request on both siblings, five runs of five cases, and the follow-up naming two sections, five runs of two: 25/25 and 10/10 with each of the nine configurations.** Through the whole backend with the default settings (`j-request.smoke.test.ts`): 4/4.
+- The misses that are not the walk's: `split-correction-and-new-work` under every configuration, as before; under "runs listed", the two 200-section referents, as before. `routing-corpus.smoke.test.ts` (default settings): 60/62 with reference decompositions, the second miss being `split-output-order-barrier` (the barrier question, one borderline answer), and 59/62 with the live decomposer.
+- **What the context costs.** With decisions as labelled and the guard's estimate, the tree walk's requests over the corpus are 102,993 tokens with the context lines and 102,667 without: **326 tokens, 0.3%**. Five of its 18 further requests carry a context block, of about 65 tokens each. The routing request carries none.
+- **Cost grid** (`pnpm smoke`, 360 cells): the worst guarded cell is still **1.99×** (the tree walk in an early split, 50 or 500 sections of 120-token exchanges: the routing request alone, cut to its smallest, 11 questions and 2,478 tokens; one pass in a bushy conversation is 1.99× as before). With 300-token exchanges the worst is 1.93× (the tree walk over many roots). The largest guarded routing is 19,082 tokens (500 answers of 2,000 tokens on one chain, with the decision-model selector's request; the budget there is 20,000; 18,106 before). Unguarded, a search whose Points never confirm goes back one part a round: a 500-section chain is 79 requests where it was 4, and 8,000 sections 902. The request backstop (4) is what bounds that, as it bounds a deep tree. The grid table above is from before this change.
+- Not measured live: start candidates (no source exists), safeguards (a) and (b), a search whose Point does not confirm, and a routing that falls back. They are covered by the deterministic tests only.
+
 ## Tests
 
-- `routing/referents/referents.test.ts`: the tree; for both strategies C19, C9, C20, ancestor removal and its exception; one pass asks everything once; the walk's levels, state text, pruning, descent below an irrelevant branch point, linear runs; the guard (request, question and token budgets, the partial fallback, a strategy that keeps asking, one pass bounded); the strategy swap and a strategy that names an unsupplied section.
+- `routing/referents/search.test.ts` (2026-11-12), the policies over the oracle and no decision provider: the non-ancestor set (`reduce`) by example and as a property on five shapes; the start set; `exact` (no budget: exactly the deepest relevant nodes on one chain, an early split, nested forks, sibling groups with join-backs and many roots, for relevance inherited upward and for the least a walk descends on; for any relevant set when its deepest nodes are start candidates; and, with neither, only relevant, confirmed nodes none of which is an ancestor of another); `budget` (no round or probe beyond it, only Point- or Group-confirmed nodes, the exact answer when the budget was not reached, the same search twice); `last` (probes logarithmic in the run's length from 100 to 10,000 sections; only the part that holds the last relevant section is opened; a Point that does not confirm sends the search to the plausible part before it and never into one that was not; short runs point by point; nothing above a confirmed section; a correction opens every plausible part; old single answers found all at once); `walk` (child runs and the join-back, pruning, starting at a candidate, safeguards (a) and (b), a tree 3,000 branch points deep, no candidates = the roots); `switches` (exact with each combination; what is asked first); `policy` (the two policy files import only the port, `search.ts` and `tree.ts`, and hold no wording, ID, estimate or decision-provider type).
+- `routing/referents/referents.test.ts` (2026-11-12): `candidates` (a scripted source through the pipeline: a candidate rides in the routing request and its root is not asked about; never a referent by itself; safeguard (a) in a further request that asks nothing twice; safeguard (b); a candidate older than the window; unknown sections, more than twelve, a failing source, one pass and explicit targets; no source = an empty source; `C19` with one sibling as the candidate); `operations` (one question per probe; two parts with the same ends are two questions; what a Point and a Segment show as context; a summary in place of ancestry).
+- `routing/acceptance/referents.test.ts` (2026-11-12): `candidates` on a backend: the source of `CoreDependencies` is asked per routed message and the J request lands on both siblings from one sibling as the candidate.
+- `routing/corpus/corpus.test.ts` (2026-11-12): the three examples whose referent lies below work the message does not refer to are expected to miss with the tree walk when decisions are strictly as labelled, and to be routed as labelled when the line above is plausible and when a candidate source names the referent.
+- `routing/referents/referents.test.ts`: the tree; for both strategies C19, C9, C20, ancestor removal and its exception; one pass asks everything once; the walk's levels, state text, pruning (until 2026-11-12: descent below an irrelevant branch point), linear runs; the guard (request, question and token budgets, the partial fallback, a strategy that keeps asking, one pass bounded); the strategy swap and a strategy that names an unsupplied section.
 - `routing/acceptance/referents.test.ts`: the J request end to end on a backend with each strategy: C19 (continues from the join-back on the base chain and reads both), C9 twice (two of three running siblings wait for the third; a weak second sibling with a relevant group), C20 (join chain over leaves).
 - `routing/referents/referents.test.ts`, long runs: a section of a 200-section chain and of 200 unrelated roots found within the budget where listing falls back; a referent at the start, middle and end of a run; two referents in different chunks; no relevant chunk; the most recent answer beside chunk questions; a run split in two rounds; the budget ending a search (`DA3`: the chunk's sections are not candidates, nothing is placed on a neighbour, the user is not asked) and the guard under five budgets; the trunk base (what is asked, a mid-trunk reply resolved exactly, not placed and not elicited with no budget, a correction keeping its ancestor, a trunk that never splits); hops (what is asked, a mid-run reply resolved exactly, the end of a hop asked again, the fallback, descent through a relevant chunk); and for each of the four combinations of the two switches C19, C9, C19 after a long trunk and among long branches, a mid-run reply in trunk and branch, a correction keeping its ancestor, and the guard with a deterministic fallback.
 - `routing/referents/referents.test.ts`, first pass and hard stop: the first-pass sections of six conversations; with each strategy they are asked about in the routing request, a sibling group among them as a whole, and they are what the smallest request lists; `bestNodeFound` (descendant before ancestor, score, recency, the floor, a group as a node, a correction); `DA4` (each limit: one request, a plan and no elicitation, the best node, the record, the explanation, the same routing twice; the fallback request inside the budget; nothing plausible; and the same scores with budget to spare elicit); a strategy that reports a limit without a best node, and one the guard refused.
@@ -618,6 +819,8 @@ One run of the whole `pnpm smoke` after the change. "Before" is the 2026-11-11 t
 
 ## Left open
 
+- **A referent below work the decision model finds unrelated** (2026-11-12): reached only as a first-pass section or through a start candidate. No candidate source and no estimator are built. See "What removing the question costs".
+- **The fallback's wording** is no longer the routing request's: its sections are judged beside each other only, not beside the whole window. Not measured live (no corpus routing falls back with the default budget).
 - A referent in a searched run that only its answer text identifies: the chunk question names sections by their requests. Not measured how often this happens.
 - Conversations whose answers are shorter than 100 tokens: the smallest request that routes a message exceeds twice the answer (250 before the pipeline's window became price-aware). Holding the bound lower means fewer than 4 listed sections, or a cheaper request (its fixed part, about 1,000 tokens, is the pipeline's other questions).
 - Beyond about 1,200 to 2,000 older sections (by request length) the first chunk request exceeds the budget's ceiling and old referents are again out of reach. Asking the newest chunks that fit would extend it.

@@ -1,17 +1,18 @@
 import { DEFAULT_SETTINGS, resolveTokenBudget, type NodeId, type DecisionBudget, type DecisionCostGuard, type DecisionTokenBudget, type ReferentStrategyName, type RoutingSettings, type TreeWalkSettings } from '@committee/protocol'
 import { describe, expect, test } from 'vitest'
-import { NEVER_CANCELLED, type DecisionContext, type RoutingInput, type DecisionProvider, type DecisionQuestions, type DecisionRequest, type DecisionResult, type ReferentStrategy, type RoutingOutcome, type RoutingPlan } from '../../ports'
+import { NEVER_CANCELLED, type CandidateQuery, type CandidateSource, type DecisionContext, type RoutingInput, type DecisionProvider, type DecisionQuestions, type DecisionRequest, type DecisionResult, type ReferentRequest, type ReferentStrategy, type RoutingOutcome, type RoutingPlan } from '../../ports'
 import { compareWithLabel as compare, corpusInput, oracleDecisionProvider, referenceDecomposer, scene, sceneIds, sceneLogTokens, suppliedIn, type CorpusExample, type Scene } from '../corpus'
 import { createRouter } from '../pipeline'
 import { MIN_SECTIONS, numberedAnswerSections, supply } from '../supply'
-import { FIRST_PASS_SECTIONS, ancestorsOf, bestNodeFound, branchingDepth, buildTree, decisionAllowance, estimateDecisionTokens, estimateRequestTokens, firstPassSectionIds, routingTokenBudget, segmentFrom, type TreeNode } from './index'
+import { FIRST_PASS_SECTIONS, ancestorsOf, bestNodeFound, branchingDepth, buildTree, createDecisionOperations, probe, decisionAllowance, estimateDecisionTokens, estimateRequestTokens, firstPassSectionIds, routingTokenBudget, segmentFrom, type TreeNode } from './index'
 
 /**
  * The two referent strategies over a scripted decision provider
  * (docs/build/dependency-decisioning.md). Decisions are stated by section
- * handle: `own` is "does the message refer to this section", `together`
- * "does it build on this group as a whole", `under` "does it refer to
- * anything built on this section". Anything not stated is answered no.
+ * handle: `own` is "does the message refer to this section" (Point),
+ * `together` "does it build on this group as a whole" (Group); a Segment
+ * scores the highest `own` of the sections it names. Anything not stated
+ * is answered no.
  */
 
 const BRIEF = 'Trip brief: Kyoto, five days, November, moderate budget'
@@ -44,7 +45,6 @@ interface Rules {
   readonly several?: number
   readonly own?: { readonly [handle: string]: number }
   readonly together?: { readonly [groupHandle: string]: number }
-  readonly under?: { readonly [handle: string]: number }
   /** A chunk of a searched run scores the highest `own` of the sections it names, unless one of them is stated here. */
   readonly chunk?: { readonly [handle: string]: number }
   /** What a section scores the first time it is asked about, when that differs from `own`: asked about without its neighbours. */
@@ -80,9 +80,7 @@ function scripted(sc: Scene, rules: Rules, numberOf: Map<string, number>, input:
         else if (question === 'corrective') p = rules.corrective ?? 0.05
         else if (/^s\d+$/.test(question)) p = (seen.has(id) ? undefined : rules.alone?.[handleOf.get(number) ?? '']) ?? rules.own?.[handleOf.get(number) ?? ''] ?? 0.05
         else if (/^j\d+$/.test(question)) p = rules.together?.[groupHandle(number)] ?? 0.05
-        else if (/^u\d+$/.test(question)) p = rules.under?.[handleOf.get(number) ?? ''] ?? 0.05
-        else if (/^uj\d+$/.test(question)) p = rules.under?.[`group:${groupHandle(number)}`] ?? 0.05
-        else if (/^c\d+_\d+$/.test(question)) {
+        else if (/^c\d+_\d+(_\d+)?$/.test(question)) {
           const named = [...q.instructions.matchAll(/S(\d+) \(/g)].map((m) => handleOf.get(Number(m[1])) ?? '')
           p = Math.max(0.05, ...named.map((h) => rules.chunk?.[h] ?? rules.own?.[h] ?? 0.05))
         }
@@ -103,7 +101,7 @@ function scripted(sc: Scene, rules: Rules, numberOf: Map<string, number>, input:
 interface Routed {
   readonly outcome: RoutingOutcome
   readonly requests: DecisionRequest<DecisionQuestions>[]
-  /** IDs of the yes/no questions about sections, groups and subtrees, per request. */
+  /** IDs of the yes/no questions about sections, groups and parts of runs, per request. */
   readonly asked: string[][]
   readonly numberOf: ReadonlyMap<string, number>
 }
@@ -117,6 +115,8 @@ interface RouteOptions {
   readonly treeWalk?: Partial<TreeWalkSettings>
   readonly costGuard?: Partial<DecisionCostGuard>
   readonly summaries?: (nodeId: NodeId) => DecisionContext | null
+  /** A scripted candidate source: section handles a tree walk starts at besides the roots. */
+  readonly candidates?: readonly string[] | CandidateSource
 }
 
 async function route(sc: Scene, text: string, rules: Rules, routing: RouteOptions = {}): Promise<Routed> {
@@ -141,9 +141,16 @@ async function route(sc: Scene, text: string, rules: Rules, routing: RouteOption
   const input: RoutingInput = { ...corpusInput(example, { ...DEFAULT_SETTINGS, routing: settings }), ...(routing.summaries ? { decisionContext: routing.summaries } : {}) }
   const numberOf = new Map(numberedAnswerSections(input, supply(input, [])).map((s) => [sc.handles.get(s.section.sectionId) ?? '', s.n]))
   const { provider, requests } = scripted(sc, rules, numberOf, input)
-  const router = createRouter({ decisionProvider: provider, decomposer: referenceDecomposer(example), ...(routing.inject ? { referentStrategy: routing.inject } : {}) })
+  const candidateSource: CandidateSource | undefined =
+    routing.candidates === undefined ? undefined : 'candidates' in routing.candidates ? routing.candidates : { candidates: async () => (routing.candidates as readonly string[]).map(sceneIds.section) }
+  const router = createRouter({
+    decisionProvider: provider,
+    decomposer: referenceDecomposer(example),
+    ...(routing.inject ? { referentStrategy: routing.inject } : {}),
+    ...(candidateSource ? { candidateSource } : {}),
+  })
   const outcome = await router.route(input, NEVER_CANCELLED)
-  const asked = requests.map((r) => Object.keys(r.questions).filter((id) => /^m_((s|j|u|uj)\d+|c\d+_\d+)$/.test(id)))
+  const asked = requests.map((r) => Object.keys(r.questions).filter((id) => /^m_((s|j)\d+|c\d+_\d+(_\d+)?)$/.test(id)))
   return { outcome, requests, asked, numberOf }
 }
 
@@ -159,7 +166,7 @@ const unit = (routed: Routed) => {
 }
 
 const sections = (handles: readonly string[]) => handles.map(sceneIds.section)
-const ids = (routed: Routed, kind: 's' | 'u', handles: readonly string[]) => handles.map((h) => `m_${kind}${routed.numberOf.get(h) ?? '?'}`)
+const ids = (routed: Routed, _kind: 's', handles: readonly string[]) => handles.map((h) => `m_s${routed.numberOf.get(h) ?? '?'}`)
 
 const STRATEGIES: readonly ReferentStrategyName[] = ['one-pass', 'tree-walk']
 
@@ -187,14 +194,14 @@ describe('context tree', () => {
 
 describe.each(STRATEGIES)('referents by %s', (strategy) => {
   test('C19 · J is clear about one sibling and weak about the other, and builds on the group as a whole: both are referents and J continues from the join-back', async () => {
-    const routed = await route(tripClosed, 'Use those recommendations to make a five-day itinerary.', { own: { A: 0.77, B: 0.3, brief: 0.5 }, several: 0.4, together: { G: 0.86 }, under: { brief: 0.9 } }, { strategy })
+    const routed = await route(tripClosed, 'Use those recommendations to make a five-day itinerary.', { own: { A: 0.77, B: 0.3, brief: 0.5 }, several: 0.4, together: { G: 0.86 } }, { strategy })
     expect(new Set(unit(routed).targets)).toEqual(new Set(sections(['A', 'B'])))
     expect(unit(routed).placement).toEqual({ kind: 'continue', buildsOn: { kind: 'sibling-group', groupId: sceneIds.group('G') } })
     expect(unit(routed).prerequisites).toEqual([])
   })
 
   test('C9 · J needs both running siblings: it depends on the whole group, never on a subset', async () => {
-    const routed = await route(tripRunning, 'Use those recommendations to make a five-day itinerary.', { relation: 'dependent', own: { A: 0.77, B: 0.2 }, together: { G: 0.86 }, under: { brief: 0.9 } }, { strategy })
+    const routed = await route(tripRunning, 'Use those recommendations to make a five-day itinerary.', { relation: 'dependent', own: { A: 0.77, B: 0.2 }, together: { G: 0.86 } }, { strategy })
     expect(new Set(unit(routed).targets)).toEqual(new Set(sections(['A', 'B'])))
     expect(unit(routed).placement).toEqual({ kind: 'continue', buildsOn: { kind: 'sibling-group', groupId: sceneIds.group('G') } })
     expect(unit(routed).prerequisites).toEqual([{ kind: 'sibling-group', groupId: sceneIds.group('G') }])
@@ -203,7 +210,7 @@ describe.each(STRATEGIES)('referents by %s', (strategy) => {
 
   test('C20 · a follow-up that names an earlier node of one line and another line is a join chain; validation moves its parents to leaves', async () => {
     // B is not a leaf: B2 continues it. S is a leaf of a separate tree.
-    const routed = await route(tripFull, 'Put the activities and the sky explanation into one handout', { own: { B: 0.9, S: 0.9 }, several: 0.9, under: { brief: 0.9 } }, { strategy })
+    const routed = await route(tripFull, 'Put the activities and the sky explanation into one handout', { own: { B: 0.9, S: 0.9, brief: 0.3 }, several: 0.9 }, { strategy })
     expect(new Set(unit(routed).targets)).toEqual(new Set(sections(['B', 'S'])))
     expect(unit(routed).placement.kind).toBe('join-chain')
     const applied = unit(routed).placement
@@ -215,7 +222,7 @@ describe.each(STRATEGIES)('referents by %s', (strategy) => {
   })
 
   test('referents · a relevant ancestor is dropped for its relevant descendant, and kept for a correction that names it', async () => {
-    const scores: Rules = { own: { brief: 0.9, A: 0.85 }, under: { brief: 0.9 } }
+    const scores: Rules = { own: { brief: 0.9, A: 0.85 } }
     const followUp = await route(tripClosed, 'Which of those is quietest?', scores, { strategy })
     expect(unit(followUp).targets).toEqual(sections(['A']))
     const correction = await route(tripClosed, 'Actually, the trip is four days, not five', { ...scores, corrective: 0.95 }, { strategy })
@@ -241,11 +248,12 @@ describe('one pass', () => {
 
 describe('tree walk', () => {
   test('tree-walk · the roots ride in the pipeline\'s request; a relevant branch point costs one further request that lists only its level, with the join group as a node', async () => {
-    const routed = await route(tripFull, 'Use those recommendations to make a five-day itinerary.', { own: { A: 0.8, B: 0.3 }, together: { G: 0.9 }, under: { brief: 0.9 } })
-    // Level 0, in the pipeline's request: the roots, and whether anything built on the branch point is relevant. With them the
-    // first pass: the most recent sections that no later one builds on (S is one of them and a root).
-    expect(new Set(routed.asked[0])).toEqual(new Set([...ids(routed, 's', ['brief', 'S', 'J', 'B2']), ...ids(routed, 'u', ['brief'])]))
-    // Level 1, one request: the siblings and the join group. The runs below them were asked about in the first pass.
+    const routed = await route(tripFull, 'Use those recommendations to make a five-day itinerary.', { own: { brief: 0.4, A: 0.8, B: 0.3 }, together: { G: 0.9 } })
+    // In the pipeline's request: the roots, each asked about by itself. With them the first pass: the most recent sections that no
+    // later one builds on (S is one of them and a root).
+    expect(new Set(routed.asked[0])).toEqual(new Set(ids(routed, 's', ['brief', 'S', 'J', 'B2'])))
+    // The brief is plausible, so the runs below it are examined in one request: the siblings and the join group. Their ends were
+    // asked about in the first pass.
     expect(routed.requests).toHaveLength(2)
     expect(new Set(routed.asked[1])).toEqual(new Set([...ids(routed, 's', ['A', 'B']), 'm_j1']))
     const state = routed.requests[1]?.state ?? ''
@@ -253,6 +261,8 @@ describe('tree walk', () => {
     expect(state).toContain('were requested in parallel')
     expect(state).not.toContain('"sky"')
     expect(state).not.toContain('Lines of work')
+    // A section asked about by itself is shown with what it was built on, named by its request and not asked about.
+    expect(state).toContain(`S${routed.numberOf.get('A')} and S${routed.numberOf.get('B')} build on S${routed.numberOf.get('brief')} ("${BRIEF}").`)
     expect(state).toContain('New message: "Use those recommendations to make a five-day itinerary."')
     expect(new Set(unit(routed).targets)).toEqual(new Set(sections(['A', 'B'])))
     expect(planOf(routed).decision.explanation).toContain('Referents by tree-walk: one further decision request.')
@@ -267,14 +277,16 @@ describe('tree walk', () => {
     expect(unit(routed).placement).toEqual({ kind: 'continue', buildsOn: { kind: 'node', nodeId: sceneIds.node('S') } })
   })
 
-  test('tree-walk · a branch point whose own answer is not relevant is still descended into when what is built on it is', async () => {
-    const routed = await route(tripFull, 'Fit the cheaper alternatives into the itinerary', { own: { J: 0.9, B2: 0.85 }, several: 0.8, under: { brief: 0.9 } })
+  test('tree-walk · nothing is examined below a run that is not plausible; the first-pass sections are asked about all the same', async () => {
+    // The brief is not plausible, so the siblings below it are never asked about. J and B2 are the ends of their lines: the first pass.
+    const routed = await route(tripFull, 'Fit the cheaper alternatives into the itinerary', { own: { J: 0.9, B2: 0.85, A: 0.9 }, several: 0.8 })
+    expect(routed.requests).toHaveLength(1)
     expect(new Set(unit(routed).targets)).toEqual(new Set(sections(['J', 'B2'])))
     expect(unit(routed).placement.kind).toBe('join-chain')
   })
 
   test('tree-walk · ancestors of a relevant node are removed: J stands for the group and the siblings it was built on', async () => {
-    const routed = await route(tripFull, 'Make the itinerary shorter', { own: { brief: 0.8, A: 0.75, B: 0.75, J: 0.9 }, together: { G: 0.8 }, under: { brief: 0.9 } })
+    const routed = await route(tripFull, 'Make the itinerary shorter', { own: { brief: 0.8, A: 0.75, B: 0.75, J: 0.9 }, together: { G: 0.8 } })
     expect(unit(routed).targets).toEqual(sections(['J']))
     expect(unit(routed).placement).toEqual({ kind: 'continue', buildsOn: { kind: 'node', nodeId: sceneIds.node('J') } })
   })
@@ -301,7 +313,8 @@ const deep = (() => {
   }
   return s.build()
 })()
-const deepRules: Rules = { own: { N3a: 0.9 }, under: { N0: 0.9, N1a: 0.9, N2a: 0.9 } }
+/** The line down to the leaf is plausible at every level: that is what a walk descends on. */
+const deepRules: Rules = { own: { N0: 0.3, N1a: 0.3, N2a: 0.3, N3a: 0.9 } }
 
 /** One chain of `n` exchanges, and `n` unrelated one-answer lines: declared here for the first pass, used again for long runs. */
 const chainOf = (n: number): Scene => {
@@ -402,7 +415,7 @@ describe('best node found so far', () => {
 describe('decision budget', () => {
   test('DA4 · the decision budget is a hard stop: no decision request beyond it, the best node found so far in place of a question to the user, and the same routing every time', async () => {
     // Four sections asked about by themselves are plausible and none is clear. N1a and N2a, which only the walk would ask about, are not reached.
-    const rules: Rules = { own: { N0: 0.6, N1b: 0.45, N2b: 0.45, N3a: 0.3, N2a: 0.95 }, under: { N0: 0.9 } }
+    const rules: Rules = { own: { N0: 0.6, N1b: 0.45, N2b: 0.45, N3a: 0.3, N2a: 0.95 } }
     const text = 'Expand that detail'
 
     // With budget to spare the walk finishes and the ambiguity is real: the user is asked, as always.
@@ -434,11 +447,12 @@ describe('decision budget', () => {
     expect(fallback.outcome.kind).toBe('plan')
     expect(planOf(fallback).decision.budgetStop).toMatchObject({ limit: 'requests', fallback: 'one-pass', bestFound: [{ sectionIds: sections(['N2b']), confidence: 0.45 }] })
 
-    // Nothing asked about by itself is plausible: the message refers to nothing there, and still nobody is asked.
-    const nothing = await route(deep, text, { own: { N2a: 0.95 }, under: { N0: 0.9 } }, { budget: { requests: 0 } })
+    // Nothing asked about by itself is plausible: the walk has nothing further to ask, so no limit is reached. The message
+    // refers to nothing there, and nobody is asked.
+    const nothing = await route(deep, text, { own: { N2a: 0.95 } }, { budget: { requests: 0 } })
     expect(nothing.outcome.kind).toBe('plan')
     expect(unit(nothing).targets).toEqual([])
-    expect(planOf(nothing).decision.budgetStop).toEqual({ limit: 'requests', fallback: 'partial', bestFound: [] })
+    expect(planOf(nothing).decision.budgetStop).toBeUndefined()
   })
 
   test('guard · a strategy that reports a reached limit without naming a best node has its highest-scoring plausible section taken; one whose request the guard refused is stopped the same way', async () => {
@@ -486,7 +500,9 @@ describe('decision budget', () => {
     // The pipeline's request, one level of the walk, then the one-pass questions not asked yet. Never a fourth.
     expect(routed.requests).toHaveLength(3)
     expect(new Set(routed.asked[2])).toEqual(new Set(ids(routed, 's', ['N2a'])))
-    expect(routed.requests[2]?.state).toBe(routed.requests[0]?.state)
+    // Like every round, it shows only the sections it asks about.
+    expect(routed.requests[2]?.state).toContain('"level 2a"')
+    expect(routed.requests[2]?.state).not.toContain('"level 3b"')
     expect(unit(routed).targets).toEqual(sections(['N3a']))
     expect(planOf(routed).decision.explanation).toContain('its request budget was reached, so the remaining candidates were asked about in one request')
     // The target was clear, so the best node found so far was not needed.
@@ -494,20 +510,19 @@ describe('decision budget', () => {
   })
 
   test('guard · the question and token budgets stop the walk the same way', async () => {
-    const byQuestions = await route(deep, 'Expand detail 3a', deepRules, { budget: { questions: 4 } })
-    expect(byQuestions.requests).toHaveLength(3)
+    // The first level is one question and its fallback two: with room for two questions the fallback is what is asked.
+    const byQuestions = await route(deep, 'Expand detail 3a', deepRules, { budget: { questions: 2 } })
+    expect(byQuestions.requests).toHaveLength(2)
     expect(planOf(byQuestions).decision.explanation).toContain('its question budget was reached')
     expect(unit(byQuestions).targets).toEqual(sections(['N3a']))
 
     // Room for the first level and for the fallback as it stands before that level, not for the second level as well.
     const whole = await route(deep, 'Expand detail 3a', deepRules)
     const firstLevel = whole.requests[1]
-    const onePass = await route(deep, 'Expand detail 3a', deepRules, { strategy: 'one-pass' })
-    const notYetAsked = Object.fromEntries(Object.entries(onePass.requests[0]?.questions ?? {}).filter(([id]) => /^m_s\d+$/.test(id) && !(id in (whole.requests[0]?.questions ?? {}))))
-    const reserve = estimateDecisionTokens(whole.requests[0]?.state ?? '', notYetAsked as never)
-    const byTokens = await route(deep, 'Expand detail 3a', deepRules, {
-      budget: { inputTokens: estimateDecisionTokens(firstLevel?.state ?? '', (firstLevel?.questions ?? {}) as never) + reserve },
-    })
+    // With one request allowed the walk asks its fallback at once: the listed sections it has not asked about.
+    const reserve = (await route(deep, 'Expand detail 3a', deepRules, { budget: { requests: 1 } })).requests[1]
+    const cost = (request: DecisionRequest<DecisionQuestions> | undefined): number => estimateDecisionTokens(request?.state ?? '', (request?.questions ?? {}) as never)
+    const byTokens = await route(deep, 'Expand detail 3a', deepRules, { budget: { inputTokens: cost(firstLevel) + cost(reserve) } })
     expect(byTokens.requests).toHaveLength(3)
     expect(planOf(byTokens).decision.explanation).toContain('its input-token budget was reached')
     expect(planOf(byTokens).decision.budgetStop?.limit).toBe('token-budget')
@@ -516,7 +531,7 @@ describe('decision budget', () => {
 
   test('guard · with no room for even that request, the referents are what was asked about by itself, the first pass and the nodes reached, and nothing further is sent', async () => {
     // N2a was never asked about: its yes is not heard. N3a is in the first pass, and stands for its ancestor N0.
-    const routed = await route(deep, 'Expand detail 3a', { own: { N0: 0.9, N2a: 0.95, N3a: 0.9 }, under: deepRules.under ?? {} }, { budget: { requests: 0 } })
+    const routed = await route(deep, 'Expand detail 3a', { own: { N0: 0.9, N2a: 0.95, N3a: 0.9 },  }, { budget: { requests: 0 } })
     expect(routed.requests).toHaveLength(1)
     expect(unit(routed).targets).toEqual(sections(['N3a']))
     expect(planOf(routed).decision.budgetStop).toEqual({ limit: 'requests', fallback: 'partial', bestFound: [] })
@@ -554,18 +569,29 @@ describe('decision budget', () => {
 
 describe('price guard', () => {
   test('guard · the walk goes on without its reserve when the fallback is what the budget cannot pay for and the level is', async () => {
-    const whole = await route(tripFull, 'Use those recommendations to make a five-day itinerary.', { own: { A: 0.8, B: 0.3 }, together: { G: 0.9 }, under: { brief: 0.9 } })
+    // Two trees: a root with an aside and a line of two. The walk asks about K, the top of the line below the plausible root; its
+    // fallback would ask about M as well.
+    const sc = scene()
+    for (const [root, aside, middle, leaf] of [['R1', 'X', 'K', 'K2'], ['R2', 'Y', 'M', 'M2']] as const) {
+      sc.chain(root, 'root', root).add(root, { chain: root, on: null, label: `step ${root}`, request: `Request ${root}`, answer: `Answer ${root}` })
+      sc.chain(aside, 'branch', aside).add(aside, { chain: aside, on: root, label: `step ${aside}`, request: `Request ${aside}`, answer: `Answer ${aside}` })
+      sc.chain(middle, 'branch', middle)
+      sc.add(middle, { chain: middle, on: root, label: `step ${middle}`, request: `Request ${middle}`, answer: `Answer ${middle}` })
+      sc.add(leaf, { chain: middle, on: middle, label: `step ${leaf}`, request: `Request ${leaf}`, answer: `Answer ${leaf}` })
+    }
+    const rules: Rules = { own: { R1: 0.3, K: 0.9 } }
+    const whole = await route(sc.build(), 'Change step K', rules)
     const level = whole.requests[1]
-    const cost = estimateDecisionTokens(level?.state ?? '', (level?.questions ?? {}) as never)
-    // Room for the level and nothing else: the fallback, a request over the pipeline's whole state text, costs more.
-    const routed = await route(tripFull, 'Use those recommendations to make a five-day itinerary.', { own: { A: 0.8, B: 0.3 }, together: { G: 0.9 }, under: { brief: 0.9 } }, { budget: { inputTokens: cost } })
+    expect(new Set(whole.asked[1])).toEqual(new Set(ids(whole, 's', ['K'])))
+    // Room for the level and nothing else: the fallback, a request about K and M, costs more.
+    const routed = await route(sc.build(), 'Change step K', rules, { budget: { inputTokens: estimateDecisionTokens(level?.state ?? '', (level?.questions ?? {}) as never) } })
     expect(routed.requests).toHaveLength(2)
-    expect(new Set(unit(routed).targets)).toEqual(new Set(sections(['A', 'B'])))
+    expect(unit(routed).targets).toEqual(sections(['K']))
     expect(planOf(routed).decision.explanation).not.toContain('budget was reached')
   })
 
   test('guard · the strategy\'s token budget is what twice the answer\'s price leaves after the pipeline\'s own request', async () => {
-    const rules: Rules = { own: { A: 0.8, B: 0.3 }, together: { G: 0.9 }, under: { brief: 0.9 } }
+    const rules: Rules = { own: { brief: 0.4, A: 0.8, B: 0.3 }, together: { G: 0.9 } }
     const text = 'Use those recommendations to make a five-day itinerary.'
     // Fewer than five completed answers, so the setting's figure is the expected output. An answer expected to be a few tokens long buys less than the pipeline's request costs: nothing further is sent.
     // B is not in the first pass (B2 was built on it), so the walk needs a further request to ask about it.
@@ -593,7 +619,7 @@ describe('price guard', () => {
 
 describe('strategy swap', () => {
   test('swap · the same plan comes out whichever strategy scored the referents, and the pipeline accepts any implementation of the interface', async () => {
-    const rules: Rules = { own: { A: 0.9, B: 0.85 }, several: 0.9, under: { brief: 0.9 } }
+    const rules: Rules = { own: { A: 0.9, B: 0.85 }, several: 0.9 }
     const text = 'Make an itinerary from the neighborhoods and the activities'
     const stub: ReferentStrategy = {
       name: 'stub',
@@ -792,10 +818,10 @@ describe('long runs · start at the trunk base', () => {
   test('trunk · off, every section of the trunk is asked about; on, only its base, and the sections above it ride as one chunk question', async () => {
     const off = await route(trunk, 'Explain how volcanoes form', { relation: 'new' })
     // X and Y, which nothing was built on, are the first pass of every routing.
-    expect(new Set(off.asked[0])).toEqual(new Set([...ids(off, 's', ['T0', 'T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'X', 'Y']), ...ids(off, 'u', ['T9'])]))
+    expect(new Set(off.asked[0])).toEqual(new Set([...ids(off, 's', ['T0', 'T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'X', 'Y'])]))
     const routed = await route(trunk, 'Explain how volcanoes form', { relation: 'new' }, { treeWalk: on })
     expect(routed.requests).toHaveLength(1)
-    expect(new Set(routed.asked[0])).toEqual(new Set([...ids(routed, 's', ['T9', 'X', 'Y']), ...ids(routed, 'u', ['T9']), `m_c${routed.numberOf.get('T0') ?? '?'}_${routed.numberOf.get('T8') ?? '?'}`]))
+    expect(new Set(routed.asked[0])).toEqual(new Set([...ids(routed, 's', ['T9', 'X', 'Y']), `m_c${routed.numberOf.get('T0') ?? '?'}_${routed.numberOf.get('T8') ?? '?'}`]))
   })
 
   test('trunk · a reply to a section in the middle of the trunk is resolved exactly: its chunk is relevant, so its sections are asked about one by one', async () => {
@@ -817,7 +843,7 @@ describe('long runs · start at the trunk base', () => {
   })
 
   test('trunk · a correction still keeps the ancestor it revises, found through the chunk above the base', async () => {
-    const routed = await route(trunk, 'Actually, question 0 was about four days, not five', { own: { T0: 0.9, X: 0.85 }, under: { T9: 0.9 }, corrective: 0.95 }, { treeWalk: on })
+    const routed = await route(trunk, 'Actually, question 0 was about four days, not five', { own: { T0: 0.9, X: 0.85 }, corrective: 0.95 }, { treeWalk: on })
     expect(planOf(routed).units).toEqual([])
     expect(new Set(planOf(routed).revisions[0]?.targetDirectiveIds)).toEqual(new Set([sceneIds.directive('T0'), sceneIds.directive('X')]))
   })
@@ -840,13 +866,17 @@ describe('long runs · hop between branch points', () => {
   const on: Partial<TreeWalkSettings> = { hopBetweenBranchPoints: true }
 
   test('hops · off, every section of a branch is asked about; on, only the end of each run, and the sections skipped as one chunk question per run', async () => {
-    const off = await route(runs, 'Change variant P', { own: { P: 0.9 }, under: { brief: 0.9, A4: 0.9 } })
+    // The brief and the end of the run P was built on are plausible: the line the walk descends along.
+    const rules: Rules = { own: { brief: 0.3, A4: 0.3, P: 0.9 } }
+    const off = await route(runs, 'Change variant P', rules)
     // The ends of the lines (P, Q and B3) were asked about in the first pass, in the pipeline's request.
     expect(new Set(ownIds(off, 0))).toEqual(new Set(ids(off, 's', ['brief', 'P', 'Q', 'B3'])))
-    expect(new Set(off.asked[1])).toEqual(new Set([...ids(off, 's', ['A', 'A1', 'A2', 'A3', 'A4', 'B', 'B1', 'B2']), ...ids(off, 'u', ['A4'])]))
-    const routed = await route(runs, 'Change variant P', { own: { P: 0.9 }, under: { brief: 0.9, A4: 0.9 } }, { treeWalk: on })
+    expect(new Set(off.asked[1])).toEqual(new Set(ids(off, 's', ['A', 'A1', 'A2', 'A3', 'A4', 'B', 'B1', 'B2'])))
+    const routed = await route(runs, 'Change variant P', rules, { treeWalk: on })
     const chunk = (from: string, to: string) => `m_c${routed.numberOf.get(from) ?? '?'}_${routed.numberOf.get(to) ?? '?'}`
-    expect(new Set(routed.asked[1])).toEqual(new Set([...ids(routed, 's', ['A4']), ...ids(routed, 'u', ['A4']), chunk('A', 'A3'), chunk('B', 'B2')]))
+    expect(new Set(routed.asked[1])).toEqual(new Set([...ids(routed, 's', ['A4']), chunk('A', 'A3'), chunk('B', 'B2')]))
+    // A part of a run is shown with what the run was built on, as context.
+    expect(routed.requests[1]?.state).toContain(`S${routed.numberOf.get('A')} to S${routed.numberOf.get('A3')} are consecutive answers of one line of work that builds on S${routed.numberOf.get('brief')}`)
     // The lines of the skipped sections are not sent.
     expect(routed.requests[1]?.state).not.toContain('"press 2"')
     // P and Q were asked about in the first pass: no request is needed below the hop.
@@ -855,7 +885,7 @@ describe('long runs · hop between branch points', () => {
   })
 
   test('hops · a reply to a section in the middle of a skipped run is resolved exactly, never placed on the end of the hop', async () => {
-    const routed = await route(runs, 'Redo pricing step 1', { own: { B1: 0.9 }, under: { brief: 0.9 } }, { treeWalk: on })
+    const routed = await route(runs, 'Redo pricing step 1', { own: { brief: 0.3, B1: 0.9 } }, { treeWalk: on })
     expect(routed.requests).toHaveLength(3)
     // The run's sections, and its end again beside them.
     expect(new Set(routed.asked[2])).toEqual(new Set(ids(routed, 's', ['B', 'B1', 'B2', 'B3'])))
@@ -866,7 +896,7 @@ describe('long runs · hop between branch points', () => {
   test('hops · the end of a hop that looked relevant on its own is asked about again beside the run it ends: the reply goes to the section it names', async () => {
     // Asked about before the run it ends is looked into (here in the first pass), B3 scores 0.8 for a reply to B1; beside the run it does not.
     // B3 is built on B1, so its first score would have taken the reply.
-    const routed = await route(runs, 'Redo pricing step 1', { own: { B1: 0.9 }, alone: { B3: 0.8 }, under: { brief: 0.9 } }, { treeWalk: on })
+    const routed = await route(runs, 'Redo pricing step 1', { own: { brief: 0.3, B1: 0.9 }, alone: { B3: 0.8 } }, { treeWalk: on })
     expect(routed.asked[0]).toContain(`m_s${routed.numberOf.get('B3') ?? '?'}`)
     expect(routed.asked[2]).toContain(`m_s${routed.numberOf.get('B3') ?? '?'}`)
     expect(unit(routed).targets).toEqual(sections(['B1']))
@@ -874,7 +904,7 @@ describe('long runs · hop between branch points', () => {
   })
 
   test('hops · when the budget ends before the skipped run is looked into, the walk falls back to asking every listed section in one request: still resolved exactly', async () => {
-    const routed = await route(runs, 'Redo pricing step 1', { own: { B1: 0.9 }, under: { brief: 0.9 } }, { treeWalk: on, budget: { requests: 1 } })
+    const routed = await route(runs, 'Redo pricing step 1', { own: { brief: 0.3, B1: 0.9 } }, { treeWalk: on, budget: { requests: 1 } })
     // The walk keeps room for its fallback, so with one request left it asks the one-pass questions instead of hopping.
     expect(routed.requests).toHaveLength(2)
     expect(chunkIds(routed, 1)).toEqual([])
@@ -884,7 +914,7 @@ describe('long runs · hop between branch points', () => {
 
   test('hops · a relevant chunk of a skipped run is reason to descend below the end of the hop', async () => {
     // Nothing but the chunk says the line A…A4 is relevant; the walk still looks below A4 and inside the run.
-    const routed = await route(runs, 'Compare press step 2 with variant Q', { own: { A2: 0.9, Q: 0.9 }, several: 0.9, under: { brief: 0.9 } }, { treeWalk: on })
+    const routed = await route(runs, 'Compare press step 2 with variant Q', { own: { brief: 0.3, A2: 0.9, Q: 0.9 }, several: 0.9 }, { treeWalk: on })
     expect(new Set(routed.asked[2])).toEqual(new Set(ids(routed, 's', ['A', 'A1', 'A2', 'A3', 'A4'])))
     // Q was built on A2: the nearer section stands for its ancestor.
     expect(unit(routed).targets).toEqual(sections(['Q']))
@@ -893,14 +923,14 @@ describe('long runs · hop between branch points', () => {
 
 describe.each(COMBINATIONS)('long runs · %s', (_name, treeWalk) => {
   test('C19 · J builds on the group as a whole: both siblings are referents and J continues from the join-back', async () => {
-    const routed = await route(tripClosed, 'Use those recommendations to make a five-day itinerary.', { own: { A: 0.77, B: 0.3, brief: 0.5 }, several: 0.4, together: { G: 0.86 }, under: { brief: 0.9 } }, { treeWalk })
+    const routed = await route(tripClosed, 'Use those recommendations to make a five-day itinerary.', { own: { A: 0.77, B: 0.3, brief: 0.5 }, several: 0.4, together: { G: 0.86 } }, { treeWalk })
     expect(new Set(unit(routed).targets)).toEqual(new Set(sections(['A', 'B'])))
     expect(unit(routed).placement).toEqual({ kind: 'continue', buildsOn: { kind: 'sibling-group', groupId: sceneIds.group('G') } })
     expect(unit(routed).prerequisites).toEqual([])
   })
 
   test('C9 · J needs both running siblings: it depends on the whole group, never on a subset', async () => {
-    const routed = await route(tripRunning, 'Use those recommendations to make a five-day itinerary.', { relation: 'dependent', own: { A: 0.77, B: 0.2 }, together: { G: 0.86 }, under: { brief: 0.9 } }, { treeWalk })
+    const routed = await route(tripRunning, 'Use those recommendations to make a five-day itinerary.', { relation: 'dependent', own: { A: 0.77, B: 0.2 }, together: { G: 0.86 } }, { treeWalk })
     expect(new Set(unit(routed).targets)).toEqual(new Set(sections(['A', 'B'])))
     expect(unit(routed).placement).toEqual({ kind: 'continue', buildsOn: { kind: 'sibling-group', groupId: sceneIds.group('G') } })
     expect(unit(routed).prerequisites).toEqual([{ kind: 'sibling-group', groupId: sceneIds.group('G') }])
@@ -913,7 +943,7 @@ describe.each(COMBINATIONS)('long runs · %s', (_name, treeWalk) => {
     s.group('G', { base: 'trip', start: 'T7', members: ['A', 'B'], open: false })
     s.chain('a2', 'branch', 'a2')
     ;['A1', 'A2', 'A3', 'A4'].forEach((h, i, all) => s.add(h, { chain: 'a2', on: i === 0 ? 'A' : (all[i - 1] ?? null), label: `refine ${i}`, request: `Refine ${i}`, answer: `Refined ${h}` }))
-    const routed = await route(s.build(), 'Use those recommendations to make a five-day itinerary.', { own: { A: 0.77, B: 0.3 }, together: { G: 0.86 }, under: { T7: 0.9 } }, { treeWalk })
+    const routed = await route(s.build(), 'Use those recommendations to make a five-day itinerary.', { own: { A: 0.77, B: 0.3 }, together: { G: 0.86 } }, { treeWalk })
     expect(new Set(unit(routed).targets)).toEqual(new Set(sections(['A', 'B'])))
     expect(unit(routed).placement).toEqual({ kind: 'continue', buildsOn: { kind: 'sibling-group', groupId: sceneIds.group('G') } })
   })
@@ -921,18 +951,18 @@ describe.each(COMBINATIONS)('long runs · %s', (_name, treeWalk) => {
   test('referents · a reply to a section in the middle of a run is resolved exactly, in the trunk and in a branch', async () => {
     const inTrunk = await route(trunk, 'Make the answer to question 4 shorter', { own: { T4: 0.9 } }, { treeWalk })
     expect(unit(inTrunk).targets).toEqual(sections(['T4']))
-    const inBranch = await route(runs, 'Redo press step 2', { own: { A2: 0.9 }, under: { brief: 0.9 } }, { treeWalk })
+    const inBranch = await route(runs, 'Redo press step 2', { own: { brief: 0.3, A2: 0.9 } }, { treeWalk })
     expect(unit(inBranch).targets).toEqual(sections(['A2']))
   })
 
   test('referents · a correction keeps the ancestor it revises beside its relevant descendant', async () => {
-    const routed = await route(runs, 'Actually, the launch is in March, not May', { own: { brief: 0.9, A2: 0.85 }, under: { brief: 0.9 }, corrective: 0.95 }, { treeWalk })
+    const routed = await route(runs, 'Actually, the launch is in March, not May', { own: { brief: 0.9, A2: 0.85 }, corrective: 0.95 }, { treeWalk })
     expect(planOf(routed).units).toEqual([])
     expect(new Set(planOf(routed).revisions[0]?.targetDirectiveIds)).toEqual(new Set([sceneIds.directive('brief'), sceneIds.directive('A2')]))
   })
 
   test('guard · the budget holds: no request beyond it, and the walk falls back deterministically', async () => {
-    for (const [sc, rules] of [[runs, { own: { P: 0.9, B1: 0.9 }, several: 0.9, under: { brief: 0.9, A4: 0.9 } }], [flat(120), { own: { T30: 0.9 } }]] as const) {
+    for (const [sc, rules] of [[runs, { own: { brief: 0.3, A4: 0.3, P: 0.9, B1: 0.9 }, several: 0.9 }], [flat(120), { own: { T30: 0.9 } }]] as const) {
       for (const budget of [{ requests: 0 }, { requests: 1 }, { questions: 4 }, { inputTokens: 700 }]) {
         const first = await route(sc, 'Look at that again', rules, { treeWalk, budget })
         const again = await route(sc, 'Look at that again', rules, { treeWalk, budget })
@@ -943,6 +973,204 @@ describe.each(COMBINATIONS)('long runs · %s', (_name, treeWalk) => {
         expect(again.outcome).toEqual(first.outcome)
       }
     }
+  })
+})
+
+// ───────────────────────────── start candidates ─────────────────────────────
+
+describe('start candidates', () => {
+  /** A trunk of ten that splits into X (four answers) and Y (four answers). */
+  const forked = (() => {
+    const s = scene().chain('chat', 'root', 'chat')
+    for (let i = 0; i < 10; i++) s.add(`T${i}`, { chain: 'chat', on: i === 0 ? null : `T${i - 1}`, label: `turn ${i}`, request: `Question ${i}`, answer: `Answer ${i}` })
+    for (const side of ['X', 'Y']) {
+      s.chain(side, 'branch', side)
+      for (let i = 0; i < 4; i++) s.add(`${side}${i}`, { chain: side, on: i === 0 ? 'T9' : `${side}${i - 1}`, label: `side ${side}${i}`, request: `Branch ${side} step ${i}`, answer: `Answer ${side}${i}` })
+    }
+    return s.build()
+  })()
+
+  test('candidates · a candidate is where the walk starts instead of the root above it: its run from the top down to it rides in the routing request, and the trunk is not asked about', async () => {
+    const routed = await route(forked, 'Redo step 1 of branch X', { own: { X1: 0.9 } }, { candidates: ['X2'] })
+    // X0 … X2, each by itself, with the first pass (X3 and Y3). Nothing of the trunk: X2's context holds it.
+    expect(new Set(routed.asked[0])).toEqual(new Set(ids(routed, 's', ['X0', 'X1', 'X2', 'X3', 'Y3'])))
+    expect(routed.requests).toHaveLength(1)
+    expect(unit(routed).targets).toEqual(sections(['X1']))
+    expect(unit(routed).placement).toEqual({ kind: 'continue', buildsOn: { kind: 'node', nodeId: sceneIds.node('X1') } })
+    // With no candidate the walk starts at the root: the trunk is asked about, and nothing below it, because it is not plausible.
+    const plain = await route(forked, 'Redo step 1 of branch X', { own: { X1: 0.9 } })
+    expect(new Set(plain.asked[0])).toEqual(new Set(ids(plain, 's', ['T0', 'T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'X3', 'Y3'])))
+    expect(unit(plain).targets).toEqual([])
+  })
+
+  test('candidates · a candidate is a place to look, never a referent: one the decision model does not confirm is not a target', async () => {
+    const routed = await route(forked, 'Explain how volcanoes form', { relation: 'new' }, { candidates: ['X2', 'Y1'] })
+    expect(unit(routed).targets).toEqual([])
+    expect(unit(routed).placement).toEqual({ kind: 'new-chain' })
+  })
+
+  test('candidates · a start that is not plausible hands over to the root it displaced, in a further request that does not ask again', async () => {
+    // The candidate is in X; the message is about the trunk and Y.
+    const routed = await route(forked, 'Redo step 1 of branch Y', { own: { T9: 0.3, Y1: 0.9 } }, { candidates: ['X2'] })
+    expect(new Set(routed.asked[0])).toEqual(new Set(ids(routed, 's', ['X0', 'X1', 'X2', 'X3', 'Y3'])))
+    // The root: its trunk. Then, the trunk being plausible, the runs below it: Y, and of X only what was not asked about.
+    expect(new Set(routed.asked[1])).toEqual(new Set(ids(routed, 's', ['T0', 'T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9'])))
+    expect(new Set(routed.asked[2])).toEqual(new Set(ids(routed, 's', ['Y0', 'Y1', 'Y2'])))
+    expect(unit(routed).targets).toEqual(sections(['Y1']))
+    const all = routed.asked.flat()
+    expect(new Set(all).size).toBe(all.length)
+  })
+
+  test('candidates · when the message refers to several sections, the root a plausible start displaced is started too: a second referent in another branch is found', async () => {
+    const rules: Rules = { own: { T9: 0.3, X1: 0.9, Y1: 0.9 } }
+    const one = await route(forked, 'Compare step 1 of branch X with step 1 of branch Y', { ...rules, several: 0.2 }, { candidates: ['X2'] })
+    expect(unit(one).targets).toEqual(sections(['X1']))
+    expect(one.requests).toHaveLength(1)
+    const both = await route(forked, 'Compare step 1 of branch X with step 1 of branch Y', { ...rules, several: 0.9 }, { candidates: ['X2'] })
+    expect(new Set(unit(both).targets)).toEqual(new Set(sections(['X1', 'Y1'])))
+    expect(unit(both).placement.kind).toBe('join-chain')
+  })
+
+  test('candidates · a candidate older than the routing request lists is asked about in the first further request, with what it was built on as context', async () => {
+    const sc = flat(200)
+    const routed = await route(sc, 'Make the answer to question 40 shorter', { own: { T40: 0.9 } }, { candidates: ['T40'] })
+    // The run from its top down to T40 is 41 answers: searched for its last relevant one, then that part asked about one by one.
+    expect(routed.requests).toHaveLength(3)
+    const named = Object.values(routed.requests[1]?.questions ?? {}).flatMap((q) => [...q.instructions.matchAll(/\("Question (\d+)"\)/g)].map((m) => Number(m[1])))
+    expect(Math.max(...named)).toBe(40)
+    expect(unit(routed).targets).toEqual(sections(['T40']))
+    // Without the candidate the whole run of 176 older answers is searched: more is named in the first further request.
+    const plain = await route(sc, 'Make the answer to question 40 shorter', { own: { T40: 0.9 } })
+    expect(furtherTokens(routed)).toBeLessThan(furtherTokens(plain))
+  })
+
+  test('candidates · only answer sections of this conversation are accepted, at most twelve, and a source that fails is a source with nothing to say', async () => {
+    const asked: CandidateQuery[] = []
+    const source: CandidateSource = {
+      candidates: async (query) => {
+        asked.push(query)
+        return [sceneIds.section('nowhere'), sceneIds.section('X2'), sceneIds.section('X2')]
+      },
+    }
+    const routed = await route(forked, 'Redo step 1 of branch X', { own: { X1: 0.9 } }, { candidates: source })
+    expect(unit(routed).targets).toEqual(sections(['X1']))
+    // The source is asked once per unit, with the unit's text and the conversation's answer sections.
+    expect(asked.map((q) => ({ key: q.unit.key, text: q.text, sections: q.sections.length }))).toEqual([{ key: 'm', text: 'Redo step 1 of branch X', sections: 18 }])
+    const failing: CandidateSource = { candidates: async () => Promise.reject(new Error('retrieval is down')) }
+    const plain = await route(forked, 'Redo step 1 of branch X', { own: { X1: 0.9 } })
+    const failed = await route(forked, 'Redo step 1 of branch X', { own: { X1: 0.9 } }, { candidates: failing })
+    expect(failed.requests).toEqual(plain.requests)
+    expect(failed.outcome).toEqual(plain.outcome)
+    // One pass does not walk: candidates change nothing for it.
+    const onePass = await route(forked, 'Redo step 1 of branch X', { own: { X1: 0.9 } }, { strategy: 'one-pass' })
+    expect((await route(forked, 'Redo step 1 of branch X', { own: { X1: 0.9 } }, { strategy: 'one-pass', candidates: ['X2'] })).requests).toEqual(onePass.requests)
+    // An explicit reply target is used as given: the source is not asked.
+    expect(asked).toHaveLength(1)
+  })
+
+  test('candidates · no source: the start set is the roots, request for request what a source with nothing to say gives', async () => {
+    const rules: Rules = { own: { brief: 0.4, A: 0.8, B: 0.3 }, together: { G: 0.9 } }
+    const plain = await route(tripFull, 'Use those recommendations to make a five-day itinerary.', rules)
+    const empty = await route(tripFull, 'Use those recommendations to make a five-day itinerary.', rules, { candidates: [] })
+    expect(empty.requests).toEqual(plain.requests)
+    expect(empty.outcome).toEqual(plain.outcome)
+  })
+
+  test('C19 · a candidate that is one sibling still lands J on the full sibling group: the join-back is asked about beside its member', async () => {
+    // A is the candidate. B was continued, so neither sibling is in the first pass and the brief is not started.
+    const sc = trip()
+      .chain('b2', 'branch', 'cheaper activities')
+      .add('B2', { chain: 'b2', on: 'B', label: 'cheaper activities', request: 'Give me three cheaper alternatives', answer: 'Free shrines.', consumed: ['brief', 'B'] })
+      .chain('a2', 'branch', 'quieter neighborhoods')
+      .add('A2', { chain: 'a2', on: 'A', label: 'quieter neighborhoods', request: 'Which is quietest?', answer: 'Higashiyama.', consumed: ['brief', 'A'] })
+      .build()
+    const routed = await route(sc, 'Use those recommendations to make a five-day itinerary.', { own: { A: 0.77, B: 0.3 }, several: 0.4, together: { G: 0.86 } }, { candidates: ['A'] })
+    expect(routed.asked[0]).toContain('m_j1')
+    expect(routed.asked[0]).not.toContain(`m_s${routed.numberOf.get('brief') ?? '?'}`)
+    expect(new Set(unit(routed).targets)).toEqual(new Set(sections(['A', 'B'])))
+    expect(unit(routed).placement).toEqual({ kind: 'continue', buildsOn: { kind: 'sibling-group', groupId: sceneIds.group('G') } })
+  })
+})
+
+// ───────────────────────────── the decision-backed operations ─────────────────────────────
+
+describe('operations over the decision provider', () => {
+  const opsFor = (sc: Scene) => {
+    const input = corpusInput({ id: 'ops', covers: ['targets'], note: 'operations', scene: sc, text: 'Make that shorter', expect: {} })
+    const sectionsOfInput = numberedAnswerSections(input, supply(input, []))
+    const tree = buildTree({ sections: sectionsOfInput, candidates: input.candidates })
+    const request: ReferentRequest = {
+      units: [UNIT],
+      sections: sectionsOfInput,
+      candidates: input.candidates,
+      stateText: '',
+      subject: 'New message: "Make that shorter"',
+      relevance: { clear: 0.7, floor: 0.25 },
+      useSummaryIfAvailable: false,
+      decisionContext: () => null,
+      treeWalk: DEFAULT_SETTINGS.routing.treeWalk,
+      startCandidates: {},
+    }
+    const node = (h: string) => {
+      const found = tree.bySection.get(sceneIds.section(h))
+      if (!found) throw new Error(h)
+      return found
+    }
+    return { ops: createDecisionOperations({ request, tree, gate: null, ask: null }), tree, node }
+  }
+  const UNIT = { key: 'm', name: 'the new message' }
+
+  test('operations · Point, Group, Segment and Several are one yes/no question each; a Segment names its sections by their requests and confirms nothing', () => {
+    const { ops, tree, node } = opsFor(tripFull)
+    const group = tree.byGroup.get(sceneIds.group('G'))
+    if (!group) throw new Error('G')
+    const questions = ops.questions([probe.several(UNIT), probe.point(UNIT, node('A')), probe.group(UNIT, group), probe.segment(UNIT, [node('B'), node('B2')])])
+    expect(Object.keys(questions)).toEqual(['m_several', `m_s${node('A').n}`, 'm_j1', `m_c${node('B').n}_${node('B2').n}`])
+    expect(questions[`m_c${node('B').n}_${node('B2').n}`]?.instructions).toContain(`S${node('B').n} ("Suggest rainy-day activities"), S${node('B2').n} ("Give me three cheaper alternatives")`)
+    // Nothing is known before a request is answered; the estimate is neutral: there is none.
+    expect(ops.known(probe.point(UNIT, node('A')))).toBeNull()
+    expect(ops.estimate(UNIT, [node('A')])).toBeNull()
+    expect(ops.describe(node('A'))).toContain('"neighborhoods": request "Suggest neighborhoods to stay in"')
+    expect(ops.rides(probe.point(UNIT, node('A')))).toBe(true)
+    // What a probe adds to a round: a Point its line and its question, a Segment its question alone.
+    expect(ops.size(probe.point(UNIT, node('A')))).toBeGreaterThan(ops.size(probe.several(UNIT)))
+  })
+
+  test('operations · two parts of a run that share their first and last section are different questions', () => {
+    const { ops, node } = opsFor(flat(30))
+    const whole = probe.segment(UNIT, [node('T1'), node('T2'), node('T3'), node('T4')])
+    const thinner = probe.segment(UNIT, [node('T1'), node('T4')])
+    const questions = ops.questions([whole, thinner, whole])
+    expect(Object.keys(questions)).toHaveLength(2)
+  })
+
+  test('operations · a section asked about by itself is shown with the nearest answers it was built on; a part of a run with the first answers of the run', async () => {
+    // T40 is a start candidate: its run is searched from the top down to it, then the rest of the run.
+    const routed = await route(flat(200), 'Make the answer to question 40 shorter', { own: { T40: 0.9 } }, { candidates: ['T40'] })
+    const n = (h: string) => routed.numberOf.get(h) ?? '?'
+    const points = routed.requests[2]?.state ?? ''
+    const first = Math.min(...ownIds(routed, 2).map((id) => Number(id.slice(3))))
+    const firstHandle = [...routed.numberOf].find(([, number]) => number === first)?.[0] ?? ''
+    const before = (steps: number) => `T${Number(firstHandle.slice(1)) - steps}`
+    // The sections of the opened part follow one another; the first is shown with the two answers before it, by their requests.
+    expect(points).toContain('Where they come from, for context only')
+    expect(points).toContain(`S${first} builds on S${n(before(1))} ("Question ${before(1).slice(1)}"), which builds on S${n(before(2))} ("Question ${before(2).slice(1)}").`)
+    expect(points).toContain(`S${first} to S${n('T40')} are consecutive answers of one line of work.`)
+    // The answers named as context are not asked about and their lines are not sent.
+    expect(points).not.toContain(`S${n(before(1))}. "`)
+    expect(Object.keys(routed.requests[2]?.questions ?? {})).not.toContain(`m_s${n(before(1))}`)
+    // The parts of the rest of the run, in the same request: the question is about the part, the top of the run is context.
+    expect(points).toContain(`are consecutive answers of one line of work that starts with S${n('T0')} ("Question 0"), S${n('T1')} ("Question 1").`)
+    // A part that starts at the top of a run that was built on nothing needs no such line.
+    expect(routed.requests[1]?.state).not.toContain('Where they come from')
+  })
+
+  test('operations · a section whose line shows a stored summary is not shown its ancestry again', async () => {
+    const rules: Rules = { own: { brief: 0.4, A: 0.8, B: 0.3 }, together: { G: 0.9 } }
+    const routed = await route(tripFull, 'Use those recommendations to make a five-day itinerary.', rules, { summaries: summarised(['A']) })
+    const state = routed.requests[1]?.state ?? ''
+    expect(state).toContain(`S${routed.numberOf.get('B')} builds on S${routed.numberOf.get('brief')} ("${BRIEF}").`)
+    expect(state).not.toContain(`S${routed.numberOf.get('A')} and S${routed.numberOf.get('B')} build on`)
   })
 })
 
@@ -975,7 +1203,7 @@ const fullChain = (nodeId: NodeId): DecisionContext => ({ kind: 'full-chain', no
 
 describe.each(STRATEGIES)('context summaries, referents by %s', (strategy) => {
   const J_TEXT = 'Use those recommendations to make a five-day itinerary.'
-  const rules: Rules = { own: { A: 0.77, B: 0.3, brief: 0.5 }, several: 0.4, together: { G: 0.86 }, under: { brief: 0.9 } }
+  const rules: Rules = { own: { A: 0.77, B: 0.3, brief: 0.5 }, several: 0.4, together: { G: 0.86 } }
 
   test('summaries · with a provider that returns full chains, turning the setting on changes no request and no plan', async () => {
     const off = await route(tripFull, J_TEXT, rules, { strategy })

@@ -1090,6 +1090,7 @@ export const ROUTING_CORPUS: readonly CorpusExample[] = [
     scene: longConversation,
     text: 'Swap days 2 and 3 of the Kyoto itinerary',
     beyondWindow: true,
+    below: ['brief'],
     expect: { composition: 'atomic', parts: [{ kind: 'unit', targets: ['J'], placement: { continue: 'J' } }] },
   },
   {
@@ -1149,6 +1150,7 @@ export const ROUTING_CORPUS: readonly CorpusExample[] = [
     note: '05: a reply to a section in the middle of a run of only children targets that section, not the end of the run; the work branches from it.',
     scene: deepRuns,
     text: 'Make the day 2 plan less packed',
+    below: ['brief'],
     expect: { composition: 'atomic', parts: [{ kind: 'unit', targets: ['D2'], placement: { continue: 'D2' } }] },
   },
   {
@@ -1165,6 +1167,7 @@ export const ROUTING_CORPUS: readonly CorpusExample[] = [
     note: '05: a reply to a section inside the other branch\u2019s run targets it; the day plans are not walked into for it.',
     scene: deepRuns,
     text: 'Which of those hostels has private rooms with a bathroom?',
+    below: ['brief'],
     expect: { composition: 'atomic', parts: [{ kind: 'unit', targets: ['H2'], placement: { continue: 'H2' } }] },
   },
 ]

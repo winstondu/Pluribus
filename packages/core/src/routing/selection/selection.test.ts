@@ -95,9 +95,9 @@ async function route(
   text: string,
   targets: readonly string[],
   routing: Partial<RoutingSettings> = {},
-  options: { readonly script?: SelectorScript; readonly onRecord?: StrategySelectionRecord | null; readonly inject?: StrategySelector; /** False when the routing is expected to miss the label. */ readonly asLabelled?: boolean } = {},
+  options: { readonly script?: SelectorScript; readonly onRecord?: StrategySelectionRecord | null; readonly inject?: StrategySelector; /** False when the routing is expected to miss the label. */ readonly asLabelled?: boolean; /** Sections on the line above the targets: plausible, not targets. */ readonly context?: readonly string[] } = {},
 ): Promise<Routed> {
-  const example: CorpusExample = { id: 'test', covers: ['targets'], note: 'a test scene', scene: sc, text, expect: { parts: [{ kind: 'unit', targets }] } }
+  const example: CorpusExample = { id: 'test', covers: ['targets'], note: 'a test scene', scene: sc, text, expect: { parts: [{ kind: 'unit', targets }], ...(options.context ? { context: options.context } : {}) } }
   const settings: Settings = { ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, strategySelection: 'off', ...routing } }
   const input: RoutingInput = { ...corpusInput(example, settings), strategySelectionOnRecord: options.onRecord ?? null }
   const oracle = oracleDecisionProvider(example, input)
@@ -285,24 +285,25 @@ describe('strategy selection in the pipeline', () => {
 
   test('DA2 · a strategy selector only chooses: the routing is, request for request and in its plan, the one obtained when the same strategy and switches are configured directly', async () => {
     const cases = [
-      ['one pass, for a conversation inside the window', trip(0), J, ['A', 'B'], { referentStrategy: 'one-pass' }, { strategy: ['one-pass', 0.9] }],
-      ['the tree walk, for answers beyond the window', trip(30), J, ['A', 'B'], { referentStrategy: 'tree-walk' }, { strategy: ['tree-walk', 0.9] }],
-      ['the tree walk from the trunk base, for a long trunk that has split', trunkThatSplits(30), 'Make the answer to question 3 shorter', ['T3'], { referentStrategy: 'tree-walk', treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, startAtTrunkBase: true } }, { strategy: ['tree-walk', 0.9], trunk: 0.9 }],
-      ['the tree walk with hops, for a long branch run', longBranches(20), 'Redo press step 2', ['A2'], { referentStrategy: 'tree-walk', treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, hopBetweenBranchPoints: true } }, { strategy: ['tree-walk', 0.9], hops: 0.9 }],
+      ['one pass, for a conversation inside the window', trip(0), J, ['A', 'B'], { referentStrategy: 'one-pass' }, { strategy: ['one-pass', 0.9] }, []],
+      ['the tree walk, for answers beyond the window', trip(30), J, ['A', 'B'], { referentStrategy: 'tree-walk' }, { strategy: ['tree-walk', 0.9] }, []],
+      ['the tree walk from the trunk base, for a long trunk that has split', trunkThatSplits(30), 'Make the answer to question 3 shorter', ['T3'], { referentStrategy: 'tree-walk', treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, startAtTrunkBase: true } }, { strategy: ['tree-walk', 0.9], trunk: 0.9 }, []],
+      ['the tree walk with hops, for a long branch run', longBranches(20), 'Redo press step 2', ['A2'], { referentStrategy: 'tree-walk', treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, hopBetweenBranchPoints: true } }, { strategy: ['tree-walk', 0.9], hops: 0.9 }, ['brief']],
+      // The last: the brief above the run is plausible, which is what the walk descends on.
     ] as const
-    for (const [name, sc, text, targets, configured, script] of cases) {
-      const direct = await route(sc, text, targets, { ...configured, strategySelection: 'off' })
+    for (const [name, sc, text, targets, configured, script, context] of cases) {
+      const direct = await route(sc, text, targets, { ...configured, strategySelection: 'off' }, { context })
       expect(selectionOf(direct), name).toBeNull()
       // Configured the other way round, so that the result can only come from the selector.
       const opposite: Partial<RoutingSettings> = configured.referentStrategy === 'one-pass' ? { referentStrategy: 'tree-walk' } : { referentStrategy: 'one-pass' }
       // By the rules: no request of its own, so every request is the routing's.
-      const byRules = await route(sc, text, targets, { ...opposite, strategySelection: 'rules' })
+      const byRules = await route(sc, text, targets, { ...opposite, strategySelection: 'rules' }, { context })
       expect(selectionOf(byRules)?.selector, name).toBe('rules')
       expect(byRules.requests, name).toEqual(direct.requests)
       expect(placed(byRules), name).toEqual(placed(direct))
       expect(planOf(byRules).decision.questions, name).toEqual(planOf(direct).decision.questions)
       // By the decision model: its one request about the shape, and after it the same requests and the same plan.
-      const byModel = await route(sc, text, targets, { ...opposite, strategySelection: 'decision-model' }, { script })
+      const byModel = await route(sc, text, targets, { ...opposite, strategySelection: 'decision-model' }, { script, context })
       expect(selectionOf(byModel), name).toMatchObject({ selector: 'decision-model', fallback: null })
       expect(byModel.selector, name).toHaveLength(1)
       expect(byModel.routing, name).toEqual(direct.requests)

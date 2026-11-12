@@ -75,6 +75,21 @@ export type {
   UnitReferents,
 } from './referent-strategy'
 export type {
+  CandidateQuery,
+  CandidateSource,
+  GroupNode,
+  GroupProbe,
+  PointProbe,
+  Probe,
+  ProbeRoundResult,
+  ReferentNode,
+  ReferentOperations,
+  ReferentTree,
+  SectionNode,
+  SegmentProbe,
+  SeveralProbe,
+} from './referent-operations'
+export type {
   ContextChain,
   ContextSummariser,
   ContextSummary,

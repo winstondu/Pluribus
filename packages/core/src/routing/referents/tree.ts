@@ -1,5 +1,5 @@
 import type { NodeId, SectionId, SiblingGroupId } from '@committee/protocol'
-import type { CandidateGroup, CandidateWork, ReferentRequest, ReferentSection } from '../../ports'
+import type { CandidateGroup, CandidateWork, GroupNode, ReferentNode, ReferentRequest, ReferentTree, SectionNode } from '../../ports'
 
 /**
  * The context tree a referent strategy reads (01 · "Context ancestry"),
@@ -16,37 +16,8 @@ import type { CandidateGroup, CandidateWork, ReferentRequest, ReferentSection } 
  * - A join chain appears under its first parent only: the candidates carry
  *   one starting node per exchange.
  */
-export type TreeNode = SectionNode | GroupNode
-
-interface NodeBase {
-  /** `s:<sectionId>` or `g:<groupId>`. */
-  readonly key: string
-  parent: TreeNode | null
-  readonly children: TreeNode[]
-}
-
-export interface SectionNode extends NodeBase {
-  readonly kind: 'section'
-  readonly n: number
-  readonly entry: ReferentSection
-}
-
-export interface GroupNode extends NodeBase {
-  readonly kind: 'group'
-  /** Its number in question IDs: 1-based position among the supplied groups. */
-  readonly index: number
-  readonly group: CandidateGroup
-  /** Members that have answer sections, in submission order. Two or more. */
-  readonly members: SectionNode[]
-}
-
-export interface ReferentTree {
-  readonly roots: readonly TreeNode[]
-  /** Every node, parents before children, sections in `n` order. */
-  readonly nodes: readonly TreeNode[]
-  readonly bySection: ReadonlyMap<SectionId, SectionNode>
-  readonly byGroup: ReadonlyMap<SiblingGroupId, GroupNode>
-}
+export type TreeNode = ReferentNode
+export type { GroupNode, ReferentTree, SectionNode }
 
 export function buildTree(request: Pick<ReferentRequest, 'sections' | 'candidates'>): ReferentTree {
   const { candidates } = request
@@ -143,17 +114,27 @@ export function rank(node: TreeNode): number {
   return node.kind === 'section' ? node.n : Math.max(...node.members.map((m) => m.n)) + 0.5
 }
 
+/** The nodes directly above a node: its parent, and for a group every member (the join-back is a child of all of them). */
+function above(node: TreeNode): TreeNode[] {
+  const up: TreeNode[] = node.kind === 'group' ? [...node.members] : []
+  if (node.parent) up.push(node.parent)
+  return up
+}
+
 /** Every ancestor of a node. A group's members are its ancestors too: the join-back is a child of all of them. */
 export function ancestorsOf(node: TreeNode): Set<TreeNode> {
+  const out = ancestorsOfAll([node])
+  out.delete(node)
+  return out
+}
+
+/** Every ancestor of any of the nodes, each visited once however long the lines are. */
+export function ancestorsOfAll(nodes: Iterable<TreeNode>): Set<TreeNode> {
   const out = new Set<TreeNode>()
-  const stack: TreeNode[] = [node]
-  while (stack.length > 0) {
-    const at = stack.pop()
-    if (!at) break
-    const up: TreeNode[] = at.kind === 'group' ? [...at.members] : []
-    if (at.parent) up.push(at.parent)
-    for (const p of up) {
-      if (out.has(p) || p === node) continue
+  const stack: TreeNode[] = [...nodes]
+  for (let at = stack.pop(); at; at = stack.pop()) {
+    for (const p of above(at)) {
+      if (out.has(p)) continue
       out.add(p)
       stack.push(p)
     }
@@ -161,20 +142,32 @@ export function ancestorsOf(node: TreeNode): Set<TreeNode> {
   return out
 }
 
-/** Sections below a node, nearest first. */
-export function sectionsBelow(node: TreeNode): SectionNode[] {
-  const out: SectionNode[] = []
-  let level = [...node.children]
-  while (level.length > 0) {
-    const next: TreeNode[] = []
-    for (const child of level) {
-      if (child.kind === 'section') out.push(child)
-      next.push(...child.children)
-    }
-    level = next
-  }
-  return out
+/**
+ * The non-ancestor set of some nodes: those of them that are not an
+ * ancestor of another one of them. An ancestor is dropped in favour of its
+ * descendant, whose context already holds it; so no node of the result is
+ * an ancestor of another. Duplicates are dropped; the order is kept.
+ */
+export function reduceToNonAncestors<N extends TreeNode>(nodes: readonly N[]): N[] {
+  const unique = [...new Set(nodes)]
+  const ancestors = ancestorsOfAll(unique)
+  return unique.filter((node) => !ancestors.has(node))
 }
+
+/** The sibling groups a section is a member of: their join-backs are its children in the genealogy. */
+export function joinBacksOf(tree: ReferentTree, node: TreeNode): GroupNode[] {
+  if (node.kind !== 'section') return []
+  let index = memberships.get(tree)
+  if (!index) {
+    index = new Map()
+    for (const group of tree.byGroup.values()) {
+      for (const member of group.members) index.set(member, [...(index.get(member) ?? []), group])
+    }
+    memberships.set(tree, index)
+  }
+  return index.get(node) ?? []
+}
+const memberships = new WeakMap<ReferentTree, Map<SectionNode, GroupNode[]>>()
 
 /**
  * A node and the run of only children below it: where nothing branches
@@ -190,6 +183,17 @@ export function segmentFrom(node: TreeNode): TreeNode[] {
     out.push(at)
   }
   return out
+}
+
+/**
+ * The unbranched run a node is in, from its top to its end: the node, the
+ * only children above it up to a branch point or a root, and the only
+ * children below it.
+ */
+export function stretchOf(node: TreeNode): TreeNode[] {
+  let top = node
+  while (top.parent && top.parent.children.length === 1) top = top.parent
+  return segmentFrom(top)
 }
 
 /** Depth of the tree in segments: the most requests a walk can need, the pipeline's own included. */

@@ -62,6 +62,13 @@ export interface CorpusExpectation {
   readonly sharedClarification?: boolean
   /** The message makes a requirement conversation-wide (Q17). */
   readonly sessionWide?: boolean
+  /**
+   * Sections the message is about only through what was built on them: the
+   * line of work above a target. The oracle answers the question about each
+   * as plausible, below what makes a target. A tree walk descends along
+   * plausible lines only.
+   */
+  readonly context?: readonly Handle[]
 }
 
 /** A reference decomposition, so the decision model can be evaluated on its own. Parts are quoted from the message. */
@@ -96,5 +103,15 @@ export interface CorpusExample {
    * routing should conclude.
    */
   readonly beyondWindow?: true
+  /**
+   * The work the message refers to lies below these sections, which the
+   * message does not itself refer to, and is not among the first-pass
+   * sections. A tree walk examines nothing below an unbranched run that is
+   * not plausible, so with decisions strictly as labelled it does not reach
+   * the referent. It does when the decision model finds these sections
+   * plausible (`CorpusExpectation.context`), or when a candidate source
+   * names the referent as a place to start.
+   */
+  readonly below?: readonly Handle[]
   readonly expect: CorpusExpectation
 }

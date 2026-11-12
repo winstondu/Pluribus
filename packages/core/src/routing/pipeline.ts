@@ -38,6 +38,7 @@ import type {
   ReferentRequest,
   ReferentResult,
   ReferentStrategy,
+  ReferentUnit,
   Router,
   RoutingInput,
   RoutingOutcome,
@@ -77,6 +78,8 @@ import { MAX_SECTIONS, MIN_SECTIONS, decisionContextOf, describeState, numberedA
  * in the calls above, and any further call it makes is counted against the
  * routing's decision budget. The pipeline does not know which strategy it
  * has; thresholds, placement and validation are the same after any of them.
+ * A tree walk may be given places to start besides the roots: what the
+ * injected candidate source names for each unit (`startCandidatesFor`).
  *
  * Every decision request of a routing draws from one token budget
  * (`routingTokenBudget`): the smaller of `settings.routing.tokenBudget` and
@@ -111,7 +114,7 @@ export function createRouter(deps: Deps): Router {
   }
 }
 
-type Deps = Pick<CoreDependencies, 'decisionProvider' | 'decomposer' | 'referentStrategy' | 'strategySelector'>
+type Deps = Pick<CoreDependencies, 'decisionProvider' | 'decomposer' | 'referentStrategy' | 'strategySelector' | 'candidateSource'>
 
 const failed = (error: ProviderError): RoutingOutcome => ({ kind: 'failed', error })
 const malformed = (message: string): RoutingOutcome => failed(providerError('malformed-response', message))
@@ -170,6 +173,8 @@ async function routeMessage(deps: Deps, input: RoutingInput, signal: CancelSigna
   const relate = input.candidates.sections.length > 0 || input.candidates.chains.length > 0
   // Explicit and chosen targets are used as given, so there is no strategy to choose for them.
   const { strategy, treeWalk } = await chooseStrategy(deps, input, given ? null : everything, record, signal)
+  const messageUnit: ReferentUnit = { key: 'm', name: 'the new message' }
+  const startCandidates = given ? {} : await startCandidatesFor(deps, input, [{ unit: messageUnit, text: input.text }])
 
   // ── 1. The decision gate ──
   /** The gate's request when the pipeline lists at most `window` answer sections. */
@@ -203,7 +208,7 @@ async function routeMessage(deps: Deps, input: RoutingInput, signal: CancelSigna
     ].join('\n')
     const stateText = describeState(input, supplied, subject)
     // Explicit and chosen targets are used as given: nothing is asked about the message's referents.
-    const referentRequest = referentRequestFor(input, supplied, given ? [] : [{ key: 'm', name: 'the new message' }], stateText, subject, treeWalk)
+    const referentRequest = referentRequestFor(input, supplied, given ? [] : [messageUnit], stateText, subject, treeWalk, startCandidates)
     addReferentQuestions(gate, strategy, referentRequest)
     return { supplied, batch: gate, messageScope, subject, stateText, referentRequest }
   }
@@ -385,6 +390,11 @@ async function routeComposite(deps: Deps, input: RoutingInput, signal: CancelSig
   const t = input.settings.thresholds
   const { given, record, decomposition, requirements } = c
   const fragments = decomposition.fragments
+  const startCandidates = await startCandidatesFor(
+    deps,
+    input,
+    fragments.map((f, i) => ({ unit: { key: `f${i}`, name: `part F${i + 1}` }, text: f.instruction })),
+  )
   const keyOf = new Map(fragments.map((f, i) => [f.key, `f${i}`]))
   const fragmentIds = new Map<string, FragmentId>()
   const relate = input.candidates.sections.length > 0 || input.candidates.chains.length > 0
@@ -432,7 +442,7 @@ async function routeComposite(deps: Deps, input: RoutingInput, signal: CancelSig
       ...(given ? [`The user replied to ${given.sectionIds.map((id) => `S${numbers.get(id) ?? '?'}`).join(' and ')}.`] : []),
     ].join('\n')
     const stateText = describeState(input, supplied, subject)
-    const referentRequest = referentRequestFor(input, supplied, scopes.map((scope) => ({ key: scope.key, name: scope.name })), stateText, subject, c.treeWalk)
+    const referentRequest = referentRequestFor(input, supplied, scopes.map((scope) => ({ key: scope.key, name: scope.name })), stateText, subject, c.treeWalk, startCandidates)
     addReferentQuestions(batch, c.strategy, referentRequest)
     return { supplied, batch, scopes, stateText, referentRequest }
   }
@@ -627,6 +637,7 @@ function referentRequestFor(
   stateText: string,
   subject: string,
   treeWalk: TreeWalkSettings,
+  startCandidates: ReferentRequest['startCandidates'],
 ): ReferentRequest {
   const sections = numberedAnswerSections(input, supplied)
   return {
@@ -639,7 +650,40 @@ function referentRequestFor(
     useSummaryIfAvailable: input.settings.routing.useSummaryIfAvailable,
     decisionContext: (section) => decisionContextOf(input, section),
     treeWalk,
+    startCandidates,
   }
+}
+
+/** The most sections a candidate source may add to a walk's start set for one unit. */
+export const MAX_START_CANDIDATES = 12
+
+/**
+ * Where a tree walk may start besides the roots, per unit: what the
+ * injected candidate source suggests, as far as it names answer sections
+ * of this conversation (invariant 9), at most `MAX_START_CANDIDATES` of
+ * them. Nothing when no source is injected, or when it fails: a candidate
+ * is only a place to look.
+ */
+async function startCandidatesFor(
+  deps: Deps,
+  input: RoutingInput,
+  units: readonly { readonly unit: ReferentUnit; readonly text: string }[],
+): Promise<ReferentRequest['startCandidates']> {
+  const source = deps.candidateSource
+  if (!source) return {}
+  const sections = input.candidates.sections.filter((s) => !s.asksElicitationId)
+  const known = new Set(sections.map((s) => s.sectionId))
+  const out: { [key: string]: readonly SectionId[] } = {}
+  for (const { unit, text } of units) {
+    let found: readonly SectionId[] = []
+    try {
+      found = await source.candidates({ unit, text, sections })
+    } catch {
+      found = []
+    }
+    out[unit.key] = [...new Set(found)].filter((id) => known.has(id)).slice(0, MAX_START_CANDIDATES)
+  }
+  return out
 }
 
 /** The share of a routing's token budget a strategy selector's request may take: beyond it the rules choose. */

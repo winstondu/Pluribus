@@ -1,5 +1,6 @@
-import type { AttemptStarted, ReferentStrategyName } from '@committee/protocol'
+import type { AttemptStarted, ReferentStrategyName, SectionId } from '@committee/protocol'
 import { describe, expect, test } from 'vitest'
+import type { CandidateQuery } from '../../ports'
 import { answer } from '../../testing'
 import { routingScenario, type RoutingScenario } from './helpers'
 
@@ -19,8 +20,8 @@ const D = 'Suggest day trips'
 const J = 'Use those recommendations to make a five-day itinerary.'
 const SKY = 'Why is the sky blue?'
 
-async function trip(strategy: ReferentStrategyName, runMs: number, withD = false): Promise<RoutingScenario> {
-  const s = await routingScenario({ settings: { routing: { referentStrategy: strategy } } })
+async function trip(strategy: ReferentStrategyName, runMs: number, withD = false, overrides: Parameters<typeof routingScenario>[0] = {}): Promise<RoutingScenario> {
+  const s = await routingScenario({ settings: { routing: { referentStrategy: strategy } }, ...overrides })
   s.t.model.script(BRIEF, answer('Noted.', 10, 20))
   await s.send(BRIEF)
   await s.t.advance(50)
@@ -112,5 +113,38 @@ describe.each<ReferentStrategyName>(['one-pass', 'tree-walk'])('the J request, r
     expect(s.state().chains[cmp.chainId]?.kind).toBe('join')
     expect(s.state().nodes[cmp.nodeId]?.startedParents).toEqual([j(s).nodeId, s.d('Why is the sky blue').nodeId])
     expect(await inputsOf(s, cmp.id)).toEqual([BRIEF, A, B, 'Use those recommendations to make a…', 'Why is the sky blue'])
+  })
+})
+
+describe('start candidates on a backend', () => {
+  test('candidates · the candidate source of the backend\'s dependencies is asked for each routed message, and the tree walk starts at what it names', async () => {
+    const queries: CandidateQuery[] = []
+    let hits: readonly SectionId[] = []
+    const s = await trip('tree-walk', 100, false, {
+      // The walk as configured: with three answers the rules would choose one pass, which does not walk.
+      settings: { routing: { referentStrategy: 'tree-walk', strategySelection: 'off' } },
+      candidateSource: {
+        candidates: async (query) => {
+          queries.push(query)
+          return hits
+        },
+      },
+    })
+    await s.t.advance(500)
+    // A retrieval hit on the neighborhoods: the walk starts there, and asks about the group it is a member of as a whole.
+    hits = [s.d(A).sectionId as SectionId]
+    s.t.model.script(J, answer('Day 1: Gion.', 10, 20))
+    const before = queries.length
+    await s.send(J, { message: { relation: 'addition', several: 0.4, targets: { [title(s, A)]: 0.77, [title(s, B)]: 0.3 }, together: { [title(s, A)]: 0.86 } } })
+    await s.t.advance(100)
+    expect(queries.slice(before).map((q) => ({ unit: q.unit.key, text: q.text, sections: q.sections.length }))).toEqual([{ unit: 'm', text: J, sections: 3 }])
+    const work = j(s)
+    expect(new Set(work.targets)).toEqual(new Set([s.d(A).sectionId, s.d(B).sectionId]))
+    expect(await inputsOf(s, work.id)).toEqual([BRIEF, A, B])
+    // A message sent with "Reply to this" has its target given: no candidates are asked for.
+    const asked = queries.length
+    s.t.model.script('Make it shorter', answer('Shorter.', 10, 20))
+    await s.send('Make it shorter', { message: { relation: 'addition' } }, { replyTo: ['Use those recommendations to make a…'] })
+    expect(queries).toHaveLength(asked)
   })
 })

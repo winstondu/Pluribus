@@ -21,6 +21,11 @@ import type { CandidateSection, RoutingCandidates } from './router'
  * pipeline sends anyway (`questions`); any further request goes through
  * `ask`, which counts it against the routing's `DecisionBudget` and refuses
  * what would exceed it.
+ *
+ * The two strategies that ship are policies over `ReferentOperations`
+ * (`./referent-operations`): the search is written against Point, Group,
+ * Segment and Several probes and the structure of the tree, and the
+ * decision provider, the wording and the budget sit behind the operations.
  */
 export interface ReferentStrategy {
   readonly name: ReferentStrategyName | (string & {})
@@ -80,6 +85,12 @@ export interface ReferentRequest {
   decisionContext(section: CandidateSection): DecisionContext | null
   /** `settings.routing.treeWalk`: how a walk treats runs of only children. A strategy that does not walk ignores it. */
   readonly treeWalk: TreeWalkSettings
+  /**
+   * By unit key: sections a walk starts at besides the roots, from the
+   * injected `CandidateSource`. Supplied sections only; none unless a
+   * source is injected. A strategy that does not walk ignores them.
+   */
+  readonly startCandidates: { readonly [key: string]: readonly SectionId[] }
 }
 
 /** The answers to the questions that rode in the pipeline's request. */

@@ -1,28 +1,28 @@
-import type { ReferentQuestions, ReferentRequest, ReferentStrategy } from '../../ports'
-import { groupQuestion, ownQuestion, questionId, readReferents, severalQuestion } from './shared'
-import { buildTree, type ReferentTree } from './tree'
+import type { Probe, ReferentOperations } from '../../ports'
+import { probe, strategyFromPolicy, type ReferentPolicy, type SearchInput } from './search'
 
 /**
  * One pass: every candidate is asked about in the request the pipeline
- * sends anyway. One yes/no per listed answer section, one per sibling group
- * as a whole (its join-back), and whether the unit refers to several
- * sections at once. No further request, so nothing for the budget to stop:
- * its size is bounded by the pipeline's window of sections.
+ * sends anyway. A Point per listed answer section, a Group per sibling
+ * group as a whole (its join-back), and Several. No round of its own, so
+ * nothing for the budget to stop: its size is bounded by the routing
+ * request's window of sections.
  */
-export const onePassStrategy: ReferentStrategy = {
+export const onePassPolicy: ReferentPolicy = {
   name: 'one-pass',
-  questions: (request) => onePassQuestions(request, buildTree(request)),
-  async resolve(request, gate) {
-    return { ok: true, units: readReferents(request, buildTree(request), (id) => gate.probability(id), gate.corrective), fallback: null }
-  },
+  opening: (input, ops) => onePassProbes(input, ops),
+  search: async () => ({ ok: true, stop: null }),
 }
 
-export function onePassQuestions(request: ReferentRequest, tree: ReferentTree): ReferentQuestions {
-  const out: { [id: string]: ReferentQuestions[string] } = {}
-  const listed = tree.nodes.filter((n) => (n.kind === 'section' ? n.entry.listed : n.members.every((m) => m.entry.listed)))
-  for (const unit of request.units) {
-    if (listed.filter((n) => n.kind === 'section').length >= 2) out[questionId.several(unit)] = severalQuestion(unit)
-    for (const node of listed) out[questionId.of(unit, node)] = node.kind === 'section' ? ownQuestion(unit, node) : groupQuestion(unit, node)
+/** A probe for everything the routing request lists, per unit: Several first, then every node by itself. */
+export function onePassProbes(input: Pick<SearchInput, 'tree' | 'units'>, ops: Pick<ReferentOperations, 'rides'>): Probe[] {
+  const out: Probe[] = []
+  for (const unit of input.units) {
+    const listed = input.tree.nodes.map((node) => probe.of(unit, node)).filter((p) => ops.rides(p))
+    if (listed.filter((p) => p.kind === 'point').length >= 2) out.push(probe.several(unit))
+    out.push(...listed)
   }
   return out
 }
+
+export const onePassStrategy = strategyFromPolicy(onePassPolicy)

@@ -1,429 +1,497 @@
 import type { DecisionBudget } from '@committee/protocol'
-import type { ReferentAsk, ReferentQuestions, ReferentRequest, ReferentResult, ReferentStrategy, ReferentUnit, UnitReferents } from '../../ports'
-import { sectionLine } from '../supply'
-import { STATE_TOKENS_PER_CHARACTER, estimateDecisionTokens } from './ask'
-import { onePassQuestions } from './one-pass'
-import { bestNodeFound, chunkQuestion, groupQuestion, ownQuestion, questionId, referentsFromScores, severalQuestion, underQuestion } from './shared'
-import { buildTree, segmentFrom, type ReferentTree, type SectionNode, type TreeNode } from './tree'
+import type { Probe, ReferentOperations, ReferentUnit } from '../../ports'
+import { onePassProbes } from './one-pass'
+import { probe, strategyFromPolicy, type ReferentPolicy, type SearchInput, type SearchOutcome } from './search'
+import { ancestorsOf, joinBacksOf, reduceToNonAncestors, segmentFrom, stretchOf, type GroupNode, type SectionNode, type TreeNode } from './tree'
 
 /**
- * Tree walk: breadth-first from every root of the context tree, pruned
- * where a line of work is not relevant.
+ * Tree walk: the search for the deepest relevant nodes of a unit, from a
+ * start set down the lines of work that are relevant
+ * (docs/build/dependency-decisioning.md · "The search").
  *
- * - A level is a set of segments: a node and the run of only children below
- *   it, down to the next branch point. The nodes of a level are asked about
- *   in one request (questions are a record keyed by ID), together with the
- *   group node wherever a node has parallel children, and, for each branch
- *   point, whether anything built on it is relevant.
- * - The roots' level rides in the request the pipeline sends anyway. Each
- *   further level is one further request, whose state text lists only that
- *   level's answers: the conversation is never sent again.
- * - A segment is descended into when any of its nodes, or what is built on
- *   it, scores at or above the floor. Everything below an irrelevant
- *   segment is never asked about.
- * - The relevant nodes are collected, ancestors of a relevant node are
- *   dropped, and a relevant group stands for all of its members
- *   (`referentsFromScores`).
+ * - **Start set.** The roots and the start candidates (`startSet`), reduced
+ *   so that no start is an ancestor of another: an ancestor is dropped in
+ *   favour of its descendant. Starting at a node examines the part of its
+ *   unbranched run from the run's top down to the node; a root's run is
+ *   examined whole.
+ * - **Examining a part of a run.** A sibling group is asked about as a
+ *   whole (Group) beside its members. Sections are asked about by
+ *   themselves (Point) while that costs no more than
+ *   `searchRunsOverTokens`; a longer part is searched for its **last
+ *   relevant node**: its sections are put in parts, each one Segment probe,
+ *   the latest plausible part is opened, and its sections are asked about
+ *   by themselves. Only that Point can confirm a section. When no Point of
+ *   the part confirms, the search goes on in the next plausible part before
+ *   it. Sections above one that is already confirmed are not asked about:
+ *   the confirmed one's context holds them. A correction needs the relevant
+ *   nodes themselves, so for a corrective unit every plausible part is
+ *   opened and nothing above a confirmed section is skipped.
+ * - **Descent.** Below a run that is plausible, the rest of the run and
+ *   then every child run are examined, the join-back of a sibling group
+ *   among them. Nothing is examined below a run that is not plausible.
+ * - **Reinstating.** A start that displaced an ancestor and is not
+ *   plausible hands over to its nearest displaced ancestors; when the unit
+ *   refers to several sections (Several at the target-choice threshold),
+ *   the displaced ancestors of every start are started too. What was
+ *   asked is not asked again.
+ * - **Rounds.** Everything the walk wants to know next, for every unit, is
+ *   one round. The first round rides in the routing request as far as that
+ *   request lists what it names.
+ * - **The budget is a hard stop.** Before each round the walk checks that
+ *   the round and its fallback both fit. When they do not, it asks about
+ *   the listed nodes it has not asked about in one round, if that fits, and
+ *   stops; when the fallback is what cannot be afforded, it goes on for as
+ *   long as its own rounds fit.
  *
- * Long runs (`settings.routing.treeWalk`). The sections of a run are either
- * asked about one by one, or **searched**: asked about in chunks, each one
- * question that names its sections by their requests, and one by one only
- * inside a chunk that scored at or above the floor. A chunk too large to
- * list within `searchRunsOverTokens` is split again, at most
- * `SEARCH_FANOUT` ways per request, so a run of any length is located in a
- * number of requests logarithmic in its length. Every relevant chunk is
- * followed; none relevant ends the search. A run is searched
- * - when listing the sections of it that the pipeline's request does not
- *   already list costs more than `searchRunsOverTokens`: always;
- * - above the trunk base with `startAtTrunkBase`: of a root's run only the
- *   base (the first branch point, or the tip) is asked about by itself;
- * - between branch points with `hopBetweenBranchPoints`: of a branch's run
- *   only its end is asked about by itself.
- * Roots older than the pipeline's window that nothing was built on are one
- * such run for this purpose: a long flat conversation of unrelated answers.
- * A section is never taken as a referent from a chunk score: it is asked
- * about by itself first. When the budget ends the search before that, the
- * sections of the chunk are not candidates at all.
- *
- * The budget is a hard stop. Before every further request the walk checks
- * it, keeping room for its fallback. When a request does not fit it stops
- * walking and asks the one-pass questions it has not asked yet in one
- * request, if that still fits. When that fallback is what cannot be
- * afforded, the walk goes on for as long as its own requests fit. Either
- * way a walk the budget stopped reports, per unit, the best node found so
- * far (`bestNodeFound`), which routing takes without asking the user.
+ * The two switches (`settings.routing.treeWalk`) change which sections of a
+ * part are asked about by themselves at once: with `startAtTrunkBase`, of a
+ * root's run only the last; with `hopBetweenBranchPoints`, of any other run
+ * only the last. The sections skipped are searched, however few, and the
+ * last is asked about again beside the ones the search opens.
  */
-export const treeWalkStrategy: ReferentStrategy = {
+export const treeWalkPolicy: ReferentPolicy = {
   name: 'tree-walk',
 
-  questions(request) {
-    const tree = buildTree(request)
-    const out: { [id: string]: ReferentQuestions[string] } = {}
-    const listedSections = tree.nodes.filter((n) => n.kind === 'section' && n.entry.listed).length
-    const level = tree.roots.map(segmentFrom)
-    for (const unit of request.units) {
-      if (listedSections >= 2) out[questionId.several(unit)] = severalQuestion(unit)
-      for (const q of levelQuestions(unit, planLevel(request, unit, level, true))) if (q.rides) out[q.id] = q.question
+  opening(input, ops) {
+    const walk: Walk = { input, ops, units: new Map() }
+    const out: Probe[] = []
+    for (const unit of input.units) {
+      const listed = input.tree.nodes.filter((node) => node.kind === 'section' && ops.rides(probe.point(unit, node))).length
+      if (listed >= 2) out.push(probe.several(unit))
+      const first = walkUnit(walk, unit).next()
+      if (!first.done) out.push(...first.value.filter((p) => ops.rides(p)))
     }
     return out
   },
 
-  async resolve(request, gate, ask): Promise<ReferentResult> {
-    const tree = buildTree(request)
-    const { floor, clear } = request.relevance
-    const threshold = request.treeWalk.searchRunsOverTokens
-    const answers = new Map<string, number>()
-    const probability = (id: string): number | null => answers.get(id) ?? gate.probability(id)
-    const recent = mostRecent(tree)
-
-    const done = (fallback: Extract<ReferentResult, { ok: true }>['fallback']): ReferentResult => {
-      const units: { [key: string]: UnitReferents } = {}
-      for (const unit of request.units) {
-        // Only what was asked about by itself has a score. The sections of a relevant chunk whose search the budget
-        // ended were never asked about: they are not candidates, and nothing is said about them.
-        const score = (node: TreeNode): number | null => probability(questionId.of(unit, node))
-        const corrective = gate.corrective.has(unit.key)
-        units[unit.key] = {
-          sections: referentsFromScores(tree, score, { corrective, clear }),
-          several: probability(questionId.several(unit)),
-          ...(fallback ? { best: bestNodeFound(tree, score, { corrective, floor }) } : {}),
-        }
-      }
-      return { ok: true, units, fallback }
+  async search(input, ops): Promise<SearchOutcome> {
+    const walk: Walk = { input, ops, units: new Map() }
+    const steps = together(input.units.map((unit) => walkUnit(walk, unit)))
+    // The fallback: what one pass would have asked in the routing request and the walk has not asked yet.
+    const listed = onePassProbes(input, ops)
+    for (let step = steps.next(); !step.done; step = steps.next()) {
+      const round = distinct(step.value)
+      const fallback = listed.filter((p) => ops.known(p) === null)
+      const limit = ops.fits(round, fallback)
+      // Not room for this round and the fallback: fall back, unless the fallback is what does not fit and this round does.
+      // Then walking on is all the budget still buys (a price guard on short answers leaves less than the fallback costs).
+      if (limit && (ops.fits(fallback) === null || ops.fits(round) !== null)) return fallBack(ops, fallback, limit)
+      const result = await ops.ask(round)
+      if (result.kind === 'failed') return { ok: false, error: result.error }
+      if (result.kind === 'refused') return fallBack(ops, listed.filter((p) => ops.known(p) === null), result.limit)
     }
-
-    let pending = new Map<ReferentUnit, Pending>(request.units.map((unit) => [unit, { level: tree.roots.map(segmentFrom), chunks: [], list: [], again: [] }]))
-    for (let root = true; ; root = false) {
-      // What this round still has to ask: at the roots, only what the pipeline's request could not carry.
-      const questions: { [id: string]: ReferentQuestions[string] } = {}
-      const shown = new Set<TreeNode>()
-      const plans = new Map<ReferentUnit, LevelPlan>()
-      for (const [unit, work] of pending) {
-        const plan = planLevel(request, unit, work.level, root)
-        plans.set(unit, plan)
-        let chunked = false
-        const add = (id: string, question: ReferentQuestions[string], nodes: readonly TreeNode[], chunk = false, again = false): void => {
-          if (probability(id) !== null && !again) return
-          questions[id] = question
-          for (const node of nodes) shown.add(node)
-          chunked ||= chunk
-        }
-        for (const q of levelQuestions(unit, plan)) add(q.id, q.question, q.shown, q.chunk)
-        for (const chunk of work.chunks) add(questionId.chunk(unit, chunk.nodes), chunkQuestion(unit, chunk.nodes), [], true)
-        for (const node of work.list) add(questionId.own(unit, node), ownQuestion(unit, node), [node])
-        for (const node of work.again) add(questionId.own(unit, node), ownQuestion(unit, node), [node], false, true)
-        // Beside the most recent answer a chunk is judged against an alternative: without it "Make that shorter" scores 0.4 on every chunk.
-        if (chunked && recent && questions[questionId.own(unit, recent)] === undefined) {
-          questions[questionId.recent(unit)] = ownQuestion(unit, recent)
-          shown.add(recent)
-        }
-      }
-      if (Object.keys(questions).length > 0) {
-        const stateText = levelState(shown, request)
-        const reserve = fallbackCost(request, tree, probability, ask)
-        const cost: Cost = { requests: 1, questions: Object.keys(questions).length, inputTokens: ask.estimate(stateText, questions) }
-        const limit = exceeded(ask.remaining(), cost, reserve)
-        // Not room for this request and the fallback: fall back, unless the fallback is what does not fit and this request does.
-        // Then walking on is all the budget still buys (a price guard on short answers leaves less than the fallback costs).
-        if (limit && (!exceeded(ask.remaining(), reserve, NOTHING) || exceeded(ask.remaining(), cost, NOTHING))) {
-          return fallBack(request, tree, answers, gate, ask, limit, done)
-        }
-        const result = await ask(stateText, questions)
-        if (result.kind === 'failed') return { ok: false, error: result.error }
-        if (result.kind === 'refused') return fallBack(request, tree, answers, gate, ask, result.limit, done)
-        for (const id of Object.keys(questions)) {
-          const p = result.probability(id)
-          if (p !== null) answers.set(id, p)
-        }
-      }
-
-      const next = new Map<ReferentUnit, Pending>()
-      for (const [unit, work] of pending) {
-        const plan = plans.get(unit)
-        if (!plan) continue
-        const level: TreeNode[][] = []
-        for (const { segment, chunks } of plan.segments) {
-          const end = segment[segment.length - 1]
-          if (!end || end.children.length === 0) continue
-          const scores = [
-            ...segment.map((node) => probability(questionId.of(unit, node))),
-            probability(questionId.under(unit, end)),
-            ...chunks.map((chunk) => probability(questionId.chunk(unit, chunk.nodes))),
-          ]
-          if (!scores.some((p) => p !== null && p >= floor)) continue
-          for (const child of end.children) level.push(segmentFrom(child))
-        }
-        // The search: every relevant chunk is followed, into smaller chunks or into its sections one by one.
-        const chunks: Chunk[] = []
-        const list: SectionNode[] = []
-        const again = new Set<SectionNode>()
-        for (const chunk of [...plan.segments.flatMap((s) => s.chunks), ...plan.pooled, ...work.chunks]) {
-          const score = probability(questionId.chunk(unit, chunk.nodes))
-          if (score === null || score < floor) continue
-          const step = refine(unit, chunk, threshold)
-          if (step.kind === 'split') chunks.push(...step.chunks)
-          else {
-            list.push(...chunk.nodes)
-            if (chunk.beside) again.add(chunk.beside)
-          }
-        }
-        if (level.length > 0 || chunks.length > 0 || list.length > 0) next.set(unit, { level, chunks, list, again: [...again] })
-      }
-      if (next.size === 0) return done(null)
-      pending = next
-    }
+    return { ok: true, stop: null }
   },
 }
 
+export const treeWalkStrategy = strategyFromPolicy(treeWalkPolicy)
+
 /** Fewer sections than this are not worth skipping: one question about one section is the question about that section. */
 export const MIN_SKIPPED = 2
-/** The most chunks one run is split into in one request. */
+/** The most parts one run is split into in one round. */
 export const SEARCH_FANOUT = 24
 
-/** Sections of one run, in conversation order, asked about in one question. */
-interface Chunk {
-  readonly nodes: readonly SectionNode[]
+/** A round asks each thing once, whichever steps wanted it. */
+function distinct(probes: readonly Probe[]): Probe[] {
+  const seen = new Set<string>()
+  return probes.filter((p) => {
+    const about = p.kind === 'several' ? '' : p.kind === 'segment' ? `${p.nodes[0]?.key ?? ''}…${p.nodes[p.nodes.length - 1]?.key ?? ''}×${p.nodes.length}` : p.node.key
+    const key = `${p.kind}|${p.unit.key}|${about}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+async function fallBack(ops: ReferentOperations, fallback: readonly Probe[], limit: keyof DecisionBudget): Promise<SearchOutcome> {
+  if (fallback.length === 0) return { ok: true, stop: { limit, to: 'one-pass' } }
+  if (ops.fits(fallback) !== null) return { ok: true, stop: { limit, to: 'partial' } }
+  const result = await ops.ask(fallback)
+  if (result.kind === 'failed') return { ok: false, error: result.error }
+  return { ok: true, stop: { limit, to: result.kind === 'refused' ? 'partial' : 'one-pass' } }
+}
+
+// ───────────────────────────── the start set ─────────────────────────────
+
+export interface StartSet {
+  /** Where the walk starts: no node of it is an ancestor of another. */
+  readonly starts: readonly TreeNode[]
   /**
-   * The end of the run the sections were skipped for, which was asked about without them. It is asked about again
-   * beside them when they are listed: alone, the end of a hop scored 0.7 and more for a reply to a section above it.
+   * The nearest of the nodes a start displaced: of the roots and candidates
+   * that are its ancestors and were not started yet, those that are not an
+   * ancestor of another of them.
    */
-  readonly beside: SectionNode | null
-}
-
-type Refinement = { readonly kind: 'list' } | { readonly kind: 'split'; readonly chunks: readonly Chunk[] }
-
-/** What one unit asks next: a level of segments, chunks of runs being searched, and sections to ask about one by one. */
-interface Pending {
-  readonly level: readonly TreeNode[][]
-  readonly chunks: readonly Chunk[]
-  readonly list: readonly SectionNode[]
-  /** Asked about again, beside the sections of `list`. */
-  readonly again: readonly SectionNode[]
-}
-
-interface LevelPlan {
-  /** Nodes asked about by themselves. */
-  readonly plain: readonly TreeNode[]
-  /** Every segment of the level, with the chunks its searched sections were put in: they count towards its descent. */
-  readonly segments: readonly { readonly segment: readonly TreeNode[]; readonly chunks: readonly Chunk[] }[]
-  /** Chunks of the old one-answer lines of the roots' level, which belong to no segment that could be descended into. */
-  readonly pooled: readonly Chunk[]
-}
-
-/** Whether the pipeline's own state text shows everything a question about this node names. */
-function listed(node: TreeNode): boolean {
-  return node.kind === 'section' ? node.entry.listed : node.members.every((m) => m.entry.listed)
-}
-
-/** What listing one section adds to a request of the walk: the characters of its line, and the tokens of its question. */
-function listPart(unit: ReferentUnit, node: SectionNode): { readonly line: number; readonly question: number } {
-  const line = sectionLine(node.entry.section, node.n).length
-  const question = estimateDecisionTokens('', { [questionId.own(unit, node)]: ownQuestion(unit, node) }) - estimateDecisionTokens('', {})
-  return { line, question }
-}
-
-/** The tokens of a list whose lines hold `characters` in all, newlines between them included, and whose questions cost `questions`. */
-const listTokens = (characters: number, questions: number): number => Math.ceil(characters * STATE_TOKENS_PER_CHARACTER) + questions
-
-/** The estimated input tokens of asking about sections one by one in a request of the walk: a line and a question each. */
-function listCost(unit: ReferentUnit, nodes: readonly SectionNode[]): number {
-  let characters = Math.max(0, nodes.length - 1)
-  let questions = 0
-  for (const node of nodes) {
-    const part = listPart(unit, node)
-    characters += part.line
-    questions += part.question
-  }
-  return listTokens(characters, questions)
+  displacedBy(start: TreeNode, started: ReadonlySet<TreeNode>): TreeNode[]
 }
 
 /**
- * Chunks for a run: each as many sections as can be listed within the
- * threshold; when that is more than `SEARCH_FANOUT` chunks, they are
- * grouped into that many, and a relevant one is split again.
+ * The start set of a walk: the roots and the candidates, reduced to their
+ * non-ancestor set (`reduceToNonAncestors`). With no candidates it is the
+ * roots.
  */
-function split(unit: ReferentUnit, nodes: readonly SectionNode[], threshold: number, beside: SectionNode | null): Chunk[] {
+export function startSet(roots: readonly TreeNode[], candidates: readonly TreeNode[]): StartSet {
+  const pool = [...new Set([...roots, ...candidates])]
+  return {
+    starts: reduceToNonAncestors(pool),
+    displacedBy(start, started) {
+      const above = ancestorsOf(start)
+      return reduceToNonAncestors(pool.filter((node) => above.has(node) && !started.has(node)))
+    },
+  }
+}
+
+// ───────────────────────────── the walk ─────────────────────────────
+
+/** What a step of the walk wants answered before it goes on: one round's worth, never empty. */
+type Step<T> = Generator<readonly Probe[], T, void>
+
+interface Walk {
+  readonly input: SearchInput
+  readonly ops: ReferentOperations
+  readonly units: Map<ReferentUnit, UnitWalk>
+}
+
+/** What one unit's walk has examined, so that nothing is examined or descended into twice, and what it is doing. */
+interface UnitWalk {
+  /** By the top of an unbranched run: how far down it was taken up, and whether anything there is plausible so far. */
+  readonly examined: Map<TreeNode, { upTo: number; relevant: boolean }>
+  /** Tops of the runs whose child runs were taken up. */
+  readonly descended: Set<TreeNode>
+  /** The steps under way. A step that takes up further runs adds them here: a tree of any depth is walked without nesting. */
+  readonly tasks: Step<unknown>[]
+}
+
+/** Waits for the probes that are not known yet, and for those asked again. */
+function* need(ops: ReferentOperations, probes: readonly Probe[], again: readonly Probe[] = []): Step<void> {
+  const missing = probes.filter((p) => ops.known(p) === null)
+  if (missing.length + again.length > 0) yield [...missing, ...again]
+}
+
+/** Runs steps side by side: what they want at the same time is one round. */
+function* together<T>(steps: readonly Step<T>[]): Step<T[]> {
+  const results: T[] = []
+  let active = steps.map((step, i) => ({ step, i }))
+  for (;;) {
+    const wanted: Probe[] = []
+    const still: typeof active = []
+    for (const entry of active) {
+      const next = entry.step.next()
+      if (next.done) results[entry.i] = next.value
+      else {
+        wanted.push(...next.value)
+        still.push(entry)
+      }
+    }
+    if (still.length === 0) return results
+    active = still
+    yield wanted
+  }
+}
+
+/** Runs every step under way, and those they add, side by side until none is left. */
+function* drain(state: UnitWalk): Step<void> {
+  for (;;) {
+    const wanted: Probe[] = []
+    const still: Step<unknown>[] = []
+    // A step added during the pass is at the end of the list and is taken in the same pass.
+    for (let i = 0; i < state.tasks.length; i++) {
+      const task = state.tasks[i]
+      const next = task?.next()
+      if (task && next && !next.done) {
+        wanted.push(...next.value)
+        still.push(task)
+      }
+    }
+    state.tasks.length = 0
+    state.tasks.push(...still)
+    if (still.length === 0) return
+    yield wanted
+  }
+}
+
+function* walkUnit(walk: Walk, unit: ReferentUnit): Step<void> {
+  const { input, ops } = walk
+  const state: UnitWalk = { examined: new Map(), descended: new Set(), tasks: [] }
+  walk.units.set(unit, state)
+  const set = startSet(input.tree.roots, input.starts(unit))
+  const started = new Set<TreeNode>()
+  let frontier = [...set.starts]
+  for (let first = true; frontier.length > 0; first = false) {
+    const parts = frontier.map((start) => startPart(start))
+    // The first tier's first step rides in the routing request: what that request could carry is known from here on.
+    if (first) yield* need(ops, parts.flatMap((part) => opening(walk, unit, part.stretch.slice(0, part.upTo + 1), true, part.trunk)).filter((p) => ops.rides(p)))
+    // Old answers that nothing was built on are searched as one run, for every relevant one of them.
+    const lone = first ? loneAnswers(walk, unit, parts) : { pooled: new Set<TreeNode>(), sections: [] }
+    const plausible = new Set<TreeNode>()
+    for (const part of parts) {
+      if (lone.pooled.has(part.start)) plausible.add(part.start)
+      else state.tasks.push(fromStart(walk, unit, state, part, () => plausible.add(part.start)))
+    }
+    state.tasks.push(search(walk, unit, lone.sections, 'all', { node: null }, null))
+    yield* drain(state)
+    for (const start of frontier) started.add(start)
+    // A start that is not plausible hands over to what it displaced; a unit that refers to several sections looks there as well.
+    const several = (ops.known(probe.several(unit)) ?? 0) >= input.relevance.clear
+    frontier = reduceToNonAncestors(frontier.filter((start) => several || !plausible.has(start)).flatMap((start) => set.displacedBy(start, started)))
+  }
+}
+
+function* all(step: Step<unknown>): Step<true> {
+  yield* step
+  return true
+}
+
+interface StartPart {
+  readonly start: TreeNode
+  readonly stretch: readonly TreeNode[]
+  /** The last index examined at the start: the start itself, or the end of the run for a root. */
+  readonly upTo: number
+  readonly trunk: boolean
+}
+
+function startPart(start: TreeNode): StartPart {
+  const stretch = stretchOf(start)
+  const trunk = stretch[0]?.parent === null
+  return { start, stretch, upTo: start.parent === null ? stretch.length - 1 : stretch.indexOf(start), trunk }
+}
+
+/**
+ * Roots whose run never branched and whose answers older than the routing
+ * request's window are few: a conversation of unrelated answers. Their old
+ * answers are pooled into one run and searched together. A run with a
+ * confirmed listed answer keeps its older ones out: its context holds them.
+ */
+function loneAnswers(walk: Walk, unit: ReferentUnit, parts: readonly StartPart[]): { readonly pooled: ReadonlySet<TreeNode>; readonly sections: SectionNode[] } {
+  const { input, ops } = walk
+  const pooled = new Set<TreeNode>()
+  const sections: SectionNode[] = []
+  for (const { start, stretch, trunk, upTo } of parts) {
+    const end = stretch[stretch.length - 1]
+    if (!end || !trunk || upTo !== stretch.length - 1 || end.children.length > 0) continue
+    const answers = stretch.filter((node): node is SectionNode => node.kind === 'section')
+    if (answers.length !== stretch.length || answers.some((node) => joinBacksOf(input.tree, node).length > 0)) continue
+    const older = answers.filter((node) => !ops.rides(probe.point(unit, node)))
+    if (weight(walk, unit, older) > input.settings.searchRunsOverTokens) continue
+    if (endsOnly(walk, answers, trunk)) continue
+    pooled.add(start)
+    const confirmed = answers.some((node) => (ops.known(probe.point(unit, node)) ?? 0) >= input.relevance.clear)
+    if (input.corrective(unit) || !confirmed) sections.push(...older)
+  }
+  return { pooled, sections: sections.sort((a, b) => a.n - b.n) }
+}
+
+/** A start: its part of the run, and, as soon as that is plausible, the rest of the run and the runs below. */
+function* fromStart(walk: Walk, unit: ReferentUnit, state: UnitWalk, part: StartPart, plausible: () => void): Step<void> {
+  yield* examine(walk, unit, state, part.stretch, part.upTo, true, () => {
+    plausible()
+    state.tasks.push(examine(walk, unit, state, part.stretch, part.stretch.length - 1, false, () => undefined))
+    below(walk, unit, state, part.stretch)
+  })
+}
+
+/** A run reached from above: examined, and descended below as soon as it is plausible. */
+function* descend(walk: Walk, unit: ReferentUnit, state: UnitWalk, stretch: readonly TreeNode[]): Step<void> {
+  yield* examine(walk, unit, state, stretch, stretch.length - 1, false, () => below(walk, unit, state, stretch))
+}
+
+/** Takes up the child runs of a run: below its end, and the join-back of every sibling group one of its sections is a member of. */
+function below(walk: Walk, unit: ReferentUnit, state: UnitWalk, stretch: readonly TreeNode[]): void {
+  const top = stretch[0]
+  const end = stretch[stretch.length - 1]
+  if (!top || !end || state.descended.has(top)) return
+  state.descended.add(top)
+  const children = new Set<TreeNode>([...end.children, ...stretch.flatMap((node) => joinBacksOf(walk.input.tree, node))])
+  for (const child of children) state.tasks.push(descend(walk, unit, state, segmentFrom(child)))
+}
+
+/**
+ * Examines a run from where it was taken up before down to `upTo`. Tells
+ * `plausible`, once, as soon as anything in the run is plausible: the first
+ * round of a part settles that, before a search of it is finished.
+ */
+function* examine(walk: Walk, unit: ReferentUnit, state: UnitWalk, stretch: readonly TreeNode[], upTo: number, start: boolean, plausible: () => void): Step<void> {
+  const top = stretch[0]
+  if (!top) return
+  const seen = state.examined.get(top) ?? { upTo: -1, relevant: false }
+  state.examined.set(top, seen)
+  if (upTo <= seen.upTo) {
+    // Taken up before. When another step is still examining it, that step tells its own listener.
+    if (seen.relevant) plausible()
+    return
+  }
+  const part = stretch.slice(seen.upTo + 1, upTo + 1)
+  seen.upTo = upTo
+  let told = false
+  yield* examinePart(walk, unit, part, start, top.parent === null, () => {
+    seen.relevant = true
+    if (!told) plausible()
+    told = true
+  })
+  if (seen.relevant && !told) plausible()
+}
+
+function sectionsOf(part: readonly TreeNode[]): SectionNode[] {
+  return part.filter((node): node is SectionNode => node.kind === 'section')
+}
+
+/** The sibling groups a part is asked about as a whole: its group nodes, and the groups its sections are members of. */
+function groupsOf(walk: Walk, part: readonly TreeNode[]): GroupNode[] {
+  return [...new Set(part.flatMap((node) => (node.kind === 'group' ? [node] : joinBacksOf(walk.input.tree, node))))]
+}
+
+/** Whether only the last section of a part is asked about by itself at once and the others are searched, however few. */
+function endsOnly(walk: Walk, sections: readonly SectionNode[], trunk: boolean): boolean {
+  const { startAtTrunkBase, hopBetweenBranchPoints } = walk.input.settings
+  return (trunk ? startAtTrunkBase : hopBetweenBranchPoints) && sections.length - 1 >= MIN_SKIPPED
+}
+
+/** The sections skipped when only the last is asked about by itself: those the routing request lists and the older ones are searched apart, so that the first can ride. */
+function skippedParts(walk: Walk, unit: ReferentUnit, sections: readonly SectionNode[]): SectionNode[][] {
+  const skipped = sections.slice(0, -1)
+  const rides = (node: SectionNode): boolean => walk.ops.rides(probe.point(unit, node))
+  return [...split(walk, unit, skipped.filter(rides)), ...split(walk, unit, skipped.filter((node) => !rides(node)))]
+}
+
+/**
+ * The first step of examining a part, which does not depend on any answer:
+ * its sibling groups as a whole; with a switch on, its last section and the
+ * parts of the sections skipped; and at a start, the sections the routing
+ * request lists, whose lines are in that request anyway.
+ */
+function opening(walk: Walk, unit: ReferentUnit, part: readonly TreeNode[], start: boolean, trunk: boolean): Probe[] {
+  const sections = sectionsOf(part)
+  const out: Probe[] = groupsOf(walk, part).map((group) => probe.group(unit, group))
+  const end = sections[sections.length - 1]
+  if (end && endsOnly(walk, sections, trunk)) {
+    out.push(probe.point(unit, end), ...skippedParts(walk, unit, sections).map((nodes) => probe.segment(unit, nodes)))
+  } else if (start) {
+    out.push(...sections.map((node) => probe.point(unit, node)).filter((p) => walk.ops.rides(p)))
+  }
+  return out
+}
+
+function* examinePart(walk: Walk, unit: ReferentUnit, part: readonly TreeNode[], start: boolean, trunk: boolean, plausible: () => void): Step<void> {
+  const { input, ops } = walk
+  const { clear, floor } = input.relevance
+  const sections = sectionsOf(part)
+  const corrective = input.corrective(unit)
+  const first = opening(walk, unit, part, start, trunk)
+  /** Every probe whose answer says whether the part is plausible, and the check that tells so as soon as one does. */
+  const asked: Finding = {
+    probes: [...first, ...sections.map((node) => probe.point(unit, node))],
+    note: () => {
+      if (asked.probes.some((p) => (ops.known(p) ?? 0) >= floor)) plausible()
+    },
+  }
+  const end = sections[sections.length - 1]
+  if (end && endsOnly(walk, sections, trunk)) {
+    yield* need(ops, first)
+    asked.note()
+    yield* follow(walk, unit, skippedParts(walk, unit, sections), corrective ? 'all' : 'last', { node: end }, asked)
+  } else {
+    // What comes next depends on the sections already asked about by themselves: wait for those the routing request did not carry.
+    if (first.some((p) => p.kind === 'point' && ops.known(p) === null)) yield* need(ops, first)
+    const groups = first.filter((p) => ops.known(p) === null)
+    // A confirmed section stands for everything above it in the run, except for a correction.
+    const confirmed = corrective ? -1 : sections.findLastIndex((node) => (ops.known(probe.point(unit, node)) ?? 0) >= clear)
+    const open = sections.slice(confirmed + 1).filter((node) => ops.known(probe.point(unit, node)) === null)
+    if (weight(walk, unit, open) <= input.settings.searchRunsOverTokens) yield* need(ops, [...groups, ...open.map((node) => probe.point(unit, node))])
+    else yield* together([all(need(ops, groups)), all(search(walk, unit, open, corrective ? 'all' : 'last', { node: null }, asked))])
+  }
+  asked.note()
+}
+
+// ───────────────────────────── the search of a run ─────────────────────────────
+
+/** The estimated input tokens of asking about sections one by one. */
+function weight(walk: Walk, unit: ReferentUnit, nodes: readonly SectionNode[]): number {
+  let total = 0
+  for (const node of nodes) total += walk.ops.size(probe.point(unit, node))
+  return total
+}
+
+/**
+ * Where a run is split: into parts that can each be asked about section by
+ * section within `searchRunsOverTokens`; when that is more than
+ * `SEARCH_FANOUT` parts, they are grouped into that many, and a part that
+ * is opened is split again. So a run of any length is searched in a number
+ * of rounds logarithmic in its length.
+ */
+function split(walk: Walk, unit: ReferentUnit, nodes: readonly SectionNode[]): SectionNode[][] {
+  const threshold = walk.input.settings.searchRunsOverTokens
   const leaves: SectionNode[][] = []
   let current: SectionNode[] = []
-  // The cost of the chunk so far, kept as it grows: a run of thousands of sections is sized once, not once per section.
-  let characters = 0
-  let questions = 0
+  let size = 0
   for (const node of nodes) {
-    const part = listPart(unit, node)
-    if (current.length > 0 && listTokens(characters + 1 + part.line, questions + part.question) > threshold) {
+    const added = walk.ops.size(probe.point(unit, node))
+    if (current.length > 0 && size + added > threshold) {
       leaves.push(current)
       current = []
-      characters = 0
-      questions = 0
+      size = 0
     }
-    characters += (current.length > 0 ? 1 : 0) + part.line
-    questions += part.question
+    size += added
     current.push(node)
   }
   if (current.length > 0) leaves.push(current)
-  if (leaves.length <= SEARCH_FANOUT) return leaves.map((chunk) => ({ nodes: chunk, beside }))
-  const out: Chunk[] = []
+  if (leaves.length <= SEARCH_FANOUT) return leaves
+  const out: SectionNode[][] = []
   for (let i = 0; i < SEARCH_FANOUT; i++) {
-    const from = Math.floor((i * leaves.length) / SEARCH_FANOUT)
-    const to = Math.floor(((i + 1) * leaves.length) / SEARCH_FANOUT)
-    out.push({ nodes: leaves.slice(from, to).flat(), beside })
+    out.push(leaves.slice(Math.floor((i * leaves.length) / SEARCH_FANOUT), Math.floor(((i + 1) * leaves.length) / SEARCH_FANOUT)).flat())
   }
   return out
 }
 
-/** The next step into a relevant chunk: its sections one by one when that fits the threshold, smaller chunks otherwise. */
-function refine(unit: ReferentUnit, chunk: Chunk, threshold: number): Refinement {
-  if (chunk.nodes.length <= 1 || listCost(unit, chunk.nodes) <= threshold) return { kind: 'list' }
-  const chunks = split(unit, chunk.nodes, threshold, chunk.beside)
-  return chunks.length <= 1 ? { kind: 'list' } : { kind: 'split', chunks }
+/** What a part of a run was asked, for the question whether it is plausible. */
+interface Finding {
+  readonly probes: Probe[]
+  /** Called after a round: tells the part's listener when something asked so far is plausible. */
+  note(): void
 }
 
-/** Which nodes of a level are asked about by themselves and which are searched. */
-function planLevel(request: ReferentRequest, unit: ReferentUnit, level: readonly TreeNode[][], root: boolean): LevelPlan {
-  const { startAtTrunkBase, hopBetweenBranchPoints, searchRunsOverTokens: threshold } = request.treeWalk
-  const plain: TreeNode[] = []
-  const segments: { segment: readonly TreeNode[]; chunks: Chunk[] }[] = []
-  const pool: SectionNode[] = []
-  const inOrder = (nodes: readonly SectionNode[]): SectionNode[] => [...nodes].sort((a, b) => a.n - b.n)
-  for (const segment of level) {
-    const end = segment[segment.length - 1]
-    if (!end) continue
-    const branches = end.children.length > 0
-    const chunks: Chunk[] = []
-    const search = (nodes: readonly SectionNode[]): void => {
-      if (nodes.length > 0) chunks.push(...split(unit, inOrder(nodes), threshold, end.kind === 'section' && !nodes.includes(end) ? end : null))
-    }
-    // What may be skipped: the answers above the end. An end that is a leaf older than the pipeline's window has
-    // nothing below it to decide, so it is searched with the rest.
-    const skippable: SectionNode[] = []
-    for (const node of segment) {
-      if (node.kind === 'section' && (node !== end || (root && !branches && !node.entry.listed))) skippable.push(node)
-      else plain.push(node)
-    }
-    if (root) {
-      const inWindow = skippable.filter((node) => node.entry.listed)
-      const older = skippable.filter((node) => !node.entry.listed)
-      if (startAtTrunkBase && skippable.length >= MIN_SKIPPED) {
-        // A chunk of listed sections rides in the pipeline's request; one with older sections is a further request.
-        search(inWindow)
-        search(older)
-      } else {
-        // Their lines are in the pipeline's request anyway: a question each costs less than a search would save.
-        plain.push(...inWindow)
-        if (!branches) pool.push(...older)
-        else if (listCost(unit, older) > threshold) search(older)
-        else plain.push(...older)
-      }
-    } else if ((hopBetweenBranchPoints && skippable.length >= MIN_SKIPPED) || listCost(unit, skippable) > threshold) search(skippable)
-    else plain.push(...skippable)
-    segments.push({ segment, chunks })
-  }
-  const pooled = listCost(unit, pool) > threshold ? split(unit, inOrder(pool), threshold, null) : []
-  if (pooled.length === 0) plain.push(...pool)
-  return { plain, segments, pooled }
+/** The section that was asked about without its neighbours and is asked about again, once, beside the first of them that are. */
+interface Beside {
+  node: SectionNode | null
 }
 
-interface LevelQuestion {
-  readonly id: string
-  readonly question: ReferentQuestions[string]
-  /** The nodes a state text must list for the question. A chunk question names its sections itself. */
-  readonly shown: readonly TreeNode[]
-  /** Whether the pipeline's own request can carry it: everything it is about is listed there. */
-  readonly rides: boolean
-  readonly chunk: boolean
+/**
+ * Searches sections of one run. `last`: for the last relevant one. `all`:
+ * for every relevant one (a correction; old answers that nothing was built
+ * on). True when a Point confirmed a section.
+ */
+function* search(walk: Walk, unit: ReferentUnit, nodes: readonly SectionNode[], want: 'last' | 'all', beside: Beside, asked: Finding | null): Step<boolean> {
+  if (nodes.length === 0) return false
+  const parts = split(walk, unit, nodes)
+  if (parts.length <= 1) return yield* points(walk, unit, nodes, beside)
+  yield* need(walk.ops, parts.map((part) => probe.segment(unit, part)))
+  return yield* follow(walk, unit, parts, want, beside, asked)
 }
 
-/** The questions of one level for one unit. */
-function levelQuestions(unit: ReferentUnit, plan: LevelPlan): LevelQuestion[] {
-  const out: LevelQuestion[] = []
-  for (const node of plan.plain) {
-    out.push({ id: questionId.of(unit, node), question: node.kind === 'section' ? ownQuestion(unit, node) : groupQuestion(unit, node), shown: [node], rides: listed(node), chunk: false })
-  }
-  for (const { segment } of plan.segments) {
-    const end = segment[segment.length - 1]
-    if (end && end.children.length > 0) out.push({ id: questionId.under(unit, end), question: underQuestion(unit, end), shown: [end], rides: listed(end), chunk: false })
-  }
-  for (const chunk of [...plan.segments.flatMap((s) => s.chunks), ...plan.pooled]) {
-    out.push({ id: questionId.chunk(unit, chunk.nodes), question: chunkQuestion(unit, chunk.nodes), shown: [], rides: chunk.nodes.every(listed), chunk: true })
-  }
-  return out
+/**
+ * Opens the plausible parts of a round of Segment probes. `last`: the
+ * latest first, and an earlier one only when no Point of the later one
+ * confirmed a section. `all`: every one of them, side by side.
+ */
+function* follow(walk: Walk, unit: ReferentUnit, parts: readonly (readonly SectionNode[])[], want: 'last' | 'all', beside: Beside, asked: Finding | null): Step<boolean> {
+  const { ops, input } = walk
+  asked?.probes.push(...parts.map((part) => probe.segment(unit, part)))
+  asked?.note()
+  const plausible = parts.filter((part) => (ops.known(probe.segment(unit, part)) ?? 0) >= input.relevance.floor)
+  const open = (part: readonly SectionNode[]): Step<boolean> =>
+    part.length <= 1 || weight(walk, unit, part) <= input.settings.searchRunsOverTokens ? points(walk, unit, part, beside) : search(walk, unit, part, want, beside, asked)
+  if (want === 'all') return (yield* together(plausible.map(open))).some((found) => found)
+  for (const part of [...plausible].reverse()) if (yield* open(part)) return true
+  return false
 }
 
-/** The most recent answer section: the newest the pipeline lists. */
-function mostRecent(tree: ReferentTree): SectionNode | null {
-  let found: SectionNode | null = null
-  for (const node of tree.nodes) {
-    if (node.kind !== 'section') continue
-    if (!found || (node.entry.listed && !found.entry.listed) || (node.entry.listed === found.entry.listed && node.n > found.n)) found = node
-  }
-  return found
-}
-
-/** The state text of a further request: only the answers its questions name, then the subject. */
-function levelState(shown: ReadonlySet<TreeNode>, request: ReferentRequest): string {
-  const sections = new Map<number, string>()
-  for (const node of shown) {
-    for (const s of node.kind === 'section' ? [node] : node.members) sections.set(s.n, sectionLine(s.entry.section, s.n, request.decisionContext(s.entry.section)))
-  }
-  const lines = [...sections].sort((a, b) => a[0] - b[0]).map(([, line]) => line)
-  // What the pipeline's state text says under "Lines of work": which of these were requested side by side.
-  const parallel = [...shown].flatMap((node) =>
-    node.kind === 'group'
-      ? [`${node.members.map((m) => `S${m.n}`).join(', ')} were requested in parallel from the same starting point${node.group.open ? ' and are still being answered' : ''}.`]
-      : [],
-  )
-  return ['Answer sections of this conversation that the questions are about, oldest first:', ...lines, ...(parallel.length > 0 ? ['', ...parallel] : []), '', request.subject].join('\n')
-}
-
-interface Cost {
-  readonly requests: number
-  readonly questions: number
-  readonly inputTokens: number
-}
-
-function fallbackQuestions(request: ReferentRequest, tree: ReferentTree, probability: (id: string) => number | null): ReferentQuestions {
-  const out: { [id: string]: ReferentQuestions[string] } = {}
-  for (const [id, question] of Object.entries(onePassQuestions(request, tree))) if (probability(id) === null) out[id] = question
-  return out
-}
-
-function fallbackCost(request: ReferentRequest, tree: ReferentTree, probability: (id: string) => number | null, ask: ReferentAsk): Cost {
-  const questions = fallbackQuestions(request, tree, probability)
-  const count = Object.keys(questions).length
-  return count === 0 ? { requests: 0, questions: 0, inputTokens: 0 } : { requests: 1, questions: count, inputTokens: ask.estimate(request.stateText, questions) }
-}
-
-const NOTHING: Cost = { requests: 0, questions: 0, inputTokens: 0 }
-
-/** The first limit that `cost`, with `reserve` kept back, would exceed. */
-function exceeded(remaining: DecisionBudget, cost: Cost, reserve: Cost): keyof DecisionBudget | null {
-  if (remaining.requests < cost.requests + reserve.requests) return 'requests'
-  if (remaining.questions < cost.questions + reserve.questions) return 'questions'
-  if (remaining.inputTokens < cost.inputTokens + reserve.inputTokens) return 'inputTokens'
-  return null
-}
-
-async function fallBack(
-  request: ReferentRequest,
-  tree: ReferentTree,
-  answers: Map<string, number>,
-  gate: { probability(id: string): number | null },
-  ask: ReferentAsk,
-  limit: keyof DecisionBudget,
-  done: (fallback: Extract<ReferentResult, { ok: true }>['fallback']) => ReferentResult,
-): Promise<ReferentResult> {
-  const probability = (id: string): number | null => answers.get(id) ?? gate.probability(id)
-  const questions = fallbackQuestions(request, tree, probability)
-  const count = Object.keys(questions).length
-  if (count === 0) return done({ limit, to: 'one-pass' })
-  const cost: Cost = { requests: 1, questions: count, inputTokens: ask.estimate(request.stateText, questions) }
-  if (exceeded(ask.remaining(), cost, { requests: 0, questions: 0, inputTokens: 0 })) return done({ limit, to: 'partial' })
-  const result = await ask(request.stateText, questions)
-  if (result.kind === 'failed') return { ok: false, error: result.error }
-  if (result.kind === 'refused') return done({ limit, to: 'partial' })
-  for (const id of Object.keys(questions)) {
-    const p = result.probability(id)
-    if (p !== null) answers.set(id, p)
-  }
-  return done({ limit, to: 'one-pass' })
+/**
+ * Asks about sections by themselves: the only step that can confirm one.
+ * The section asked about before without its neighbours is asked about
+ * again beside them, and that answer stands.
+ */
+function* points(walk: Walk, unit: ReferentUnit, nodes: readonly SectionNode[], beside: Beside): Step<boolean> {
+  const probes = nodes.map((node) => probe.point(unit, node))
+  const again = beside.node && !nodes.includes(beside.node) && probes.some((p) => walk.ops.known(p) === null) ? [probe.point(unit, beside.node)] : []
+  if (again.length > 0) beside.node = null
+  yield* need(walk.ops, probes, again)
+  return probes.some((p) => (walk.ops.known(p) ?? 0) >= walk.input.relevance.clear)
 }

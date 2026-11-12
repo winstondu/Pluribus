@@ -112,30 +112,32 @@ export function resolveTokenBudget(budget: DecisionTokenBudget, sessionLogTokens
 }
 
 /**
- * How the tree walk treats a run of only children: the answers of one line
- * of work between two places where it splits. Read by the `tree-walk`
- * strategy only (docs/build/dependency-decisioning.md · "Long runs").
+ * How the tree walk treats an unbranched run: the answers of one line of
+ * work between two places where it splits. Read by the `tree-walk`
+ * strategy only (docs/build/dependency-decisioning.md · "The search").
  */
 export interface TreeWalkSettings {
   /**
    * Start at the trunk base. The trunk of a root is the run from the root
    * down to the first answer where the line splits, or to its last answer
-   * when it never splits. On: only the base is asked about by itself; the
-   * answers above it are searched (asked about in chunks, and one by one
-   * only inside a chunk that is relevant). Off: they are asked about one by
+   * when it never splits. On: only the base is asked about by itself at
+   * once; the answers above it are searched for the last relevant one
+   * (asked about in parts, and one by one only inside the latest part that
+   * is relevant), however few they are. Off: they are asked about one by
    * one, unless the run is longer than `searchRunsOverTokens`.
    */
   readonly startAtTrunkBase: boolean
   /**
    * Hop between branch points. Below a branch point, on: of each branch's
    * run only its end (the next branch point, or the leaf) is asked about by
-   * itself and the answers skipped are searched. Off: every answer of the
-   * run is asked about, unless the run is longer than `searchRunsOverTokens`.
+   * itself at once and the answers skipped are searched, however few. Off:
+   * every answer of the run is asked about, unless the run is longer than
+   * `searchRunsOverTokens`.
    */
   readonly hopBetweenBranchPoints: boolean
   /**
    * The size above which a run is searched whatever the two switches say,
-   * and the size of a chunk small enough to ask about answer by answer:
+   * and the size of a part small enough to ask about answer by answer:
    * the estimated input tokens of listing the answers one by one (about
    * 125 for a full-length answer). Whole number ≥ 1.
    */

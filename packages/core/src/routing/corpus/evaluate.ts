@@ -28,7 +28,7 @@ import type {
 } from '../../ports'
 import { NEVER_CANCELLED } from '../../ports'
 import { createRouter } from '../pipeline'
-import { buildTree, type TreeNode } from '../referents/tree'
+import { buildTree } from '../referents/tree'
 import { MAX_SECTIONS, MIN_SECTIONS, numberedAnswerSections, supply, type Supplied } from '../supply'
 import { ROUTING_CORPUS } from './examples'
 import { ids } from './scene'
@@ -362,6 +362,8 @@ export function suppliedIn(input: RoutingInput, given: readonly RoutingInput['ex
 const YES = 0.95
 const NO = 0.05
 const UNSURE = 0.5
+/** A section on the line above a target: worth looking below, not a target. */
+const PLAUSIBLE = 0.4
 
 /**
  * A decision provider that answers every question as the example's label
@@ -376,7 +378,7 @@ export function oracleDecisionProvider(example: CorpusExample, input: RoutingInp
   // The candidates as the pipeline listed them: read back from each of its requests, whose window the token budget may have cut.
   let supplied = supply(input, input.explicitTargets)
   let answerSections = numberedAnswerSections(input, supplied)
-  // The context tree as the referent strategies see it, for the questions about a group as a whole and about what is built on a node.
+  // The context tree as the referent strategies see it, for the questions about a group as a whole.
   let tree = buildTree({ sections: answerSections, candidates: input.candidates })
   const follow = (state: string): void => {
     const listed = suppliedIn(input, input.explicitTargets, state)
@@ -388,17 +390,6 @@ export function oracleDecisionProvider(example: CorpusExample, input: RoutingInp
   /** The handle of S<n>: a listed section by its place in the state text, one beyond the window by the number it was given. */
   const sectionHandle = (n: number): string =>
     example.scene.handles.get(supplied.sections[n - 1]?.sectionId ?? answerSections.find((x) => x.n === n)?.section.sectionId ?? '') ?? ''
-  const handlesBelow = (node: TreeNode | undefined): string[] => {
-    const out: string[] = []
-    const visit = (at: TreeNode): void => {
-      for (const child of at.children) {
-        if (child.kind === 'section') out.push(sectionHandle(child.n))
-        visit(child)
-      }
-    }
-    if (node) visit(node)
-    return out
-  }
   const relationOption = (p: PartExpectation | undefined): string =>
     p?.kind === 'unit' ? (p.relation === 'result-dependent' ? 'dependent' : (p.relation ?? 'addition')) : p?.kind === 'revision' || expect.ambiguous ? 'addition' : 'new'
 
@@ -440,7 +431,8 @@ export function oracleDecisionProvider(example: CorpusExample, input: RoutingInp
       const h = sectionHandle(Number(section[1]))
       if (expect.answers && h === expect.answers) return noul(true)
       if (expect.ambiguous?.includes(h)) return noul('unsure')
-      return noul(targets?.includes(h) ?? false)
+      if (targets?.includes(h)) return noul(true)
+      return expect.context?.includes(h) ? { type: 'noul', probability: PLAUSIBLE } : noul(false)
     }
     const together = /^j(\d+)$/.exec(question)
     if (together) {
@@ -448,16 +440,8 @@ export function oracleDecisionProvider(example: CorpusExample, input: RoutingInp
       const members = node ? node.members.map((x) => sectionHandle(x.n)) : []
       return noul(members.length >= 2 && members.every((h) => targets?.includes(h) ?? false))
     }
-    const under = /^u(j?)(\d+)$/.exec(question)
-    if (under) {
-      const number = Number(under[2])
-      const node = under[1] === 'j' ? [...tree.byGroup.values()].find((x) => x.index === number) : tree.nodes.find((x) => x.kind === 'section' && x.n === number)
-      const below = handlesBelow(node)
-      if (expect.ambiguous?.some((h) => below.includes(h))) return noul('unsure')
-      return noul(below.some((h) => targets?.includes(h) ?? false))
-    }
-    // A chunk of a run being searched: yes when it names a section the part refers to.
-    if (/^c\d+_\d+$/.test(question)) {
+    // A part of a run being searched: yes when it names a section the part refers to.
+    if (/^c\d+_\d+(_\d+)?$/.test(question)) {
       const named = [...instructions.matchAll(/S(\d+) \(/g)].map((m) => sectionHandle(Number(m[1])))
       if (expect.ambiguous?.some((h) => named.includes(h))) return noul('unsure')
       return noul(named.some((h) => targets?.includes(h) ?? false))
