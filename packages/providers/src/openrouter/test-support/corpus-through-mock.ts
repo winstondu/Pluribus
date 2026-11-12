@@ -1,5 +1,5 @@
 import { DEFAULT_SETTINGS, type ReferentStrategyName, type Settings, type StrategySelectionMode } from '@committee/protocol'
-import { ROUTING_CORPUS, corpusInput, evaluateCorpus, oracleDecisionProvider, type CorpusExample } from '@committee/core'
+import { ROUTING_CORPUS, corpusInput, evaluateCorpus, oracleDecisionProvider, type CorpusExample, type ExpectationSet } from '@committee/core'
 import { createOpenRouterDecisionProvider } from '../decision-provider'
 import { createDecisionsApiMock, type MeasuredCall, type TokenCalibration } from './decisions-api-mock'
 
@@ -25,6 +25,10 @@ export function settingsFor(name: MeasuredConfiguration): Settings {
 export interface MeasuredExample {
   readonly id: string
   readonly passed: boolean
+  /** The expectations it was scored against. */
+  readonly expectations: ExpectationSet
+  /** The sections hop between branch points took as targets for a run, without a search inside it. */
+  readonly runEnds: readonly string[]
   readonly calls: readonly MeasuredCall[]
   /** What the metered provider read back from `usage.input_tokens`. */
   readonly reportedInputTokens: number
@@ -40,7 +44,7 @@ export async function corpusThroughMock(settings: Settings, calibration?: TokenC
     const report = await evaluateCorpus({ decisionProvider: createOpenRouterDecisionProvider({ getKey, fetch: api.fetch }), settings, examples: [example] })
     const result = report.results[0]
     if (result === undefined) throw new Error(`no result for ${example.id}`)
-    out.push({ id: example.id, passed: result.passed, calls: [...api.calls], reportedInputTokens: result.decisions.inputTokens })
+    out.push({ id: example.id, passed: result.passed, expectations: result.expectations, runEnds: result.runEnds.map((end) => end.sectionId), calls: [...api.calls], reportedInputTokens: result.decisions.inputTokens })
   }
   return out
 }

@@ -113,5 +113,24 @@ export interface CorpusExample {
    * names the referent as a place to start.
    */
   readonly below?: readonly Handle[]
+  /** What routing should conclude: the default expectation, and the one every routing without its own expectation set is scored against. */
   readonly expect: CorpusExpectation
+  /**
+   * What routing should conclude when the tree walk runs with hop between
+   * branch points on, where that differs from `expect`
+   * (11 · "Referent strategies", DA3). Absent: `expect` holds with the hop
+   * too. The decisions stay those of `expect`: what the message refers to
+   * does not change, only where the hop places it.
+   */
+  readonly hop?: HopExpectation
+}
+
+/** Which expectations a routing is scored against: the default ones, or those for the tree walk with hop between branch points on. */
+export type ExpectationSet = 'default' | 'hop'
+
+/** An example's expectation under hop between branch points, where it differs: its parts replace those of the default expectation. */
+export interface HopExpectation {
+  /** Why the hop places it there, by the spec's rule. */
+  readonly note: string
+  readonly parts: readonly PartExpectation[]
 }

@@ -82,6 +82,8 @@ function selectionTally(results: readonly CorpusResult[]): string {
   return [...counts].map(([key, n]) => `  ${n} × ${key}`).join('\n')
 }
 const LONG = /^(long-|deep-|live-referent-beyond-window|live-unrelated-in-long)/
+/** The examples whose placement hop between branch points moves, with their hop-on expectation (`CorpusExample.hop`). */
+const HOP_MOVED = ROUTING_CORPUS.filter((e) => e.hop)
 
 /** Below the last observed results, so one borderline answer does not fail the suite while a regression does. */
 const CORPUS_FLOOR = 0.85
@@ -102,9 +104,20 @@ describe.skipIf(key === '')('referent strategies, live', () => {
     const seeds = seeded.map((r) => `  ${r.passed ? '✓' : '✗'} ${r.id}: ${(r.candidates?.units ?? []).map((u) => `${u.unit} ← ${u.candidates.map((c) => `${c.sectionId.replace(/^sec_/, '')} ${c.score?.toFixed(1) ?? '–'}`).join(', ') || 'none'}`).join('; ')}`)
     // Hop between branch points: the targets that are the last section of a run, taken without a search inside the run.
     const hopped = report.results.filter((r) => r.runEnds.length > 0).map((r) => `  ${r.passed ? '✓' : '✗'} ${r.id}: ${r.runEnds.map((e) => `${e.unit} → ${e.sectionId.replace(/^sec_/, '')} (${e.confidence.toFixed(2)}, run of ${e.run.sections})`).join('; ')}`)
-    console.log(`referents by ${name}: ${report.passed}/${report.total}, ${report.decisions.requests} requests, ${report.decisions.questions} questions, ${report.decisions.inputTokens} input tokens${hopped.length ? `\nrun ends taken in ${hopped.length} routings\n${hopped.join('\n')}` : ''}`)
+    // With the hop on, every routing is scored against the hop-on expectations, and the examples it moves are shown with where they went.
+    const hopOn = settings.routing.treeWalk.hopBetweenBranchPoints
+    const moved = HOP_MOVED.map((e) => {
+      const r = report.results.find((x) => x.id === e.id)
+      const want = (e.hop?.parts ?? []).flatMap((p) => p.targets ?? []).join(', ')
+      return `  ${r?.passed ? '✓' : '✗'} ${e.id}: expected under the hop ${want}; run end taken ${r?.runEnds.map((end) => end.sectionId.replace(/^sec_/, '')).join(', ') || 'none'}${r?.passed ? '' : `; ${r?.mismatches.join('; ') ?? ''}`}`
+    })
+    if (hopOn) console.log(`referents by ${name}: the examples the hop moves\n${moved.join('\n')}`)
+    console.log(`referents by ${name}: ${report.passed}/${report.total} (${hopOn ? 'hop-on' : 'default'} expectations), ${report.decisions.requests} requests, ${report.decisions.questions} questions, ${report.decisions.inputTokens} input tokens${hopped.length ? `\nrun ends taken in ${hopped.length} routings\n${hopped.join('\n')}` : ''}`)
     console.log(`referents by ${name}\n${formatCorpusReport(report)}\n${long.join('\n')}${tally ? `\nselections\n${tally}` : ''}\nbudget reached: ${stops.length}${stops.length ? `\n${stops.join('\n')}` : ''}\nuser asked which section: ${asked.length}${asked.length ? `\n${asked.join('\n')}` : ''}${seeds.length ? `\ncandidate sections handed to ${seeds.length} routings\n${seeds.join('\n')}` : ''}`)
     expect(report.total).toBe(ROUTING_CORPUS.length)
+    // The configurations that name the tree walk with the hop on are scored against the hop-on expectations throughout.
+    if (hopOn && settings.routing.strategySelection === 'off') expect(report.expectations.hop).toBe(report.total)
+    if (!hopOn) expect(report.expectations.hop).toBe(0)
     expect(report.passed / report.total).toBeGreaterThanOrEqual(CORPUS_FLOOR)
   })
 

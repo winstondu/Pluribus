@@ -1118,6 +1118,10 @@ export const ROUTING_CORPUS: readonly CorpusExample[] = [
     text: 'Make the entry on tides shorter',
     beyondWindow: true,
     expect: { composition: 'atomic', parts: [{ kind: 'unit', targets: ['E2'], placement: { continue: 'E2' } }] },
+    hop: {
+      note: '11 · hop between branch points, DA3: the chain never splits, so it is one unbranched run of 200 sections (a trunk). The unit refers to it (E2 is in it) and to nothing built on it (it has nothing below it), and is not a correction: it is placed on the run’s last section, whose context holds E2.',
+      parts: [{ kind: 'unit', targets: ['E198'], placement: { continue: 'E198' } }],
+    },
   },
   {
     id: 'long-chain-latest-section',
@@ -1152,6 +1156,10 @@ export const ROUTING_CORPUS: readonly CorpusExample[] = [
     text: 'Make the day 2 plan less packed',
     below: ['brief'],
     expect: { composition: 'atomic', parts: [{ kind: 'unit', targets: ['D2'], placement: { continue: 'D2' } }] },
+    hop: {
+      note: '11 · hop between branch points, DA3: the itinerary and the day plans (J, D1 to D5) are one unbranched run below the join-back; the unit refers to it (D2) and to nothing built on it (D5 is a leaf), and D3 and D4 are not asked about by themselves: it is placed on the run’s last section, D5. Not reached without a candidate source (`below`), as with the switch off.',
+      parts: [{ kind: 'unit', targets: ['D5'], placement: { continue: 'D5' } }],
+    },
   },
   {
     id: 'deep-run-end-section',
@@ -1169,5 +1177,9 @@ export const ROUTING_CORPUS: readonly CorpusExample[] = [
     text: 'Which of those hostels has private rooms with a bathroom?',
     below: ['brief'],
     expect: { composition: 'atomic', parts: [{ kind: 'unit', targets: ['H2'], placement: { continue: 'H2' } }] },
+    hop: {
+      note: '11 · hop between branch points, DA3: the cheaper stays (H1 to H4) are one unbranched run below A, a member of a sibling group (A does not count for the run). The unit refers to it (H2) and to nothing built on it (H4 is a leaf), and H3 is not asked about by itself: it is placed on the run’s last section, H4. Not reached without a candidate source (`below`), as with the switch off.',
+      parts: [{ kind: 'unit', targets: ['H4'], placement: { continue: 'H4' } }],
+    },
   },
 ]

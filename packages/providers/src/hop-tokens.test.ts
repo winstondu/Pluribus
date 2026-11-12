@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { DEFAULT_SETTINGS, type CandidateSourceName, type Settings } from '@committee/protocol'
-import { estimateRequestTokens } from '@committee/core'
+import { ROUTING_CORPUS, estimateRequestTokens } from '@committee/core'
 import { corpusThroughMock, type MeasuredExample } from './openrouter/test-support/corpus-through-mock'
 import { FITTED_CALIBRATION, calibratedTokens, toPortRequest } from './openrouter/test-support/decisions-api-mock'
 
@@ -46,25 +46,29 @@ function totals(examples: readonly MeasuredExample[]): Totals {
 const tokens = (e: MeasuredExample): number => e.calls.reduce((s, c) => s + c.contentTokens, 0)
 
 describe('hop between branch points on the corpus, decisions as labelled', () => {
-  // The corpus labels a reply to a section inside a run with that section ("not the end of the run"). With the switch on such
-  // a reply goes to the run's last section, so these examples are not routed as labelled. Their labels are left as they are.
-  // Without a candidate source the two in `deepRuns` are not reached with the switch off either (`below`).
+  // With the switch on, a reply to a section inside a run goes to the run's last section. The corpus has a second set of
+  // expectations for that (`CorpusExample.hop`): with the switch on every routing is scored against it, and the examples the
+  // hop moves are routed as it says. Without a candidate source the two in `deepRuns` are not reached with the switch off
+  // either (`below`), so only the long chain moves.
+  const MOVED = { 'long-chain-old-section': 'E198', 'deep-run-middle-section': 'D5', 'deep-run-other-branch': 'H4' } as const
   test.each([
     ['the lexical candidate source (the default)', 'lexical', ['long-chain-old-section', 'deep-run-middle-section', 'deep-run-other-branch']],
     ['no candidate source', 'none', ['long-chain-old-section']],
   ] as const)(
-    'hop · with %s: the switch on never costs a routing more requests or tokens, and moves the replies to a section inside a run to the end of the run',
+    'hop · with %s: the switch on never costs a routing more requests or tokens, and moves the replies to a section inside a run to the end of the run, as the hop-on expectations say',
     { timeout: 240_000 },
     async (_name, source, moved) => {
       const off = await corpusThroughMock(treeWalk(false, source))
       const on = await corpusThroughMock(treeWalk(true, source))
       const changed = on.flatMap((e, i) => {
         const before = off[i]
-        return before && (before.calls.length !== e.calls.length || tokens(before) !== tokens(e) || before.passed !== e.passed)
-          ? [`${e.id}: ${before.passed ? '✓' : '✗'} ${before.calls.length} requests ${tokens(before)} tokens → ${e.passed ? '✓' : '✗'} ${e.calls.length} requests ${tokens(e)} tokens`]
+        return before && (before.calls.length !== e.calls.length || tokens(before) !== tokens(e) || before.passed !== e.passed || e.runEnds.length > 0)
+          ? [`${e.id}: ${before.passed ? '✓' : '✗'} ${before.calls.length} requests ${tokens(before)} tokens → ${e.passed ? '✓' : '✗'} ${e.calls.length} requests ${tokens(e)} tokens${e.runEnds.length > 0 ? `, run end ${e.runEnds.join(', ')}` : ''}`]
           : []
       })
-      console.log([`tree walk, ${source}: off ${JSON.stringify(totals(off))}`, `tree walk, ${source}: on  ${JSON.stringify(totals(on))}`, ...changed.map((line) => `  ${line}`)].join('\n'))
+      console.log([`tree walk, ${source}: off (default expectations) ${JSON.stringify(totals(off))}`, `tree walk, ${source}: on (hop-on expectations) ${JSON.stringify(totals(on))}`, ...changed.map((line) => `  ${line}`)].join('\n'))
+      expect(off.every((e) => e.expectations === 'default')).toBe(true)
+      expect(on.every((e) => e.expectations === 'hop')).toBe(true)
       // No routing costs more with the switch on.
       for (const [i, e] of on.entries()) {
         expect(e.calls.length, e.id).toBeLessThanOrEqual(off[i]?.calls.length ?? 0)
@@ -72,9 +76,16 @@ describe('hop between branch points on the corpus, decisions as labelled', () =>
       }
       expect(totals(on).tokenizer).toBeLessThan(totals(off).tokenizer)
       expect(totals(on).requests).toBeLessThan(totals(off).requests)
-      const lost = on.filter((e, i) => !e.passed && off[i]?.passed).map((e) => e.id)
-      expect(lost).toEqual(moved)
-      expect(on.filter((e, i) => e.passed && !off[i]?.passed)).toEqual([])
+      // Each set of expectations is met by the same examples: the hop costs no example its expected placement.
+      expect(on.map((e) => [e.id, e.passed])).toEqual(off.map((e) => [e.id, e.passed]))
+      // The examples the hop moves: placed on the last section of their run, which is their hop-on expectation.
+      const hopped = Object.fromEntries(on.filter((e) => e.runEnds.length > 0).map((e) => [e.id, e.runEnds]))
+      expect(hopped).toEqual(Object.fromEntries(moved.map((id) => [id, [`sec_${MOVED[id]}`]])))
+      for (const id of moved) {
+        expect(on.find((e) => e.id === id)?.passed, id).toBe(true)
+        const example = ROUTING_CORPUS.find((e) => e.id === id)
+        expect(example?.hop?.parts, id).toEqual([{ kind: 'unit', targets: [MOVED[id]], placement: { continue: MOVED[id] } }])
+      }
     },
   )
 })
