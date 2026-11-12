@@ -1,5 +1,6 @@
 import type { DebugToggles } from '@pluribus/protocol'
 import { MenuIcon, PanelRightIcon, ScanSearchIcon } from 'lucide-react'
+import { useState } from 'react'
 import { useActiveConversationId, useApp } from '@/backend'
 import { Button } from '@/components/ui/button'
 import {
@@ -18,6 +19,32 @@ import { useUiState } from './ui-state'
 const FocusBar = featureComponent('association', 'FocusBar')
 const ExportLogs = featureComponent('debug', 'ExportLogsMenuItem')
 
+/** Set once the debug menu has been opened in this browser; until then its button pulses. */
+const DEBUG_MENU_SEEN_KEY = 'pluribus.debug-menu-seen'
+
+function readSeen(): boolean {
+  try {
+    return window.localStorage.getItem(DEBUG_MENU_SEEN_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+/** Whether the debug menu has ever been opened here, and a callback that records that it has. */
+function useDebugMenuSeen(): [boolean, () => void] {
+  const [seen, setSeen] = useState(readSeen)
+  const markSeen = () => {
+    if (seen) return
+    setSeen(true)
+    try {
+      window.localStorage.setItem(DEBUG_MENU_SEEN_KEY, '1')
+    } catch {
+      // Storage unavailable: the pulse stops for this session only.
+    }
+  }
+  return [seen, markSeen]
+}
+
 /**
  * The bar above the transcript: the conversation's title, the Focus bar
  * (from the association feature), and the debug menu with the four view
@@ -32,6 +59,7 @@ export function Header(props: { sidePanelAsSheet: boolean; sidePanelAvailable: b
   const title = app?.conversations.find((conversation) => conversation.id === activeId)?.title ?? 'Pluribus'
   const debug = app?.settings.debug
   const anyDebug = debug ? DEBUG_VIEWS.some((view) => debug[view.key]) : false
+  const [debugMenuSeen, markDebugMenuSeen] = useDebugMenuSeen()
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3 sm:px-4">
@@ -57,7 +85,7 @@ export function Header(props: { sidePanelAsSheet: boolean; sidePanelAvailable: b
         </Tooltip>
       ) : null}
       {debug ? (
-        <DropdownMenu>
+        <DropdownMenu onOpenChange={(open) => open && markDebugMenuSeen()}>
           <Tooltip>
             <TooltipTrigger asChild>
               <DropdownMenuTrigger asChild>
@@ -65,8 +93,15 @@ export function Header(props: { sidePanelAsSheet: boolean; sidePanelAvailable: b
                   variant="ghost"
                   size="icon"
                   aria-label="Debug views"
-                  className={anyDebug ? 'text-primary' : 'text-muted-foreground'}
+                  className={`relative ${anyDebug ? 'text-primary' : 'text-muted-foreground'}`}
                 >
+                  {debugMenuSeen ? null : (
+                    <span
+                      aria-hidden
+                      data-testid="debug-menu-pulse"
+                      className="pointer-events-none absolute inset-0 animate-discover rounded-[inherit] border-2 border-primary"
+                    />
+                  )}
                   <ScanSearchIcon />
                 </Button>
               </DropdownMenuTrigger>

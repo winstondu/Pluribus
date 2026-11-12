@@ -44,6 +44,7 @@ Opening another conversation does not stop work in the previous one (Q100). A se
 | Retry | A failed, stopped, or interrupted section; a request | Starts a new attempt; on a request, only its unfinished sections |
 | Regenerate | Completed work with a superseded-input note | Cancels any of that work still in progress and redoes it against the new version |
 | Undo split | Split messages, until one shows answer text or gets a reply | Restores one atomic request |
+| Debug views | Header, top right | Opens the debug menu: the debug view toggles and Export full logs. Until the menu is first opened in this browser, the button pulses (a ring that grows and fades, then rests); with reduced motion the ring only fades in and out |
 | Export full logs | Header debug menu, available whether or not a debug view is open | Saves one JSON file of the active conversation's complete event log, the settings in force, and derived views. The file contains the full text of the conversation and never a key; it is a local download |
 | Retry / Continue without / Cancel | A dependency-recovery queue item | The recovery choice |
 | Choose section | Target-ambiguity modal above the composer | Picks among candidate sections (Q95) |

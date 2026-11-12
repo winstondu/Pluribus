@@ -117,6 +117,23 @@ describe('shell', () => {
     expect(backend?.sent.map((command) => command.type)).toEqual(['create-conversation', 'delete-conversation'])
   })
 
+  test('the debug views button pulses until its menu is first opened, and stays still after', async () => {
+    window.localStorage.removeItem('pluribus.debug-menu-seen')
+    const user = userEvent.setup()
+    const first = renderWithBackend(<Shell />, { fixture: fixture('trip') })
+    await act(() => first.ready)
+    expect(screen.getByTestId('debug-menu-pulse')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Debug views' }))
+    await screen.findByRole('menu')
+    expect(screen.queryByTestId('debug-menu-pulse')).toBeNull()
+    first.unmount()
+
+    const again = renderWithBackend(<Shell />, { fixture: fixture('trip') })
+    await act(() => again.ready)
+    expect(screen.queryByTestId('debug-menu-pulse')).toBeNull()
+    window.localStorage.removeItem('pluribus.debug-menu-seen')
+  })
+
   test('the empty state’s New conversation button creates a conversation and opens it', async () => {
     const user = userEvent.setup()
     const { ready, store } = renderWithBackend(<Shell />, { fixture: fixture('empty') })

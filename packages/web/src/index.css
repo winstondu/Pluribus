@@ -414,6 +414,43 @@
   animation: pluribus-pulse 1.4s ease-in-out infinite;
 }
 
+/*
+ * The discovery pulse: a ring that grows out of a control and fades, then
+ * rests, until the user first opens it. Transform and opacity only. The
+ * motion takes the first 70% of the cycle; the rest is still, so it reads as
+ * a nudge rather than an alarm.
+ */
+@keyframes pluribus-discover {
+  0% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  70%,
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+/* Reduced motion: the ring stays put and only breathes. */
+@keyframes pluribus-discover-still {
+  0%,
+  100% {
+    opacity: 0.2;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+@utility animate-discover {
+  animation: pluribus-discover 2.4s var(--ease-out) infinite;
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: pluribus-discover-still 2.4s ease-in-out infinite;
+  }
+}
+
 /* A spinner turns at constant speed, and fast: it reads as a faster load. */
 @utility animate-spin-fast {
   animation: spin 0.6s linear infinite;
