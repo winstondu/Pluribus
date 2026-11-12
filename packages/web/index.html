@@ -6,15 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Pluribus</title>
     <meta name="color-scheme" content="light dark" />
-    <script>
-      // Set the theme class before first paint (see src/app/theme.tsx).
-      try {
-        var t = localStorage.getItem('theme')
-        if (t === 'dark' || (t !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches)) {
-          document.documentElement.classList.add('dark')
-        }
-      } catch (e) {}
-    </script>
+    <script src="/theme-init.js"></script>
   </head>
   <body>
     <div id="root"></div>
