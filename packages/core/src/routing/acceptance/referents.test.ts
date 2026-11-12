@@ -124,9 +124,10 @@ describe('start candidates on a backend', () => {
       // The walk as configured: with three answers the rules would choose one pass, which does not walk.
       settings: { routing: { referentStrategy: 'tree-walk', strategySelection: 'off' } },
       candidateSource: {
+        name: 'scripted',
         candidates: async (query) => {
           queries.push(query)
-          return hits
+          return hits.map((sectionId) => ({ sectionId, score: null }))
         },
       },
     })
@@ -146,5 +147,40 @@ describe('start candidates on a backend', () => {
     s.t.model.script('Make it shorter', answer('Shorter.', 10, 20))
     await s.send('Make it shorter', { message: { relation: 'addition' } }, { replyTo: ['Use those recommendations to make a…'] })
     expect(queries).toHaveLength(asked)
+  })
+
+  test('candidates · with the setting on `lexical` the backend\'s own word index hands the walk its candidates: it reads whole answers, and the decision records what it returned', async () => {
+    const s = await routingScenario({ settings: { routing: { referentStrategy: 'tree-walk', strategySelection: 'off', candidateSource: 'lexical' } } })
+    s.t.model.script(BRIEF, answer('Noted.', 10, 20))
+    await s.send(BRIEF)
+    await s.t.advance(50)
+    s.t.model.script(A, answer('Gion and Higashiyama.', 20, 20))
+    // The tea houses come up only at the end of a long answer, far beyond the opening the routing request shows.
+    const long = `${'Museums first, and plenty of them, whatever the weather does. '.repeat(8)}Later, the tea houses of Gion.`
+    expect(long.indexOf('tea houses')).toBeGreaterThan(280)
+    s.t.model.script(B, answer(long, 20, 20))
+    await s.send(A, { message: { relation: 'addition' } }, { replyTo: [BRIEF] })
+    await s.send(B, { message: { relation: 'addition' } }, { replyTo: [BRIEF] })
+    await s.t.advance(500)
+    // B is continued, so it is no longer a first-pass section: the first pass asks about the ends of the lines.
+    s.t.model.script('Which of those is cheapest?', answer('The first one.', 10, 20))
+    await s.send('Which of those is cheapest?', { message: { relation: 'addition' } }, { replyTo: [B] })
+    await s.t.advance(100)
+    const text = 'Book one of the tea houses'
+    s.t.model.script(text, answer('Booked.', 10, 20))
+    const messageId = await s.send(text, { message: { relation: 'addition', targets: { [title(s, B)]: 0.9 } } })
+    await s.t.advance(100)
+    const decision = s.state().messages[messageId]?.decision
+    expect(decision?.candidateSource?.source).toBe('lexical')
+    const candidates = decision?.candidateSource?.units.find((u) => u.unit === 'message')?.candidates ?? []
+    expect(candidates.map((c) => c.sectionId)).toEqual([s.d(B).sectionId])
+    expect(candidates[0]?.score).toBeGreaterThan(0)
+    // The candidate was asked about by itself, and that answer made it the target: the work continues from B.
+    expect(s.d('Book one of the tea houses').targets).toEqual([s.d(B).sectionId])
+    // With the setting on `none` no source is asked and nothing is recorded.
+    await s.t.send({ type: 'change-settings', changes: { routing: { candidateSource: 'none' } } })
+    s.t.model.script('Explain how volcanoes form', answer('Magma.', 10, 20))
+    const plain = await s.send('Explain how volcanoes form', { message: { relation: 'new' } })
+    expect(s.state().messages[plain]?.decision?.candidateSource).toBeUndefined()
   })
 })

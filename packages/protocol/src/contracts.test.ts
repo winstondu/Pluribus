@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest'
 import { COMMAND_TYPES } from './commands'
 import { APP_EVENT_TYPES, APP_LOG, CONVERSATION_EVENT_TYPES, EVENT_SCHEMA_VERSION, upcastEvent } from './events'
 import { IN_FLIGHT_STATES, NOT_STARTED_STATES, PROVIDER_ERROR_CLASS, providerError, providerErrorCodeForStatus } from './model'
-import { DEFAULT_ABSOLUTE_TOKEN_BUDGET, DEFAULT_RELATIVE_TOKEN_BUDGET, DEFAULT_SETTINGS, LEGACY_REFERENT_INPUT_TOKENS, RETRY_POLICIES, STRATEGY_SELECTION_MODES, applySettingsPatch, normalizeSettings, resolveTokenBudget, textTokens, validateSettingsPatch } from './settings'
+import { CANDIDATE_SOURCE_NAMES, DEFAULT_ABSOLUTE_TOKEN_BUDGET, DEFAULT_RELATIVE_TOKEN_BUDGET, DEFAULT_SETTINGS, LEGACY_REFERENT_INPUT_TOKENS, RETRY_POLICIES, STRATEGY_SELECTION_MODES, applySettingsPatch, normalizeSettings, resolveTokenBudget, textTokens, validateSettingsPatch } from './settings'
 import { groupCountText, pausedText, provisionalLabel, recoveryLabels, redoneByDefaultText, supersededInputText, waitingText } from './wording'
 
 describe('commands', () => {
@@ -137,6 +137,8 @@ describe('settings', () => {
       referentStrategy: 'one-pass',
       // Stored before strategy selection existed: there is no value to keep, so the default applies.
       strategySelection: 'rules',
+      // Stored before there was a candidate source: the default applies.
+      candidateSource: DEFAULT_SETTINGS.routing.candidateSource,
       referentBudget: { requests: 1, questions: 10 },
       tokenBudget: { mode: 'absolute', inputTokens: 500 },
       treeWalk: DEFAULT_SETTINGS.routing.treeWalk,
@@ -168,6 +170,25 @@ describe('strategy selection', () => {
     expect(normalizeSettings({ ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, strategySelection: 'guess' as never } }).routing.strategySelection).toBe('rules')
     // A stored mode is kept, `off` included: only the default changed.
     for (const mode of STRATEGY_SELECTION_MODES) expect(normalizeSettings({ ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, strategySelection: mode } }).routing.strategySelection).toBe(mode)
+  })
+})
+
+describe('the candidate source', () => {
+  test('candidates · the candidate source is a setting: none or lexical, validated, and defaulted for settings stored before it existed', () => {
+    expect(CANDIDATE_SOURCE_NAMES).toEqual(['none', 'lexical'])
+    expect(CANDIDATE_SOURCE_NAMES).toContain(DEFAULT_SETTINGS.routing.candidateSource)
+    for (const name of CANDIDATE_SOURCE_NAMES) {
+      const next = applySettingsPatch(DEFAULT_SETTINGS, { routing: { candidateSource: name } })
+      expect(next.routing).toEqual({ ...DEFAULT_SETTINGS.routing, candidateSource: name })
+      expect(validateSettingsPatch({ routing: { candidateSource: name } })).toBeNull()
+      // A stored choice is kept, whatever the default is.
+      expect(normalizeSettings(next).routing.candidateSource).toBe(name)
+    }
+    expect(applySettingsPatch(DEFAULT_SETTINGS, { routing: { candidateSource: DEFAULT_SETTINGS.routing.candidateSource } })).toBe(DEFAULT_SETTINGS)
+    expect(validateSettingsPatch({ routing: { candidateSource: 'embeddings' as never } })).toMatch(/Unknown candidate source/)
+    const { candidateSource: _dropped, ...before } = DEFAULT_SETTINGS.routing
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, routing: before as never }).routing.candidateSource).toBe(DEFAULT_SETTINGS.routing.candidateSource)
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, candidateSource: 'embeddings' as never } }).routing.candidateSource).toBe(DEFAULT_SETTINGS.routing.candidateSource)
   })
 })
 

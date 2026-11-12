@@ -75,6 +75,7 @@ export type {
   UnitReferents,
 } from './referent-strategy'
 export type {
+  CandidateHit,
   CandidateQuery,
   CandidateSource,
   GroupNode,

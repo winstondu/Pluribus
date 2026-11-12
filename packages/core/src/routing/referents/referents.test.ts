@@ -131,6 +131,7 @@ async function route(sc: Scene, text: string, rules: Rules, routing: RouteOption
   const settings: RoutingSettings = {
     referentStrategy: routing.strategy ?? 'tree-walk',
     strategySelection: 'off',
+    candidateSource: 'none',
     referentBudget: { requests: routing.budget?.requests ?? DEFAULT_SETTINGS.routing.referentBudget.requests, questions: routing.budget?.questions ?? DEFAULT_SETTINGS.routing.referentBudget.questions },
     tokenBudget,
     treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, ...routing.treeWalk },
@@ -142,7 +143,7 @@ async function route(sc: Scene, text: string, rules: Rules, routing: RouteOption
   const numberOf = new Map(numberedAnswerSections(input, supply(input, [])).map((s) => [sc.handles.get(s.section.sectionId) ?? '', s.n]))
   const { provider, requests } = scripted(sc, rules, numberOf, input)
   const candidateSource: CandidateSource | undefined =
-    routing.candidates === undefined ? undefined : 'candidates' in routing.candidates ? routing.candidates : { candidates: async () => (routing.candidates as readonly string[]).map(sceneIds.section) }
+    routing.candidates === undefined ? undefined : 'candidates' in routing.candidates ? routing.candidates : { name: 'scripted', candidates: async () => (routing.candidates as readonly string[]).map((handle) => ({ sectionId: sceneIds.section(handle), score: null })) }
   const router = createRouter({
     decisionProvider: provider,
     decomposer: referenceDecomposer(example),
@@ -166,6 +167,14 @@ const unit = (routed: Routed) => {
 }
 
 const sections = (handles: readonly string[]) => handles.map(sceneIds.section)
+/** What the candidate source handed the routing, as the decision records it. */
+const candidateRecord = (outcome: RoutingOutcome) => (outcome.kind === 'plan' ? (outcome.plan.decision.candidateSource ?? null) : null)
+/** The outcome without that record: what is compared with a routing that had no source. */
+function withoutCandidateRecord(outcome: RoutingOutcome): RoutingOutcome {
+  if (outcome.kind !== 'plan') return outcome
+  const { candidateSource: _record, ...decision } = outcome.plan.decision
+  return { ...outcome, plan: { ...outcome.plan, decision } }
+}
 const ids = (routed: Routed, _kind: 's', handles: readonly string[]) => handles.map((h) => `m_s${routed.numberOf.get(h) ?? '?'}`)
 
 const STRATEGIES: readonly ReferentStrategyName[] = ['one-pass', 'tree-walk']
@@ -1047,20 +1056,26 @@ describe('start candidates', () => {
   test('candidates · only answer sections of this conversation are accepted, at most twelve, and a source that fails is a source with nothing to say', async () => {
     const asked: CandidateQuery[] = []
     const source: CandidateSource = {
+      name: 'scripted',
       candidates: async (query) => {
         asked.push(query)
-        return [sceneIds.section('nowhere'), sceneIds.section('X2'), sceneIds.section('X2')]
+        return [sceneIds.section('nowhere'), sceneIds.section('X2'), sceneIds.section('X2')].map((sectionId) => ({ sectionId, score: null }))
       },
     }
     const routed = await route(forked, 'Redo step 1 of branch X', { own: { X1: 0.9 } }, { candidates: source })
     expect(unit(routed).targets).toEqual(sections(['X1']))
     // The source is asked once per unit, with the unit's text and the conversation's answer sections.
     expect(asked.map((q) => ({ key: q.unit.key, text: q.text, sections: q.sections.length }))).toEqual([{ key: 'm', text: 'Redo step 1 of branch X', sections: 18 }])
-    const failing: CandidateSource = { candidates: async () => Promise.reject(new Error('retrieval is down')) }
+    const failing: CandidateSource = { name: 'failing', candidates: async () => Promise.reject(new Error('retrieval is down')) }
     const plain = await route(forked, 'Redo step 1 of branch X', { own: { X1: 0.9 } })
     const failed = await route(forked, 'Redo step 1 of branch X', { own: { X1: 0.9 } }, { candidates: failing })
     expect(failed.requests).toEqual(plain.requests)
-    expect(failed.outcome).toEqual(plain.outcome)
+    // The routing is the one without a source; its record says which source was asked and that it named nothing.
+    expect(withoutCandidateRecord(failed.outcome)).toEqual(plain.outcome)
+    expect(candidateRecord(failed.outcome)).toEqual({ source: 'failing', units: [{ unit: 'message', candidates: [] }] })
+    expect(candidateRecord(plain.outcome)).toBeNull()
+    // What was accepted is recorded, in the source's order, with the scores it gave (this one gave none).
+    expect(candidateRecord(routed.outcome)).toEqual({ source: 'scripted', units: [{ unit: 'message', candidates: [{ sectionId: sceneIds.section('X2'), score: null }] }] })
     // One pass does not walk: candidates change nothing for it.
     const onePass = await route(forked, 'Redo step 1 of branch X', { own: { X1: 0.9 } }, { strategy: 'one-pass' })
     expect((await route(forked, 'Redo step 1 of branch X', { own: { X1: 0.9 } }, { strategy: 'one-pass', candidates: ['X2'] })).requests).toEqual(onePass.requests)
@@ -1073,7 +1088,7 @@ describe('start candidates', () => {
     const plain = await route(tripFull, 'Use those recommendations to make a five-day itinerary.', rules)
     const empty = await route(tripFull, 'Use those recommendations to make a five-day itinerary.', rules, { candidates: [] })
     expect(empty.requests).toEqual(plain.requests)
-    expect(empty.outcome).toEqual(plain.outcome)
+    expect(withoutCandidateRecord(empty.outcome)).toEqual(plain.outcome)
   })
 
   test('C19 · a candidate that is one sibling still lands J on the full sibling group: the join-back is asked about beside its member', async () => {

@@ -22,8 +22,8 @@ describe('routing corpus', () => {
   })
 
   describe.each(REFERENT_STRATEGY_NAMES)('referents by %s', (referentStrategy) => {
-    // Strategy selection is off here: each strategy is tested as configured.
-    const settings = { ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, referentStrategy, strategySelection: 'off' as const } }
+    // Strategy selection is off here: each strategy is tested as configured. So is the candidate source: what the walk reaches by itself.
+    const settings = { ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, referentStrategy, strategySelection: 'off' as const, candidateSource: 'none' as const } }
     test.each(ROUTING_CORPUS.map((e) => [e.id, e] as const))('corpus · with decisions as labelled, the pipeline routes %s as labelled', async (_id, example) => {
       const input = corpusInput(example, settings)
       const router = createRouter({ decisionProvider: oracleDecisionProvider(example, input), decomposer: referenceDecomposer(example) })
@@ -36,9 +36,10 @@ describe('routing corpus', () => {
     })
   })
 
-  // What the tree walk does not reach with decisions strictly as labelled, it reaches in two ways.
+  // What the tree walk does not reach with decisions strictly as labelled, it reaches in two ways. A third is the lexical
+  // candidate source, with nothing scripted: `candidates/lexical.test.ts`.
   describe('referents by tree-walk, a referent below work the message does not refer to', () => {
-    const settings = { ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, referentStrategy: 'tree-walk' as const, strategySelection: 'off' as const } }
+    const settings = { ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, referentStrategy: 'tree-walk' as const, strategySelection: 'off' as const, candidateSource: 'none' as const } }
     const below = ROUTING_CORPUS.filter((e) => e.below)
     test('corpus · three examples have such a referent', () => expect(below.map((e) => e.id)).toEqual(['live-referent-beyond-window', 'deep-run-middle-section', 'deep-run-other-branch']))
 
@@ -52,7 +53,7 @@ describe('routing corpus', () => {
     test.each(below.map((e) => [e.id, e] as const))('corpus · %s is routed as labelled when a candidate source names the referent as a place to start', async (_id, example) => {
       const input = corpusInput(example, settings)
       const targets = (example.expect.parts ?? []).flatMap((part) => part.targets ?? [])
-      const candidateSource: CandidateSource = { candidates: async () => targets.map((handle) => sceneIds.section(handle)) }
+      const candidateSource: CandidateSource = { name: 'scripted', candidates: async () => targets.map((handle) => ({ sectionId: sceneIds.section(handle), score: null })) }
       const router = createRouter({ decisionProvider: oracleDecisionProvider(example, input), decomposer: referenceDecomposer(example), candidateSource })
       expect(compare(example, await router.route(input, NEVER_CANCELLED))).toEqual([])
     })
@@ -64,7 +65,7 @@ describe('routing corpus', () => {
     ['hops between branch points', { hopBetweenBranchPoints: true }],
     ['trunk base and hops', { startAtTrunkBase: true, hopBetweenBranchPoints: true }],
   ] as const)('referents by tree-walk, %s', (_name, switches) => {
-    const settings = { ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, strategySelection: 'off' as const, treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, ...switches } } }
+    const settings = { ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, strategySelection: 'off' as const, candidateSource: 'none' as const, treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, ...switches } } }
     test.each(ROUTING_CORPUS.map((e) => [e.id, e] as const))('corpus · with decisions as labelled, the pipeline routes %s as labelled', async (_id, example) => {
       const input = corpusInput(example, settings)
       const router = createRouter({ decisionProvider: oracleDecisionProvider(example, input), decomposer: referenceDecomposer(example) })
@@ -75,10 +76,10 @@ describe('routing corpus', () => {
 
   // A strategy selector in front, by the rules, which is the default: every example is routed as labelled, the ones beyond the window included,
   // because the rules choose the tree walk exactly there. The one exception is the referent that is both beyond the window and below work
-  // the message does not refer to: the walk does not reach it. The record names the choice.
+  // the message does not refer to: with no candidate source the walk does not reach it. The record names the choice.
   describe('referents by the strategy the rules select (the default)', () => {
     test('corpus · the default settings select by rules', () => expect(DEFAULT_SETTINGS.routing.strategySelection).toBe('rules'))
-    const settings = { ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, referentStrategy: 'one-pass' as const, strategySelection: 'rules' as const } }
+    const settings = { ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, referentStrategy: 'one-pass' as const, strategySelection: 'rules' as const, candidateSource: 'none' as const } }
     test.each(ROUTING_CORPUS.map((e) => [e.id, e] as const))('corpus · with decisions as labelled, the pipeline routes %s as labelled', async (_id, example) => {
       const input = corpusInput(example, settings)
       const router = createRouter({ decisionProvider: oracleDecisionProvider(example, input), decomposer: referenceDecomposer(example) })

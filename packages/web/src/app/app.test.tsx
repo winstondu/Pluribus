@@ -1,4 +1,4 @@
-import { WORDING } from '@committee/protocol'
+import { DEFAULT_SETTINGS, WORDING } from '@committee/protocol'
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, test } from 'vitest'
@@ -187,6 +187,13 @@ describe('shell', () => {
     await user.click(within(dialog).getByRole('radio', { name: /As set here/ }))
     await waitFor(() => expect(store.getState().app?.settings.routing.strategySelection).toBe('off'))
     await waitFor(() => expect(within(dialog).queryByText(/the ones set below are not used/)).not.toBeInTheDocument())
+    // The candidate source: seed hints for the tree walk, from the word index or from nothing.
+    expect(within(dialog).getByText(/Seed hints only: each is still asked about by itself/)).toBeInTheDocument()
+    expect(within(dialog).getByRole('radio', { name: DEFAULT_SETTINGS.routing.candidateSource === 'lexical' ? /Word index/ : /^None/ })).toBeChecked()
+    await user.click(within(dialog).getByRole('radio', { name: /Word index/ }))
+    await waitFor(() => expect(store.getState().app?.settings.routing.candidateSource).toBe('lexical'))
+    await user.click(within(dialog).getByRole('radio', { name: /^None/ }))
+    await waitFor(() => expect(store.getState().app?.settings.routing.candidateSource).toBe('none'))
     // The tree walk's two switches sit under the strategy, are independent, and are shown only for the tree walk.
     expect(within(dialog).getByRole('radio', { name: /Tree walk/ })).toBeChecked()
     expect(within(dialog).getAllByRole('switch')).toHaveLength(4)

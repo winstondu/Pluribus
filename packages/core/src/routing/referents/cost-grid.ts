@@ -1,5 +1,5 @@
 import { DEFAULT_SETTINGS, type RoutingSettings } from '@committee/protocol'
-import { NEVER_CANCELLED, type DecisionProvider, type DecisionQuestions, type DecisionRequest, type DecisionResult } from '../../ports'
+import { NEVER_CANCELLED, type CandidateSource, type DecisionProvider, type DecisionQuestions, type DecisionRequest, type DecisionResult } from '../../ports'
 import { corpusInput, referenceDecomposer } from '../corpus/evaluate'
 import { scene, type Scene } from '../corpus/scene'
 import type { CorpusExample } from '../corpus/types'
@@ -24,6 +24,12 @@ const HAIKU = { input: DEFAULT_SETTINGS.routing.costGuard.answerInputPrice, outp
 /** The message every cell routes. */
 export const COST_GRID_MESSAGE = 'Look at that again and tell me what you would change'
 const MESSAGE = COST_GRID_MESSAGE
+/**
+ * A message that names answers of the grid's conversations in their own
+ * words, so that the lexical candidate source has candidate sections to
+ * hand a tree walk: the worst message with seed hints on top.
+ */
+export const COST_GRID_SEEDED_MESSAGE = 'Go into points 3, 7 and 12 of the plan in detail and tell me what you would change'
 
 export type CostGridShape = 'flat' | 'early split' | 'bushy' | 'nested forks' | 'many roots'
 const SHAPES: readonly CostGridShape[] = ['flat', 'early split', 'bushy', 'nested forks', 'many roots']
@@ -158,6 +164,35 @@ export interface DecisionCost {
   readonly tokens: number
   /** Input tokens the channel reported for the same requests, when the grid is run through one; null otherwise. */
   readonly measured: number | null
+  /** Candidate sections the candidate source handed the routing; 0 when no source was asked. */
+  readonly seeds: number
+}
+
+/** What a cell is routed with besides its strategy. */
+export interface CostGridOptions {
+  /** False leaves the unguarded run out. */
+  readonly unguarded?: boolean
+  readonly through?: (worstCase: DecisionProvider) => CostGridChannel
+  /** The message every cell routes. `COST_GRID_MESSAGE` unless given. */
+  readonly message?: string
+  /** Routing settings on top of each row's own: for example the candidate source. */
+  readonly routing?: Partial<RoutingSettings>
+  /** Injected in place of the candidate source the settings name. */
+  readonly candidateSource?: CandidateSource
+}
+
+/**
+ * The candidate source that costs a walk most: as many candidate sections
+ * as the pipeline accepts, spread evenly over the conversation, whatever
+ * the message says. No real source is this unhelpful; the price guard has
+ * to hold all the same.
+ */
+export const worstCaseCandidateSource: CandidateSource = {
+  name: 'worst-case',
+  candidates: async ({ sections }) => {
+    const count = Math.min(12, sections.length)
+    return Array.from({ length: count }, (_, i) => sections[Math.floor(((i + 0.5) * sections.length) / count)]).flatMap((section) => (section ? [{ sectionId: section.sectionId, score: null }] : []))
+  },
 }
 
 /**
@@ -171,13 +206,19 @@ export interface CostGridChannel {
   readonly inputTokens: () => number
 }
 
-async function spend(sc: Scene, routing: RoutingSettings, through?: (worstCase: DecisionProvider) => CostGridChannel): Promise<DecisionCost> {
-  const example: CorpusExample = { id: 'grid', covers: ['targets'], note: 'a cost grid cell', scene: sc, text: MESSAGE, expect: {} }
+async function spend(sc: Scene, routing: RoutingSettings, options: CostGridOptions): Promise<DecisionCost> {
+  const example: CorpusExample = { id: 'grid', covers: ['targets'], note: 'a cost grid cell', scene: sc, text: options.message ?? MESSAGE, expect: {} }
   const { provider, requests } = worstCase()
-  const channel = through?.(provider)
-  const router = createRouter({ decisionProvider: channel?.provider ?? provider, decomposer: referenceDecomposer(example) })
-  await router.route(corpusInput(example, { ...DEFAULT_SETTINGS, routing }), NEVER_CANCELLED)
+  const channel = options.through?.(provider)
+  const router = createRouter({
+    decisionProvider: channel?.provider ?? provider,
+    decomposer: referenceDecomposer(example),
+    ...(options.candidateSource ? { candidateSource: options.candidateSource } : {}),
+  })
+  const outcome = await router.route(corpusInput(example, { ...DEFAULT_SETTINGS, routing }), NEVER_CANCELLED)
+  const handed = outcome.kind === 'plan' ? (outcome.plan.decision.candidateSource?.units ?? []) : []
   return {
+    seeds: handed.reduce((sum, unit) => sum + unit.candidates.length, 0),
     requests: requests.length,
     questions: requests.reduce((sum, r) => sum + Object.keys(r.questions).length, 0),
     tokens: requests.reduce((sum, r) => sum + estimateRequestTokens(r.state, r.questions), 0),
@@ -186,7 +227,7 @@ async function spend(sc: Scene, routing: RoutingSettings, through?: (worstCase: 
 }
 
 /** The answer the message gets, priced on the cheapest answer model: it reads only the message and is as long as the conversation's answers. */
-const haikuAnswer = (exchange: number): number => (Math.ceil(MESSAGE.length / 4) * HAIKU.input + exchange * 0.85 * HAIKU.output) / 1e6
+const haikuAnswer = (exchange: number, message: string = MESSAGE): number => (Math.ceil(message.length / 4) * HAIKU.input + exchange * 0.85 * HAIKU.output) / 1e6
 
 /** Dollars of decision input tokens. */
 export const decisionDollars = (tokens: number): number => (tokens * DECISION_PRICE) / 1e6
@@ -209,19 +250,17 @@ export interface CostGridRow {
  * repeats the guarded figures): unguarded, the worst message in the largest
  * cells takes thousands of requests. `through` routes every request of a
  * cell through a channel built for it, whose count is the cost's `measured`.
+ * `message`, `routing` and `candidateSource` route another message, with
+ * other settings or with an injected candidate source.
  */
-export async function costGridRows(
-  sections: number,
-  exchange: number,
-  options: { readonly unguarded?: boolean; readonly through?: (worstCase: DecisionProvider) => CostGridChannel } = {},
-): Promise<CostGridRow[]> {
+export async function costGridRows(sections: number, exchange: number, options: CostGridOptions = {}): Promise<CostGridRow[]> {
   const rows: CostGridRow[] = []
   for (const shape of SHAPES) {
     const sc = conversation(shape, sections, exchange)
     for (const [strategy, settings] of STRATEGIES) {
-      const guarded = await spend(sc, { ...FIXED, ...settings }, options.through)
-      const unguarded = options.unguarded === false ? guarded : await spend(sc, { ...FIXED, ...settings, ...UNGUARDED }, options.through)
-      rows.push({ sections, exchange, shape, strategy, guarded, unguarded, answer: haikuAnswer(exchange) })
+      const guarded = await spend(sc, { ...FIXED, ...settings, ...options.routing }, options)
+      const unguarded = options.unguarded === false ? guarded : await spend(sc, { ...FIXED, ...settings, ...options.routing, ...UNGUARDED }, options)
+      rows.push({ sections, exchange, shape, strategy, guarded, unguarded, answer: haikuAnswer(exchange, options.message) })
     }
   }
   return rows

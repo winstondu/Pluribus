@@ -184,9 +184,24 @@ export type StrategySelectionMode = 'off' | 'rules' | 'decision-model'
 
 export const STRATEGY_SELECTION_MODES: readonly StrategySelectionMode[] = ['off', 'rules', 'decision-model']
 
+/**
+ * Where a tree walk gets candidate sections from: places to start besides
+ * the roots (docs/build/dependency-decisioning.md · "The candidate source").
+ * A candidate is a seed hint for the search and never a referent: it is
+ * asked about by itself like any other section.
+ * - `none`: no source. The walk starts at the roots.
+ * - `lexical`: a word index over the conversation's answer sections, in the
+ *   backend. It costs no decision tokens itself; each candidate may add
+ *   questions to a walk, within the decision budget.
+ */
+export type CandidateSourceName = 'none' | 'lexical'
+
+export const CANDIDATE_SOURCE_NAMES: readonly CandidateSourceName[] = ['none', 'lexical']
+
 export interface RoutingSettings {
   readonly referentStrategy: ReferentStrategyName
   readonly strategySelection: StrategySelectionMode
+  readonly candidateSource: CandidateSourceName
   readonly referentBudget: DecisionCaps
   readonly tokenBudget: DecisionTokenBudget
   readonly treeWalk: TreeWalkSettings
@@ -268,6 +283,10 @@ export const DEFAULT_SETTINGS: Settings = {
     // Rules: on the corpus they match the configured tree walk's score at fewer requests, and the decision model does
     // not beat them (docs/build/dependency-decisioning.md · "Strategy selection"). `off` uses the strategy set above as it is.
     strategySelection: 'rules',
+    // Seed hints for the tree walk from a word index over the answer sections. Live on the corpus the configured tree
+    // walk routes two more examples with it and the default, by rules, the same number, for fewer decision tokens
+    // (docs/build/dependency-decisioning.md · "The candidate source"). `none` starts the walk at the roots alone.
+    candidateSource: 'lexical',
     referentBudget: { requests: 4, questions: 96 },
     // 2% of the conversation's log, at least what the pipeline's request and a search of a long run cost (16,000) and
     // at most what twice a 1,700-token answer on the cheapest answer model buys (40,000): the budget grows with what
@@ -301,6 +320,7 @@ export interface SettingsPatch {
   readonly routing?: {
     readonly referentStrategy?: ReferentStrategyName
     readonly strategySelection?: StrategySelectionMode
+    readonly candidateSource?: CandidateSourceName
     readonly referentBudget?: Partial<DecisionCaps>
     /** Replaced as a whole: the two modes share no field. */
     readonly tokenBudget?: DecisionTokenBudget
@@ -323,6 +343,7 @@ export function applySettingsPatch(settings: Settings, patch: SettingsPatch): Se
     routing: {
       referentStrategy: patch.routing?.referentStrategy ?? settings.routing.referentStrategy,
       strategySelection: patch.routing?.strategySelection ?? settings.routing.strategySelection,
+      candidateSource: patch.routing?.candidateSource ?? settings.routing.candidateSource,
       referentBudget: { ...settings.routing.referentBudget, ...definedOnly(patch.routing?.referentBudget) },
       tokenBudget: patch.routing?.tokenBudget ?? settings.routing.tokenBudget,
       treeWalk: { ...settings.routing.treeWalk, ...definedOnly(patch.routing?.treeWalk) },
@@ -357,6 +378,9 @@ export function validateSettingsPatch(patch: SettingsPatch): string | null {
   }
   if (patch.routing?.strategySelection !== undefined && !STRATEGY_SELECTION_MODES.includes(patch.routing.strategySelection)) {
     return `Unknown strategy selection "${String(patch.routing.strategySelection)}"`
+  }
+  if (patch.routing?.candidateSource !== undefined && !CANDIDATE_SOURCE_NAMES.includes(patch.routing.candidateSource)) {
+    return `Unknown candidate source "${String(patch.routing.candidateSource)}"`
   }
   for (const [name, value] of Object.entries(patch.routing?.referentBudget ?? {})) {
     if (typeof value === 'number' && (!Number.isInteger(value) || value < 0)) {
@@ -408,6 +432,7 @@ export function normalizeSettings(stored: Partial<Settings>): Settings {
     routing: {
       referentStrategy: stored.routing?.referentStrategy ?? DEFAULT_SETTINGS.routing.referentStrategy,
       strategySelection: STRATEGY_SELECTION_MODES.find((mode) => mode === stored.routing?.strategySelection) ?? DEFAULT_SETTINGS.routing.strategySelection,
+      candidateSource: CANDIDATE_SOURCE_NAMES.find((name) => name === stored.routing?.candidateSource) ?? DEFAULT_SETTINGS.routing.candidateSource,
       referentBudget: {
         requests: caps?.requests ?? DEFAULT_SETTINGS.routing.referentBudget.requests,
         questions: caps?.questions ?? DEFAULT_SETTINGS.routing.referentBudget.questions,

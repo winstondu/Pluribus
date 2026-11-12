@@ -59,14 +59,22 @@ function totals(examples: readonly MeasuredExample[]): Totals {
   }
 }
 
-/** Recorded 2026-11-12 with decisions as labelled. The live figures (input tokens the provider reported, live answers) are in the comments. */
+/**
+ * Recorded 2026-11-12 with decisions as labelled. The live figures (input tokens the provider reported, live answers)
+ * are in the comments. Recorded again the same day when the lexical candidate source became the default
+ * (`settings.routing.candidateSource`): the tree walk now starts at the sections the word index names as well, so with
+ * decisions as labelled it routes all 62 examples, and so does the strategy the rules select. One pass does not walk
+ * and is unchanged. Before, with no source: tree walk 59 passed, 83 requests, 971 questions, 308,482 characters,
+ * 72,243 tokenizer, 109,090 calibrated, 99,468 estimate (live 84 requests, 108,935); rules 61 passed, 82, 1,010,
+ * 314,261, 73,662, 110,610, 100,907 (live 83 requests, 110,263).
+ */
 const RECORDED: { readonly [N in MeasuredConfiguration]: Totals } = {
   // Live: 74 requests, 92,592 tokens reported. Calibrated is 0.8% above it; the estimate 7.2% below.
   'one pass': { passed: 59, requests: 74, questions: 922, characters: 261_560, tokenizer: 60_559, calibrated: 93_352, estimate: 85_896 },
-  // Live: 84 requests, 108,935 tokens reported. Calibrated is 0.1% above it with one request fewer; the estimate 8.7% below.
-  'tree walk, long runs searched': { passed: 59, requests: 83, questions: 971, characters: 308_482, tokenizer: 72_243, calibrated: 109_090, estimate: 99_468 },
-  // Live: 83 requests, 110,263 tokens reported. Calibrated is 0.3% above it with one request fewer; the estimate 8.5% below.
-  'selected by rules (the default)': { passed: 61, requests: 82, questions: 1_010, characters: 314_261, tokenizer: 73_662, calibrated: 110_610, estimate: 100_907 },
+  // Live: 85 requests, 108,412 tokens reported. Calibrated is 1.4% above it with one request more; the estimate 7.7% below.
+  'tree walk, long runs searched': { passed: 62, requests: 86, questions: 956, characters: 308_442, tokenizer: 72_306, calibrated: 109_913, estimate: 100_067 },
+  // Live: 82 requests, 107,841 tokens reported. Calibrated is 1.0% above it; the estimate 7.9% below.
+  'selected by rules (the default)': { passed: 62, requests: 82, questions: 978, characters: 308_393, tokenizer: 72_259, calibrated: 108_866, estimate: 99_304 },
 }
 
 const configurations = Object.keys(MEASURED_CONFIGURATIONS) as MeasuredConfiguration[]
@@ -129,10 +137,10 @@ describe('decision tokens, measured with a tokenizer over the Decisions mock', (
     const versusEstimate = calls.map((c) => calibratedTokens(FITTED_CALIBRATION, c.questionCount, c.contentTokens) / estimate(c))
     const est = { min: Math.min(...versusEstimate), mean: versusEstimate.reduce((s, r) => s + r, 0) / versusEstimate.length, max: Math.max(...versusEstimate) }
     const round = (x: number): number => Math.round(x * 1000) / 1000
-    // The three configurations' requests: the tokenizer counts 79% to 103% of characters ÷ 4, 93% over all of them.
-    expect({ requests: calls.length, min: round(all.min), mean: round(all.mean), max: round(all.max), total: round(total) }).toEqual({ requests: 239, min: 0.793, mean: 0.896, max: 1.028, total: 0.934 })
-    // Calibrated against the guard's estimate of the same requests: never below it by more than 0.6%, up to 21% above it.
-    expect({ min: round(est.min), mean: round(est.mean), max: round(est.max) }).toEqual({ min: 0.994, mean: 1.065, max: 1.206 })
+    // The three configurations' requests: the tokenizer counts 79% to 104% of characters ÷ 4, 93% over all of them.
+    expect({ requests: calls.length, min: round(all.min), mean: round(all.mean), max: round(all.max), total: round(total) }).toEqual({ requests: 242, min: 0.793, mean: 0.898, max: 1.035, total: 0.934 })
+    // Calibrated against the guard's estimate of the same requests: never below it by more than 0.6%, up to 22% above it.
+    expect({ min: round(est.min), mean: round(est.mean), max: round(est.max) }).toEqual({ min: 0.994, mean: 1.067, max: 1.223 })
   })
 })
 

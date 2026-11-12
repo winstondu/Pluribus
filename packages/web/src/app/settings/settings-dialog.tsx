@@ -3,6 +3,7 @@ import {
   DEFAULT_RELATIVE_TOKEN_BUDGET,
   DEFAULT_SETTINGS,
   RETRY_POLICIES,
+  type CandidateSourceName,
   type ComparePlacement,
   type DebugViewToggle,
   type DecisionThresholds,
@@ -406,6 +407,20 @@ const STRATEGY_SELECTION: readonly { value: StrategySelectionMode; label: string
   },
 ]
 
+/**
+ * Where the tree walk gets candidate sections from: seed hints for its search. A candidate is a place to start, never
+ * a target; it is asked about by itself like any other answer.
+ */
+const CANDIDATE_SOURCES: readonly { value: CandidateSourceName; label: string; description: string }[] = [
+  { value: 'none', label: 'None', description: 'The tree walk starts at the roots of the conversation and follows the lines a message is about.' },
+  {
+    value: 'lexical',
+    label: 'Word index',
+    description:
+      'Answers that share words with the message are handed to the tree walk as further places to start. Seed hints only: each is still asked about by itself. The index costs no decision tokens; each hint may add questions, within the decision budget.',
+  },
+]
+
 /** The tree walk's two switches. A run that is too long to ask about answer by answer is searched whichever way they are set. */
 const TREE_WALK_SWITCHES: readonly { key: 'startAtTrunkBase' | 'hopBetweenBranchPoints'; label: string; description: string }[] = [
   {
@@ -441,6 +456,7 @@ function ReferentSettings({ settings }: { settings: Settings }) {
   const change = useChangeSettings()
   const label = useId()
   const selectionLabel = useId()
+  const candidatesLabel = useId()
   const selecting = settings.routing.strategySelection !== 'off'
   return (
     <Panel title="Referents" description="How routing decides which earlier answers a message refers to and waits for.">
@@ -478,6 +494,20 @@ function ReferentSettings({ settings }: { settings: Settings }) {
             />
           ))
         : null}
+      <Row
+        label="Candidate sections"
+        labelId={candidatesLabel}
+        description="Hints for the tree walk about where an older answer a message refers to may be. One pass does not search and does not use them."
+        stacked
+      >
+        <ChoiceCards
+          labelledBy={candidatesLabel}
+          options={CANDIDATE_SOURCES}
+          value={settings.routing.candidateSource}
+          onChoose={(value) => void change({ routing: { candidateSource: value } })}
+          className="sm:grid-cols-2"
+        />
+      </Row>
       {SUMMARY_SWITCHES.map((entry) => (
         <DebugRow
           key={entry.key}

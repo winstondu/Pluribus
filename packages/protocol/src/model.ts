@@ -556,6 +556,27 @@ export interface StrategySelectionRecord {
   readonly reused: boolean
 }
 
+/**
+ * What the candidate source handed a routing: the candidate sections of
+ * each unit, in the source's order. They are seed hints, places for a tree
+ * walk to start besides the roots. None of them is a referent because it is
+ * listed here, and a score is the source's own figure: routing reads none
+ * of them. A strategy that does not walk ignores the candidates.
+ */
+export interface CandidateSourceRecord {
+  /** Which source ran: `lexical`, or the name of an injected one. */
+  readonly source: string
+  readonly units: readonly {
+    /** The unit's key in `RoutingDecision.units`. */
+    readonly unit: string
+    readonly candidates: readonly {
+      readonly sectionId: SectionId
+      /** The source's own score, higher is closer; null when it gave none. */
+      readonly score: number | null
+    }[]
+  }[]
+}
+
 /** A limit of the decision budget (11 · "Decision budget"). */
 export type DecisionBudgetLimit = 'token-budget' | 'price-guard' | 'requests' | 'questions'
 
@@ -607,6 +628,8 @@ export interface RoutingDecision {
   readonly strategySelection?: StrategySelectionRecord | null
   /** Set when a limit of the decision budget stopped the referent strategy, with the best node found so far where one was used. */
   readonly budgetStop?: BudgetStopRecord | null
+  /** Set when a candidate source was asked: which one, and the candidate sections it returned for each unit. */
+  readonly candidateSource?: CandidateSourceRecord | null
 }
 
 // ─────────────────────────── decomposition ───────────────────────────

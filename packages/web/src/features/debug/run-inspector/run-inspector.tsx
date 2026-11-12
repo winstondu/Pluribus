@@ -1,6 +1,7 @@
 import type {
   AttemptResultStatus,
   BudgetStopRecord,
+  CandidateSourceRecord,
   ConsumedMessage,
   ContextOrigin,
   Decided,
@@ -519,6 +520,42 @@ function BudgetStopRow({ stop, unitKey, transcript }: { stop: BudgetStopRecord; 
   )
 }
 
+const SOURCE_WORD: { readonly [name: string]: string } = { lexical: 'the word index' }
+
+/**
+ * What the candidate source handed this routing: seed hints, places the tree walk starts at besides the roots. A
+ * score is the source's own figure; no section is a target because it is listed here.
+ */
+function CandidateSourceRow({ record, unitKey, transcript }: { record: CandidateSourceRecord; unitKey: string | null; transcript: TranscriptProjection }) {
+  const entry = record.units.find((u) => u.unit === unitKey) ?? (record.units.length === 1 ? record.units[0] : undefined)
+  const candidates = entry?.candidates ?? []
+  const title = (sectionId: SectionId): string => transcript.sections[sectionId]?.title ?? sectionId
+  return (
+    <Row label="Candidate sections">
+      <span data-testid="candidate-source">
+        {candidates.length === 0 ? 'None' : `${candidates.length}`} ·{' '}
+        <span className="text-muted-foreground">from {SOURCE_WORD[record.source] ?? `the source “${record.source}”`}</span>
+        {candidates.length > 0 ? (
+          <span className="mt-0.5 block">
+            {candidates.map((c, i) => (
+              <span key={c.sectionId}>
+                {i > 0 ? ' · ' : ''}
+                {title(c.sectionId)}
+                {c.score !== null ? <span className="font-mono text-2xs text-muted-foreground"> {c.score.toFixed(1)}</span> : null}
+              </span>
+            ))}
+          </span>
+        ) : null}
+        <span className="mt-0.5 block text-muted-foreground">
+          {candidates.length > 0
+            ? 'Seed hints: places the tree walk may start at. Each is asked about by itself; none is a target because it is listed here, and the scores are the source’s own.'
+            : 'It found no answer close enough to the message, so the search started at the roots.'}
+        </span>
+      </span>
+    </Row>
+  )
+}
+
 /** Item 5: what routing decided. A record, not a verdict. */
 function Routing(props: { inspection: RunInspection; transcript: TranscriptProjection; genealogy: GenealogyProjection }) {
   const { inspection, transcript, genealogy } = props
@@ -546,6 +583,7 @@ function Routing(props: { inspection: RunInspection; transcript: TranscriptProje
         </Row>
         {unit ? <UnitRows unit={unit} transcript={transcript} genealogy={genealogy} inspection={inspection} /> : null}
         {decision.strategySelection ? <StrategySelectionRow selection={decision.strategySelection} /> : null}
+        {decision.candidateSource ? <CandidateSourceRow record={decision.candidateSource} unitKey={unit?.key ?? null} transcript={transcript} /> : null}
         {decision.budgetStop ? <BudgetStopRow stop={decision.budgetStop} unitKey={unit?.key ?? null} transcript={transcript} /> : null}
         <Row label="Explanation">{unit?.explanation || decision.explanation || 'None recorded.'}</Row>
       </dl>

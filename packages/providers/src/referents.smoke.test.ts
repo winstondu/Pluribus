@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_SETTINGS, type ReferentStrategyName, type Settings, type StrategySelectionMode, type TreeWalkSettings } from '@committee/protocol'
+import { DEFAULT_SETTINGS, type CandidateSourceName, type ReferentStrategyName, type Settings, type StrategySelectionMode, type TreeWalkSettings } from '@committee/protocol'
 import {
   COST_GRID_ROWS_PER_SIZE,
   COST_GRID_SIZES,
@@ -33,18 +33,23 @@ import { createOpenRouterDecisionProvider } from './index'
 
 const key = process.env['OPENROUTER_KEY'] ?? ''
 const getKey = async () => (key === '' ? null : key)
-const withStrategy = (referentStrategy: ReferentStrategyName, treeWalk: Partial<TreeWalkSettings> = {}): Settings => ({
+// Every configuration names its candidate source, so that none of these figures moves with the default.
+const withStrategy = (referentStrategy: ReferentStrategyName, treeWalk: Partial<TreeWalkSettings> = {}, candidateSource: CandidateSourceName = 'none'): Settings => ({
   ...DEFAULT_SETTINGS,
   // A configuration that names its strategy runs it as configured: strategy selection is off.
-  routing: { ...DEFAULT_SETTINGS.routing, strategySelection: 'off', referentStrategy, treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, ...treeWalk } },
+  routing: { ...DEFAULT_SETTINGS.routing, strategySelection: 'off', candidateSource, referentStrategy, treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, ...treeWalk } },
 })
 
-const withSelection = (strategySelection: StrategySelectionMode): Settings => ({ ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, strategySelection } })
+const withSelection = (strategySelection: StrategySelectionMode, candidateSource: CandidateSourceName = 'none'): Settings => ({
+  ...DEFAULT_SETTINGS,
+  routing: { ...DEFAULT_SETTINGS.routing, strategySelection, candidateSource },
+})
 
 /**
  * One pass, the tree walk as it was (runs always listed), the default, the two switches alone and together; then a
  * strategy selector in front: the rules, the decision model on the shape alone, and the decision model shown the
- * message as well (an injected selector: it is not a setting).
+ * message as well (an injected selector: it is not a setting). All of these with no candidate source; then one pass,
+ * the tree walk and the rules again with the lexical one.
  */
 const CONFIGURATIONS: readonly (readonly [string, Settings, StrategySelector | null])[] = [
   ['one-pass', withStrategy('one-pass'), null],
@@ -56,6 +61,10 @@ const CONFIGURATIONS: readonly (readonly [string, Settings, StrategySelector | n
   ['strategy selected by rules (the default)', withSelection('rules'), null],
   ['strategy selected by the decision model', withSelection('decision-model'), null],
   ['strategy selected by the decision model, shown the message', withSelection('decision-model'), createDecisionSelector({ includeMessage: true })],
+  // The same three with the lexical candidate source: seed hints for the tree walk. One pass does not walk, so its requests are the same.
+  ['one-pass, lexical candidate source', withStrategy('one-pass', {}, 'lexical'), null],
+  ['tree-walk, long runs searched, lexical candidate source', withStrategy('tree-walk', {}, 'lexical'), null],
+  ['strategy selected by rules, lexical candidate source', withSelection('rules', 'lexical'), null],
 ]
 
 /** How the selections of a corpus run came out: who chose, what, and why the rules stood in. */
@@ -86,7 +95,10 @@ describe.skipIf(key === '')('referent strategies, live', () => {
     // The budget is a hard stop: where it was reached, and where the best node found so far stood in for a question to the user.
     const stops = report.results.filter((r) => r.budgetStop).map((r) => `  ${r.passed ? '✓' : '✗'} ${r.id}: ${r.budgetStop?.limit}, ${r.budgetStop?.fallback}, best node used for ${r.budgetStop?.bestFound.length ?? 0} unit(s)`)
     const asked = report.results.filter((r) => r.outcome === 'target-ambiguity').map((r) => `  ${r.passed ? '✓' : '✗'} ${r.id}`)
-    console.log(`referents by ${name}\n${formatCorpusReport(report)}\n${long.join('\n')}${tally ? `\nselections\n${tally}` : ''}\nbudget reached: ${stops.length}${stops.length ? `\n${stops.join('\n')}` : ''}\nuser asked which section: ${asked.length}${asked.length ? `\n${asked.join('\n')}` : ''}`)
+    // What the candidate source handed each routing: seed hints, by position among the conversation's sections.
+    const seeded = report.results.filter((r) => (r.candidates?.units ?? []).some((u) => u.candidates.length > 0))
+    const seeds = seeded.map((r) => `  ${r.passed ? '✓' : '✗'} ${r.id}: ${(r.candidates?.units ?? []).map((u) => `${u.unit} ← ${u.candidates.map((c) => `${c.sectionId.replace(/^sec_/, '')} ${c.score?.toFixed(1) ?? '–'}`).join(', ') || 'none'}`).join('; ')}`)
+    console.log(`referents by ${name}\n${formatCorpusReport(report)}\n${long.join('\n')}${tally ? `\nselections\n${tally}` : ''}\nbudget reached: ${stops.length}${stops.length ? `\n${stops.join('\n')}` : ''}\nuser asked which section: ${asked.length}${asked.length ? `\n${asked.join('\n')}` : ''}${seeds.length ? `\ncandidate sections handed to ${seeds.length} routings\n${seeds.join('\n')}` : ''}`)
     expect(report.total).toBe(ROUTING_CORPUS.length)
     expect(report.passed / report.total).toBeGreaterThanOrEqual(CORPUS_FLOOR)
   })

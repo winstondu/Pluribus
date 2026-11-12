@@ -44,9 +44,10 @@ export interface CoreDependencies {
    */
   readonly strategySelector?: StrategySelector
   /**
-   * Sections a tree walk starts at besides the roots, for each unit that is
-   * routed: in practice the hits of a retrieval over the conversation. Left
-   * out, a walk starts at the roots alone.
+   * Replaces the candidate source the routing pipeline would take from
+   * `settings.routing.candidateSource`: sections a tree walk starts at
+   * besides the roots, for each unit that is routed. Left out by the
+   * application.
    */
   readonly candidateSource?: CandidateSource
   /**

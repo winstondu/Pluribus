@@ -536,6 +536,12 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
       sessionRequirements: sessionRequirementsInForce(state),
       sessionLogTokens: sessionLogTokens(state),
       strategySelectionOnRecord: strategySelectionOnRecord(state),
+      // The candidate source indexes whole answers; the candidates carry only their opening.
+      answerText: (sectionId) => {
+        const attemptIds = state.sections[sectionId]?.attemptIds ?? []
+        const latest = attemptIds[attemptIds.length - 1]
+        return latest ? (state.attemptText[latest] ?? '') : ''
+      },
       settings: { models: settings.models, thresholds: settings.thresholds, routing: settings.routing },
       // Decisions may be shown a summary of a node's context; the chain comes from the same assembly a run uses.
       ...(settings.routing.useSummaryIfAvailable

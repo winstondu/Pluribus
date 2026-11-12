@@ -87,8 +87,8 @@ export interface ReferentRequest {
   readonly treeWalk: TreeWalkSettings
   /**
    * By unit key: sections a walk starts at besides the roots, from the
-   * injected `CandidateSource`. Supplied sections only; none unless a
-   * source is injected. A strategy that does not walk ignores them.
+   * candidate source. Supplied sections only; none when there is no
+   * source. A strategy that does not walk ignores them.
    */
   readonly startCandidates: { readonly [key: string]: readonly SectionId[] }
 }
