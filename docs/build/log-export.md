@@ -60,12 +60,12 @@ Measured by `packages/core/src/engine/log-export.measure.test.ts` (Node 22, in-m
 
 | | 2,000 sections |
 |---|---|
-| Events | 27,400 (7,200 `attempt-output`) |
-| Export (read, inspect every run, serialize, guard) | 933 ms, in the Worker |
-| File | 35.6 MB in 116 chunks of about 256 K characters |
-| `JSON.parse` of the file | 145 ms |
-| Shares | events 20.6 MB (of which `attempt-started` contexts 11.8 MB), projections 6.8 MB, runs 6.4 MB, index 1.7 MB |
+| Events | 29,400 (7,200 `attempt-output`) |
+| Export (read, inspect every run, serialize, guard) | 1,047 ms, in the Worker |
+| File | 36.6 MB in 119 chunks of about 256 K characters |
+| `JSON.parse` of the file | 191 ms |
+| Shares | events 21.2 MB (of which `attempt-started` contexts 11.8 MB), projections 6.9 MB, runs 6.6 MB, index 1.8 MB |
 
 Run it with `LOG_EXPORT_MEASURE=1 pnpm vitest run --project unit packages/core/src/engine/log-export.measure.test.ts --silent=false`; the ordinary suite runs it at 200 sections (3.5 MB, about 100 ms).
 
-The file is built in the Worker and crosses to the page as strings, which the page puts in a Blob as they are: nothing is parsed or stringified on the UI thread. One JSON document was kept rather than JSON Lines because at this size a single document still parses in well under a second, it opens in any JSON viewer, and the one-event-per-line layout already gives line-wise grep and diff. Run inputs are the largest part and grow with context length; that is the log itself, so it is not trimmed. Loading that 2,000-section log into a fresh test backend took 21 s, which is the backend's start, not the export.
+The file is built in the Worker and crosses to the page as strings, which the page puts in a Blob as they are: nothing is parsed or stringified on the UI thread. One JSON document was kept rather than JSON Lines because at this size a single document still parses in well under a second, it opens in any JSON viewer, and the one-event-per-line layout already gives line-wise grep and diff. Run inputs are the largest part and grow with context length; that is the log itself, so it is not trimmed. Loading that 2,000-section log into a fresh test backend took 21.5 s, which is the backend's start, not the export.

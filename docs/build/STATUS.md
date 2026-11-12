@@ -381,16 +381,16 @@ Not done: the e2e flows were not rerun, and no browser flow exercises a clarific
 - **Backend-owned**: a `log-export` snapshot query on `BackendClient`, answered by core with the document already serialized in string chunks (`LogExportFile`). Inputs are read in one queued job; serialization runs after it, in the Worker.
 - **Page**: `LogExportSource.exportLog(conversationId)` → `{ kind: 'blob' } | { kind: 'url' }`. Embedded wraps the chunks in a Blob; a server deployment can return a download URL with the same button. The object URL is revoked afterwards.
 - **Key guard**: the export fails loudly if the stored key occurs anywhere in it (only possible if the user typed it).
-- **Size**: 2,000 sections → 27,400 events, 35.6 MB, built in 933 ms; `JSON.parse` 145 ms.
+- **Size**: 2,000 sections → 29,400 events, 36.6 MB, built in 1,047 ms; `JSON.parse` 191 ms.
 - **Tests**: `core/src/engine/log-export.test.ts` (every event in order; round trip through `fold` to the live state, projections and inspections; deterministic, also after a restart; no key or `Authorization`; the guard; unknown conversation), `log-export.measure.test.ts`, `web/src/features/debug/log-export/export-logs.test.tsx` (Blob and URL results, busy, error, retry, revocation), and the `exportLogs` e2e flow.
 
 | Command | Result |
 |---|---|
 | `pnpm typecheck` | 5 packages, no errors |
-| `pnpm test` | 67 files, 1,400 tests, all passed |
+| `pnpm test` | 73 files, 1,446 tests, all passed (after the rebase onto `d1d86bc`) |
 | `pnpm --filter @committee/web lint` | Exit 0, warnings only, none in the new files |
 | `pnpm build` | Succeeds |
-| `COMMITTEE_URL=http://localhost:5199/ pnpm e2e exportLogs` | Passed: 24 events, 2 runs |
+| `COMMITTEE_URL=http://localhost:5199/ pnpm e2e exportLogs` | Passed: 26 events, 2 runs. The shared setup's model picker step now also matches the picker's "Search the tested models…" placeholder (`e2e/lib.mjs`), which changed with the compatibility list; the other flows were not rerun |
 
 ## How to run
 
