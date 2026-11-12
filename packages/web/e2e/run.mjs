@@ -292,10 +292,10 @@ async function invalidKey({ browser }) {
 
     // Replace the key with the real one and retry the request: it routes and answers.
     await page.getByRole('button', { name: 'Settings', exact: true }).click()
-    await page.getByRole('tab', { name: 'Key' }).click()
+    await page.getByRole('tab', { name: 'Keys' }).click()
     await page.getByRole('button', { name: /Replace/ }).click()
     await applyEnvironmentKey(page)
-    if (await page.getByRole('tab', { name: 'Key' }).isVisible()) await page.keyboard.press('Escape')
+    if (await page.getByRole('tab', { name: 'Keys' }).isVisible()) await page.keyboard.press('Escape')
     const retry = page.getByRole('button', { name: /Retry/ }).first()
     await retry.click()
     await settled(page)
