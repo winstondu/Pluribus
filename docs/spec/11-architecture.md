@@ -397,27 +397,48 @@ Treatment follows the retry setting (Q47, Q75):
 
 Stopping aborts the request. Committee does not work around providers that keep billing after an abort (Q75).
 
+### Claude API error mapping
+
+A role that runs on the Claude API (see [Models](#models)) maps its errors to the same treatments:
+
+| Response | Treatment |
+|---|---|
+| 408, 429, 500, 502, 503, 504, 529 (overloaded); `timeout_error`; empty 200 | Transient: retried automatically, honoring `Retry-After`. 429 shows "Waiting for capacity". |
+| 402 (`billing_error`); 429 with `enforced_spend_limit_reached` (the monthly spend cap) | Non-retryable: "Out of Anthropic credits". |
+| 401, 403 | Non-retryable, with the message. A 401 that says the organization may not call the API from a browser is shown as it is. |
+| 400, 404 | Non-retryable, with the message. |
+| 400 whose message says the input is over the context window; 413 | Non-retryable, as `context_length_exceeded` (Q67, Q82). |
+| `stop_reason: "refusal"` | Non-retryable. No fallback model is requested: an attempt records the one model that ran it. |
+| `error` event in the stream (under HTTP 200) | Fails the attempt, then follows the retry setting. |
+
 ## Providers, keys, and models
 
 ### Browser access
 
 The embedded Web Worker calls OpenRouter directly, with no CORS proxy (Q72). Jev is not called directly (Q68, Q72).
 
+With an Anthropic key, the embedded Web Worker also calls the Claude API directly. The Claude API accepts a request from a browser only with the header `anthropic-dangerous-direct-browser-access: true`, which the backend sends on every such request. The key is the user's own, is used from the user's browser, and is sent only to Anthropic. An organization with zero data retention or the Compliance API cannot call the Claude API from a browser at all.
+
 ### Keys
 
 - **Embedded:** the user pastes an OpenRouter key into settings (Q73). It is stored locally in a secrets store separate from the event log, never in the log (Q64, Q73). OAuth PKCE ("Connect OpenRouter") is deferred past the MVP (Q73).
+- **Embedded, optional:** the user may also paste an Anthropic key. It is held under the same rules, as a second secret. The OpenRouter key stays required: decisions run on OpenRouter only.
 - **Server:** keys come from the server environment and never reach the client (Q64).
-- Settings show only whether a key is configured (Q64).
+- Settings show only whether each key is configured (Q64).
+- Providing a key is the one part that differs by deployment, so the client reaches it through one interface, the key provision: check a key, store or replace it, remove it. Embedded, the Web Worker checks and stores the key; a key goes from the client to the Worker once and is never sent back. A key is never part of a command, an event, a setting, an export or a log. With keys from the server environment the client offers no way to enter one.
+- A key is checked before it is stored. OpenRouter reports what is left on a key. The Claude API has no balance a standard key can read, so the check is whether the key is recognized and whether one request of a single output token on the cheapest model is paid for. It reports valid, invalid, or valid but out of credit, and says so when the credit cannot be determined.
 
 ### Models
 
-- Model choice is per role, using OpenRouter model IDs (Q65):
+- Model choice is per role (Q65). Each role has a provider and a model, named by that provider's model IDs: OpenRouter, or the Claude API when an Anthropic key is configured. By default every role is on OpenRouter. The roles:
   - answer runs, including work continuing from a join-back (Q90);
   - generative decomposition;
   - synthesis, for join chains only (Q65, Q90). A join chain exists only where lines of work have truly diverged over further turns, or were separate chains from the start. Work that needs several members of one sibling group continues from that group's join-back, which is bookkeeping: it is an ordinary answer and involves no synthesis (invariant 4; C5);
-  - the pinned decision model (Q74).
-- **Embedded:** configurable from the frontend. MVP answer, decomposition, and synthesis choices are restricted to a small tested compatibility list, covering structured preparation and streamed clarification signals for the relevant roles (Q107). Synthesis is on the list because a synthesis run is an answer the user reads and must be able to stop and ask. **Server:** set by server environment settings (Q65).
-- Each attempt records the model it used (Q65).
+  - the pinned decision model (Q74), on OpenRouter only: the Claude API has no Decisions endpoint.
+- **Embedded:** configurable from the frontend. MVP answer, decomposition, and synthesis choices are restricted to a small tested compatibility list, covering structured preparation and streamed clarification signals for the relevant roles (Q107). Synthesis is on the list because a synthesis run is an answer the user reads and must be able to stop and ask. The list is per provider. **Server:** set by server environment settings (Q65).
+- The backend owns this configuration in both deployments. It reports, for each role, the providers it can run on, which of them are usable now, the models each offers, and whether the client may change them; the client renders that and sends a settings change, which the backend validates. Choosing a provider without a model gives the role that provider's default model.
+- When the Anthropic key is removed, every role on the Claude API returns to OpenRouter and its default model there, in the same step.
+- Each attempt records the model and the provider it used (Q65).
 
 ## Inspection
 
