@@ -366,7 +366,7 @@ For the specification's edits of 2026-11-12 (07 Â· "Clarification", 08, 10, 11 Â
 | Command | Result |
 |---|---|
 | `pnpm typecheck` | 5 packages, no errors |
-| `pnpm test` | See the final run in the commit that follows this section |
+| `pnpm test` | 70 files, 1,432 tests, all passed (after the rebase onto `235b68f`) |
 | `pnpm --filter @committee/web lint` | Exit 0, warnings only |
 | `pnpm build` | Succeeds |
 | `pnpm vitest run --config vitest.smoke.config.ts packages/providers/src/readiness.smoke.test.ts` | 5 of 5 passed, once: both listed models returned `ready` and `clarification-needed` from the preparation step and ended a streamed answer with the signal; an answer that needs nothing completed without it |
