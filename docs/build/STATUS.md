@@ -469,6 +469,8 @@ On the dev server, `/?fixtures` opens the fixture gallery.
 
 **Providers and runtime**
 
+- **The Claude API as a provider (branch `claude/anthropic-key`, 2026-11-12).** With an optional Anthropic key, answers, synthesis and decomposition can each run on the Claude API; decisions stay on OpenRouter. The backend owns the configuration and reports what can be chosen; keys go through one client-side interface, `KeyProvision`, and are no longer part of `change-settings`. Not run live: no Anthropic key in the build environment, so the Claude API entries of the compatibility list are marked untested. [anthropic-provider.md](anthropic-provider.md).
+
 - **`Retry-After` is ignored in the browser.** OpenRouter's CORS headers do not expose it, so a 429 or 503 in the Worker falls back to the policy's backoff.
 - **Routing retry count resets on restart.** It is held in memory, so after a restart a message still routing starts again with a fresh count.
 
