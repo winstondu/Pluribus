@@ -222,11 +222,15 @@ function assemble(state: ConversationState, directiveId: DirectiveId | null, nod
   // 4. The run's own request.
   if (self) readOwnRequest(state, b, self)
 
-  // 5. The clarification that blocked it: the question, then the answer.
-  if (self?.clarification) {
-    const { elicitationId, answerMessageId } = self.clarification
+  // 5. Every clarification that paused it and was answered, in the order asked: the question, then the answer.
+  //    A run that stopped to ask contributes its question here and never its partial text (invariant 7, Q106).
+  for (const elicitationId of self ? state.elicitationOrder : []) {
     const elicitation = state.elicitations[elicitationId]
-    if (elicitation?.record.kind === 'clarification') {
+    if (!elicitation || elicitation.record.kind !== 'clarification' || elicitation.status !== 'answered') continue
+    if (!self || !elicitation.record.blockedDirectiveIds.includes(self.id)) continue
+    if (elicitation.resolution?.kind !== 'clarification') continue
+    const answerMessageId = elicitation.resolution.answerMessageId
+    {
       const questionId = elicitation.record.questionDirectiveId
       const questionAttempt = currentResult(state, questionId)
       if (questionAttempt) {

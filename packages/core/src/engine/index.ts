@@ -58,5 +58,6 @@ export {
   RETRY_TIMER,
   type WaitDecision,
 } from './lifecycle'
+export { askKnownClarification, inputDigest, readinessStands, type KnownClarification } from './readiness'
 export { routingCandidates, resolveTargets, sessionLogTokens } from './candidates'
 export { Projector, projectSnapshot, rebuildSnapshot, runInspection, undoSplitAvailable } from './projections'

@@ -16,6 +16,7 @@ import type { JsonValue } from '../ports'
 import type { CommandHandlers, Reaction, RetryPlanner, RouteOptions, RoutingRetryPlanner, StartupReaction, StepContext, TimerHandler } from './module'
 import {
   activeMembers,
+  awaitingInput,
   barrierOf,
   currentJoinBack,
   currentResult,
@@ -112,7 +113,7 @@ export function computeWait(state: ConversationState, d: DirectiveRow): WaitDeci
     const other = state.directives[id]
     if (!other) continue
     const notStarted = other.attemptIds.length === 0
-    if (other.state === 'awaiting-elicitation') {
+    if (other.state === 'awaiting-elicitation' || awaitingInput(other)) {
       // Held for the user's answer: the queue item names the part it waits on (Q19).
       blocked = true
       pushRef(refs, { kind: 'directive', directiveId: other.id })
@@ -147,7 +148,8 @@ export function settleWait(ctx: StepContext, directiveId: DirectiveId, force = f
   if (decision.kind === 'ready') {
     // Held for an elicitation still open: it waits for the answer alone (07).
     if (d.heldBy && ctx.state.elicitations[d.heldBy.elicitationId]?.status === 'open') {
-      if (d.state !== 'awaiting-elicitation') {
+      const held = d.heldBy.reason === 'clarification' ? awaitingInput(d) : d.state === 'awaiting-elicitation'
+      if (!held) {
         ctx.emit({ type: 'directive-held', directiveId, elicitationId: d.heldBy.elicitationId, reason: d.heldBy.reason })
       }
       return
@@ -185,7 +187,8 @@ export function notStartedInSection(state: ConversationState, d: DirectiveRow): 
  */
 export function startedInSection(state: ConversationState, d: DirectiveRow): boolean {
   if (isStartedUnsettled(d.state)) return true
-  return d.state === 'ready' && d.sectionId !== null && !notStartedInSection(state, d)
+  // Ready again for a retry, or paused for input after a run stopped to ask (Q106): the section holds attempts.
+  return (d.state === 'ready' || awaitingInput(d)) && d.sectionId !== null && !notStartedInSection(state, d)
 }
 
 /** First states, releases and refreshed waits, for every directive that has not started. */
@@ -564,6 +567,7 @@ export const engineTimers = { [RETRY_TIMER]: retryTimer, [ROUTE_RETRY_TIMER]: ro
 
 /** For tests and slices: is this event one that settles a directive? */
 export function settlesDirective(event: ConversationEvent): boolean {
+  // `attempt-paused` is not here: a run that stopped to ask leaves its directive paused, not settled (Q106).
   return [
     'attempt-completed',
     'attempt-failed',

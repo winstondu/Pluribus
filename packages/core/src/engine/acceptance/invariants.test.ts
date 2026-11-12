@@ -157,6 +157,6 @@ describe('invariants', () => {
     }
     expectTypeOf<ModelRequest>().not.toHaveProperty('tools')
     expectTypeOf<ModelRequest>().not.toHaveProperty('toolChoice')
-    expectTypeOf<ModelStreamEvent['type']>().toEqualTypeOf<'text' | 'completed' | 'failed' | 'cancelled'>()
+    expectTypeOf<ModelStreamEvent['type']>().toEqualTypeOf<'text' | 'completed' | 'failed' | 'cancelled' | 'clarification-needed'>()
   })
 })

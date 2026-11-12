@@ -28,7 +28,7 @@ describe('elicitation', () => {
     const question = s.d('question about yesterday')
     expect(question.kind).toBe('clarification-question')
     // The barrier holds the answer work: the translation waits for the blocked part.
-    expect(yesterday.state).toBe('awaiting-elicitation')
+    expect(yesterday.state).toBe('paused')
     expect(translation.state).toBe('dependency-queued')
     expect(translation.heldByBarrier).toBe(true)
     // The question is not held: it runs at once and is shown.
@@ -60,8 +60,8 @@ describe('elicitation', () => {
     expect(raised.map((e) => e.kind === 'clarification' && e.reason)).toEqual(['incompatible-requirements', 'missing-information'])
     const conflict = s.d('Write a 50-word summary of the…')
     const missing = s.d('Recommend a hotel near the conference')
-    expect(conflict.state).toBe('awaiting-elicitation')
-    expect(missing.state).toBe('awaiting-elicitation')
+    expect(conflict.state).toBe('paused')
+    expect(missing.state).toBe('paused')
     expect(conflict.sectionId).toBeNull()
     // Work with only ordinary vagueness is answered.
     expect(s.d('Recommend a good book for a…').state).not.toBe('awaiting-elicitation')

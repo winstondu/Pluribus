@@ -1,4 +1,5 @@
 import type { ModelRole } from './model'
+import { compatibleModels, isCompatibleModel, isListedModelRole } from './models'
 
 /**
  * User settings (10 · "User settings"). App-wide: retry policy, models and
@@ -442,6 +443,10 @@ export function validateSettingsPatch(patch: SettingsPatch): string | null {
   }
   for (const [role, model] of Object.entries(patch.models ?? {})) {
     if (typeof model === 'string' && model.trim() === '') return `Model for "${role}" cannot be empty`
+    // MVP answer and decomposition choices come from the tested compatibility list (Q107).
+    if (typeof model === 'string' && isListedModelRole(role) && !isCompatibleModel(role, model)) {
+      return `Model for "${role}" must be one of the tested models: ${compatibleModels(role).map((m) => m.id).join(', ')}`
+    }
   }
   return null
 }
@@ -455,7 +460,7 @@ export function normalizeSettings(stored: Partial<Settings>): Settings {
   return {
     ...DEFAULT_SETTINGS,
     ...stored,
-    models: { ...DEFAULT_SETTINGS.models, ...stored.models },
+    models: normalizeModels({ ...DEFAULT_SETTINGS.models, ...stored.models }),
     thresholds: { ...DEFAULT_SETTINGS.thresholds, ...stored.thresholds },
     routing: {
       referentStrategy: stored.routing?.referentStrategy ?? DEFAULT_SETTINGS.routing.referentStrategy,
@@ -478,6 +483,19 @@ export function normalizeSettings(stored: Partial<Settings>): Settings {
       comparePlacement: COMPARE_PLACEMENTS.find((placement) => placement === stored.debug?.comparePlacement) ?? DEFAULT_SETTINGS.debug.comparePlacement,
     },
   }
+}
+
+/**
+ * Stored models, with an answer or decomposition model that is not on the
+ * tested compatibility list replaced by that role's default (Q107). The
+ * other roles are kept as stored.
+ */
+export function normalizeModels(models: ModelSettings): ModelSettings {
+  let next = models
+  for (const role of ['answer', 'decomposition'] as const) {
+    if (!isCompatibleModel(role, next[role])) next = { ...next, [role]: DEFAULT_SETTINGS.models[role] }
+  }
+  return next
 }
 
 /** What `referentBudget.inputTokens` was before the token budget became a setting of its own. */

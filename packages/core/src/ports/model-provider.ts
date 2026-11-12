@@ -1,4 +1,4 @@
-import type { ProviderError, TokenUsage } from '@committee/protocol'
+import type { ClarificationReason, ProviderError, TokenUsage } from '@committee/protocol'
 import type { CancelSignal } from './cancel'
 
 /**
@@ -16,6 +16,15 @@ export interface ModelRequest {
   readonly model: string
   /** The exact input, in order. Core records the same messages on the attempt (invariant 2). */
   readonly messages: readonly ModelMessage[]
+  /**
+   * True when the run may stop to ask the user (Q106): the provider gives
+   * the model a typed way to signal consequential missing information and
+   * reports it as a `clarification-needed` event. Core sets it for answer
+   * and synthesis runs and leaves it out for a clarification question's
+   * own run. How the signal travels is the provider's business; it is
+   * never part of `messages` and never answer text.
+   */
+  readonly clarificationSignal?: boolean
 }
 
 export type ModelStreamEvent =
@@ -27,6 +36,19 @@ export type ModelStreamEvent =
   | { readonly type: 'failed'; readonly error: ProviderError }
   /** The signal was cancelled and the request was aborted (Q75). */
   | { readonly type: 'cancelled' }
+  /**
+   * The run discovered consequential missing information and stopped to ask
+   * (Q106). Terminal. Text yielded before it stands as partial output; the
+   * question is not answer text and was never yielded as `text`. Only for a
+   * request with `clarificationSignal`.
+   */
+  | {
+      readonly type: 'clarification-needed'
+      readonly reason: ClarificationReason
+      /** The question for the user, self-contained. Never empty. */
+      readonly question: string
+      readonly usage: TokenUsage | null
+    }
 
 export type ModelStreamTerminal = Exclude<ModelStreamEvent, { readonly type: 'text' }>
 
@@ -45,7 +67,8 @@ export interface ModelProvider {
    *
    * Contract:
    * - Yields zero or more `text` events, then exactly one terminal event
-   *   (`completed`, `failed` or `cancelled`), then ends.
+   *   (`completed`, `failed`, `cancelled` or `clarification-needed`), then
+   *   ends.
    * - Never throws and never rejects: every failure is a `failed` event with
    *   a typed error. Text yielded before a failure stands as partial output.
    * - Error mapping: 408, 429, 502, 503, other 5xx, network failures, an

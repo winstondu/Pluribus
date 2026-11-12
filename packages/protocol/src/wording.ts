@@ -22,6 +22,16 @@ export const WORDING = {
   responding: 'Responding…',
   /** Build choice: status of work held by an elicitation. */
   awaitingAnswer: 'Waiting for your answer',
+  /** Status of a section paused awaiting user input (10 · "States a section can show"; the words are a build choice). */
+  pausedAwaitingInput: 'Paused — waiting for your answer',
+  /** Build choice: mark on text kept from a run that stopped to ask a clarification question (Q106: "retains labeled partial text"). */
+  pausedPartial: 'Paused · partial',
+  /** Build choice: mark on that text once the question was answered and the answer is another additional response. */
+  clarifiedPartial: 'Partial — answered below',
+  /** Build choice: link from that text to the answer. */
+  seeAnswer: 'See the answer',
+  /** Build choice: label over a clarification question's text. */
+  clarificationQuestion: 'Question',
   /** Build choice: status of a message's responding bubble while routing is working. */
   routing: 'Routing…',
   /** Build choice: lead-in of the notice on a responding bubble whose routing failed; the provider's message follows. */

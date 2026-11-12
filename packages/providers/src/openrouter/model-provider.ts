@@ -1,4 +1,4 @@
-import { providerError, type ProviderError, type TokenUsage } from '@committee/protocol'
+import { compatibleModel, providerError, type ClarificationReason, type ProviderError, type TokenUsage } from '@committee/protocol'
 import type {
   CancelSignal,
   ModelProvider,
@@ -52,9 +52,99 @@ async function countTokens(catalog: ModelCatalog, request: ModelRequest): Promis
   return { inputTokens, contextLimit, exact: false }
 }
 
+/**
+ * The streamed clarification signal (Q106). An answer run on a model the
+ * compatibility list marks for it carries one function tool; a call to it
+ * is the run saying that it cannot go on without the user. The call arrives
+ * as typed `tool_calls` deltas, apart from the answer text, so nothing is
+ * classified after streaming. The tool is the wire form of the port's
+ * `clarificationSignal`: core never sees tools.
+ */
+export const CLARIFICATION_TOOL_NAME = 'ask_user_for_clarification'
+
+export const CLARIFICATION_TOOL = {
+  type: 'function',
+  function: {
+    name: CLARIFICATION_TOOL_NAME,
+    description:
+      'Stop and ask the user one question. Call this only when you find that a correct answer needs a fact or a preference that only the user can supply, that is nowhere in the conversation, and that a reasonable assumption would get materially wrong; or when the user\'s own requirements contradict each other. Never call it for something you can reasonably assume, say as an assumption, or work out from the conversation: then just answer. After calling it, write nothing more.',
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['question', 'reason'],
+      properties: {
+        question: { type: 'string', description: 'One short, specific question for the user that can be read on its own' },
+        reason: { type: 'string', enum: ['missing-information', 'incompatible-requirements'] },
+      },
+    },
+  },
+} as const
+
+/** True when the run is to carry the signal: core asked for it and the model is tested for it (Q107). */
+export function carriesClarificationSignal(request: ModelRequest): boolean {
+  return request.clarificationSignal === true && compatibleModel(request.model)?.streamedClarificationSignal === true
+}
+
+/** A piece of a streamed tool call: its position, and whatever of its name and arguments this chunk carried. */
+interface ToolCallPiece {
+  readonly index: number
+  readonly name: string
+  readonly arguments: string
+}
+
+/** Collects tool-call pieces by position, as the stream delivers them. */
+class ToolCalls {
+  private readonly calls = new Map<number, { name: string; arguments: string }>()
+
+  add(piece: ToolCallPiece): void {
+    const call = this.calls.get(piece.index) ?? { name: '', arguments: '' }
+    call.name += piece.name
+    call.arguments += piece.arguments
+    this.calls.set(piece.index, call)
+  }
+
+  get any(): boolean {
+    return this.calls.size > 0
+  }
+
+  /** The clarification the run asked for, `malformed` when a call cannot be read as one, or null when there was no call. */
+  clarification(): { readonly reason: ClarificationReason; readonly question: string } | 'malformed' | null {
+    if (this.calls.size === 0) return null
+    const call = [...this.calls.values()].find((c) => c.name === CLARIFICATION_TOOL_NAME)
+    if (!call) return 'malformed'
+    let value: unknown
+    try {
+      value = JSON.parse(call.arguments)
+    } catch {
+      return 'malformed'
+    }
+    if (!isRecord(value) || typeof value['question'] !== 'string' || value['question'].trim() === '') return 'malformed'
+    const reason: ClarificationReason = value['reason'] === 'incompatible-requirements' ? 'incompatible-requirements' : 'missing-information'
+    return { reason, question: value['question'].trim() }
+  }
+}
+
+const MALFORMED_SIGNAL = providerError('malformed-response', 'The model asked for clarification without a readable question', { httpStatus: 200 })
+
+function readToolCallPieces(value: unknown): ToolCallPiece[] {
+  if (!Array.isArray(value)) return []
+  const pieces: ToolCallPiece[] = []
+  value.forEach((entry: unknown, position) => {
+    if (!isRecord(entry)) return
+    const fn = entry['function']
+    pieces.push({
+      index: typeof entry['index'] === 'number' ? entry['index'] : position,
+      name: isRecord(fn) && typeof fn['name'] === 'string' ? fn['name'] : '',
+      arguments: isRecord(fn) && typeof fn['arguments'] === 'string' ? fn['arguments'] : '',
+    })
+  })
+  return pieces
+}
+
 /** What one parsed SSE `data:` payload means for the run. */
 type ChunkOutcome =
   | { readonly kind: 'text'; readonly text: string }
+  | { readonly kind: 'tool-call'; readonly piece: ToolCallPiece }
   | { readonly kind: 'finish'; readonly reason: 'stop' | 'length' }
   | { readonly kind: 'usage'; readonly usage: TokenUsage }
   | { readonly kind: 'failed'; readonly error: ProviderError }
@@ -84,6 +174,7 @@ export function interpretChunk(data: string, key: string | null): ChunkOutcome[]
     if (isRecord(delta) && typeof delta['content'] === 'string' && delta['content'] !== '') {
       outcomes.push({ kind: 'text', text: delta['content'] })
     }
+    if (isRecord(delta)) for (const piece of readToolCallPieces(delta['tool_calls'])) outcomes.push({ kind: 'tool-call', piece })
     const finish = choice['finish_reason']
     if (finish === 'error') {
       outcomes.push({
@@ -155,6 +246,7 @@ async function* streamCompletion(
           stream: true,
           stream_options: { include_usage: true },
           transforms: [],
+          ...(carriesClarificationSignal(request) ? { tools: [CLARIFICATION_TOOL], tool_choice: 'auto', parallel_tool_calls: false } : {}),
         }),
         signal: controller.signal,
       })
@@ -191,6 +283,7 @@ async function* streamCompletion(
     const decoder = new TextDecoder()
     reader = response.body.getReader()
     let sawText = false
+    const toolCalls = new ToolCalls()
     let finish: 'stop' | 'length' | null = null
     let usage: TokenUsage | null = null
     let done = false
@@ -227,6 +320,9 @@ async function* streamCompletion(
             sawText = true
             yield { type: 'text', text: outcome.text }
             break
+          case 'tool-call':
+            toolCalls.add(outcome.piece)
+            break
           case 'finish':
             finish = outcome.reason
             break
@@ -246,6 +342,13 @@ async function* streamCompletion(
 
     if (signal.cancelled) {
       yield CANCELLED
+      return
+    }
+    if (toolCalls.any && (finish !== null || sawDone)) {
+      // The run stopped to ask (Q106). Text it wrote before stands as partial output.
+      const asked = toolCalls.clarification()
+      if (asked === 'malformed' || asked === null) yield { type: 'failed', error: MALFORMED_SIGNAL }
+      else yield { type: 'clarification-needed', reason: asked.reason, question: asked.question, usage }
       return
     }
     if (!sawText) {
@@ -308,7 +411,9 @@ async function* readJsonCompletion(
   const choice: unknown = choices[0]
   const message = isRecord(choice) ? choice['message'] : null
   const content = isRecord(message) && typeof message['content'] === 'string' ? message['content'] : ''
-  if (content === '') {
+  const toolCalls = new ToolCalls()
+  for (const piece of readToolCallPieces(isRecord(message) ? message['tool_calls'] : null)) toolCalls.add(piece)
+  if (content === '' && !toolCalls.any) {
     yield { type: 'failed', error: EMPTY_RESPONSE }
     return
   }
@@ -316,7 +421,13 @@ async function* readJsonCompletion(
     yield CANCELLED
     return
   }
-  yield { type: 'text', text: content }
+  if (content !== '') yield { type: 'text', text: content }
+  if (toolCalls.any) {
+    const asked = toolCalls.clarification()
+    if (asked === 'malformed' || asked === null) yield { type: 'failed', error: MALFORMED_SIGNAL }
+    else yield { type: 'clarification-needed', reason: asked.reason, question: asked.question, usage: isRecord(body) ? readUsage(body['usage']) : null }
+    return
+  }
   const finish = isRecord(choice) ? choice['finish_reason'] : null
   if (finish === 'content_filter') {
     yield { type: 'failed', error: providerError('refusal', 'The model declined to answer', { httpStatus: 200 }) }

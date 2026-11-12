@@ -14,12 +14,13 @@ import {
 } from '@/components/ai-elements/model-selector'
 import { Button } from '@/components/ui/button'
 import { useAppEnvironment } from '../environment'
-import { BUILT_IN_MODELS, formatContextLength, modelsForRole, type ModelOption } from '../models'
+import { BUILT_IN_MODELS, formatContextLength, modelsForRole, roleIsListed, type ModelOption } from '../models'
 
 /**
  * The model for one role: a button showing the current model, opening the AI
  * Elements model selector over OpenRouter's model list. A model ID that is
- * not in the list can be typed and used as it is.
+ * not in the list can be typed and used as it is, except for answers and
+ * decomposition: those offer the tested compatibility list only (Q107).
  */
 export function ModelPicker(props: { role: ModelRole; label: string; value: string; onChange(model: string): void }) {
   const { loadModels } = useAppEnvironment()
@@ -50,8 +51,9 @@ export function ModelPicker(props: { role: ModelRole; label: string; value: stri
     )
   }, [models, props.role, props.value])
 
+  const listed = roleIsListed(props.role)
   const typed = query.trim()
-  const typedIsNew = typed.includes('/') && !/\s/.test(typed) && !models.some((model) => model.id === typed)
+  const typedIsNew = !listed && typed.includes('/') && !/\s/.test(typed) && !models.some((model) => model.id === typed)
 
   function choose(model: string): void {
     setOpen(false)
@@ -80,9 +82,15 @@ export function ModelPicker(props: { role: ModelRole; label: string; value: stri
       <ModelSelectorContent title={`Model for ${props.label.toLowerCase()}`} className="sm:max-w-md"
         overlayClassName="bg-black/10 supports-backdrop-filter:backdrop-blur-none dark:bg-black/20"
       >
-        <ModelSelectorInput placeholder="Search models, or type an OpenRouter model ID…" value={query} onValueChange={setQuery} />
+        <ModelSelectorInput
+          placeholder={listed ? 'Search the tested models…' : 'Search models, or type an OpenRouter model ID…'}
+          value={query}
+          onValueChange={setQuery}
+        />
         <ModelSelectorList className="scroll-quiet max-h-80 p-1">
-          <ModelSelectorEmpty>No model matches. Type a full ID such as provider/model to use it.</ModelSelectorEmpty>
+          <ModelSelectorEmpty>
+            {listed ? 'No tested model matches. Only tested models can be used for this role.' : 'No model matches. Type a full ID such as provider/model to use it.'}
+          </ModelSelectorEmpty>
           {typedIsNew ? (
             <ModelSelectorGroup heading="Use this ID">
               <ModelSelectorItem value={`use ${typed}`} onSelect={() => choose(typed)}>
@@ -91,7 +99,7 @@ export function ModelPicker(props: { role: ModelRole; label: string; value: stri
             </ModelSelectorGroup>
           ) : null}
           {groups.map(([provider, options]) => (
-            <ModelSelectorGroup key={provider} heading={provider}>
+            <ModelSelectorGroup key={provider} heading={listed ? `${provider} · tested` : provider}>
               {options.map((model) => (
                 <ModelSelectorItem
                   key={model.id}
@@ -113,6 +121,12 @@ export function ModelPicker(props: { role: ModelRole; label: string; value: stri
             </ModelSelectorGroup>
           ))}
         </ModelSelectorList>
+        {listed ? (
+          <p data-slot="model-list-note" className="border-t px-3 py-2 text-2xs leading-relaxed text-muted-foreground">
+            Only models tested with Committee are offered here: they can prepare an answer in a structured step and signal, while
+            streaming, that they need to ask you something.
+          </p>
+        ) : null}
       </ModelSelectorContent>
     </ModelSelector>
   )

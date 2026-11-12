@@ -49,7 +49,7 @@ describe('stopping', () => {
   test('work stopped between retries has its own event, and a single not-started section can be cancelled by a stop', () => {
     expect(CONVERSATION_EVENT_TYPES).toContain('directive-stopped')
     expectTypeOf<DirectiveStopped['scope']>().toEqualTypeOf<'section' | 'request'>()
-    expectTypeOf<DirectiveCancelled['cause']>().toEqualTypeOf<'request-stopped' | 'section-stopped' | 'recovery-cancel'>()
+    expectTypeOf<DirectiveCancelled['cause']>().toEqualTypeOf<'request-stopped' | 'section-stopped' | 'recovery-cancel' | 'paused-cancel'>()
   })
 })
 
@@ -107,7 +107,7 @@ describe('routing status', () => {
 
   test('routing a failed message again is an event, so the log alone says which messages still wait for an outcome', () => {
     expect(CONVERSATION_EVENT_TYPES).toContain('routing-retried')
-    expect(CONVERSATION_EVENT_TYPES).toHaveLength(48)
+    expect(CONVERSATION_EVENT_TYPES).toHaveLength(50)
   })
 })
 

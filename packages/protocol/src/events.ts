@@ -29,6 +29,8 @@ import type {
   PointRef,
   PrerequisiteRef,
   ProviderError,
+  ReadinessRecord,
+  ClarificationReason,
   ReplyRelation,
   Requirement,
   RetryPlan,
@@ -456,8 +458,12 @@ export interface DirectiveWaiting extends ConversationEnvelope<'directive-waitin
 
 /**
  * A prerequisite failed, was stopped or was interrupted and is not retrying,
- * so the directive is paused and a recovery choice is raised on its queue
- * item (Q48). It never proceeds on a subset of siblings (F5). No default.
+ * so the directive is paused with reason `dependency-recovery` and a
+ * recovery choice is raised on its queue item (Q48). It never proceeds on a
+ * subset of siblings (F5). No default.
+ *
+ * A pause for user input is recorded by `directive-held` with reason
+ * `clarification`.
  */
 export interface DirectivePaused extends ConversationEnvelope<'directive-paused'> {
   readonly directiveId: DirectiveId
@@ -467,7 +473,13 @@ export interface DirectivePaused extends ConversationEnvelope<'directive-paused'
   readonly elicitationId: ElicitationId
 }
 
-/** The directive cannot start until an elicitation is resolved (state `awaiting-elicitation`). */
+/**
+ * The directive cannot go on until an elicitation is resolved.
+ * - `clarification`: it is `paused` with reason `awaiting-input` until the
+ *   question is answered (Q23, Q106). It may already have run: a run that
+ *   stopped to ask is recorded by `attempt-paused` just before.
+ * - `choice-with-default`: state `awaiting-elicitation` (Q44).
+ */
 export interface DirectiveHeld extends ConversationEnvelope<'directive-held'> {
   readonly directiveId: DirectiveId
   readonly elicitationId: ElicitationId
@@ -503,7 +515,8 @@ export interface DirectiveSlotHeld extends ConversationEnvelope<'directive-slot-
  */
 export interface DirectiveCancelled extends ConversationEnvelope<'directive-cancelled'> {
   readonly directiveId: DirectiveId
-  readonly cause: 'request-stopped' | 'section-stopped' | 'recovery-cancel'
+  /** `paused-cancel`: Cancel on work paused for input that had not started. */
+  readonly cause: 'request-stopped' | 'section-stopped' | 'recovery-cancel' | 'paused-cancel'
 }
 
 /**
@@ -561,6 +574,20 @@ export interface PrerequisiteWaived extends ConversationEnvelope<'prerequisite-w
   /** The directive whose result is no longer waited for. */
   readonly waivedDirectiveId: DirectiveId
   readonly elicitationId: ElicitationId
+}
+
+/**
+ * The directive's typed readiness result was established (Q103): `ready`,
+ * or `clarification-needed`. An answer directive's run is sent to the model
+ * only after a `ready` result, so no visible answer text precedes it (an
+ * attempt that fails in the preparation step is recorded without one and
+ * reads nothing). Recorded again whenever it is established anew: by the preparation step after the
+ * results it waited for arrived (Q105), by the user's answer, or by a run
+ * that stopped to ask (Q106). The latest one is in force. Replay reads this
+ * event and never calls a model.
+ */
+export interface DirectiveReadinessEstablished extends ConversationEnvelope<'directive-readiness-established'>, ReadinessRecord {
+  readonly directiveId: DirectiveId
 }
 
 /** The user asked for a new attempt (the Retry control). */
@@ -654,6 +681,21 @@ export interface AttemptFailed extends ConversationEnvelope<'attempt-failed'> {
   readonly attemptId: AttemptId
   readonly error: ProviderError
   readonly retry: RetryPlan
+}
+
+/**
+ * The run discovered consequential missing information and stopped to ask
+ * (Q106). Its text stays as labeled partial text. Not a success: nothing is
+ * released (invariant 4). Not a failure: no retry applies. The readiness
+ * result, the clarification elicitation, its question as an additional
+ * response and the directive's pause follow in the same step.
+ */
+export interface AttemptPaused extends ConversationEnvelope<'attempt-paused'> {
+  readonly attemptId: AttemptId
+  readonly reason: ClarificationReason
+  /** The question the run asked, exactly as it will be shown. */
+  readonly question: string
+  readonly usage: TokenUsage | null
 }
 
 /** The user stopped a run that was in flight. Visible text stays, marked partial and stopped (Q22). */
@@ -991,6 +1033,8 @@ export type ConversationEvent =
   | PrerequisiteWaived
   | RetryRequested
   | StopRequested
+  | DirectiveReadinessEstablished
+  | AttemptPaused
   | AttemptStarted
   | AttemptOutput
   | AttemptCompleted
@@ -1069,6 +1113,8 @@ export const CONVERSATION_EVENT_TYPES = [
   'prerequisite-waived',
   'retry-requested',
   'stop-requested',
+  'directive-readiness-established',
+  'attempt-paused',
   'attempt-started',
   'attempt-output',
   'attempt-completed',

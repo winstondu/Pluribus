@@ -106,7 +106,7 @@ function followDependents(ctx: StepContext, targetId: DirectiveId, messageId: Me
     // now for the replacement and the rest of the full join-back (06, R3).
     if ((d.state === 'dependency-queued' || d.state === 'ready') && notStartedInSection(ctx.state, d) && waits) {
       settleWait(ctx, id, true)
-    } else if (d.state === 'paused' && d.pause?.cause.directiveId === targetId) {
+    } else if (d.state === 'paused' && d.pause?.reason === 'dependency-recovery' && d.pause.cause.directiveId === targetId) {
       // The prerequisite that did not finish is being replaced: the recovery choice no longer applies.
       settleWait(ctx, id, true)
     } else if (startedInSection(ctx.state, d) && read) {

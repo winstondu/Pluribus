@@ -1,3 +1,4 @@
+import { WORDING } from '@committee/protocol'
 import { fx, type Fixture } from '@/fixtures'
 import { debugApp } from '@/features/debug/fixture-support'
 
@@ -127,6 +128,11 @@ const initial = fx
     directiveState: 'awaiting-elicitation',
     status: 'awaiting-answer',
   })
+  // Paused for the other reason: the run stopped to ask, and waits for the user's input, not for a recovery choice.
+  .message('closing', 'Write the closing remarks.')
+  .response('closing', { message: 'closing' })
+  .section('closing', { response: 'closing', chain: 'talk', state: 'paused', title: 'closing remarks' })
+  .attempt('closing-1', { section: 'closing', state: 'paused', text: 'Thank the organizers, then ' })
   .message('venue', 'What should I check about the venue?')
   .response('venue', { message: 'venue' })
   .section('venue', { response: 'venue', chain: 'misc', state: 'interrupted', title: 'venue notes' })
@@ -214,6 +220,7 @@ const initial = fx
   })
   .operation('titles', { chain: 'talk', status: 'waiting-for-slot', section: 'titles' })
   .operation('handout', { chain: 'talk', status: 'awaiting-answer', section: 'handout' })
+  .operation('closing', { chain: 'talk', status: 'paused', statusText: WORDING.pausedAwaitingInput, pauseReason: 'awaiting-input', section: 'closing' })
   .operation('venue', { chain: 'misc', status: 'interrupted', section: 'venue' })
   .operation('travel', { chain: 'misc', status: 'stopped', section: 'travel' })
   .operation('timing', {

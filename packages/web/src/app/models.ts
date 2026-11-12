@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, type ModelRole } from '@committee/protocol'
+import { DEFAULT_SETTINGS, compatibleModels, isListedModelRole, type ModelRole } from '@committee/protocol'
 
 /** One model offered in the per-role model selector. */
 export interface ModelOption {
@@ -79,12 +79,25 @@ export const MODEL_ROLES: readonly { role: ModelRole; label: string; description
   },
 ]
 
-/** Models offered for a role. Decisions run on a decision model only. */
+/**
+ * Models offered for a role. Answers and decomposition are chosen from the
+ * tested compatibility list and nowhere else (Q107): each listed model, with
+ * the context length the loaded list knows for it. Decisions run on a
+ * decision model only.
+ */
 export function modelsForRole(role: ModelRole, models: readonly ModelOption[]): readonly ModelOption[] {
+  if (isListedModelRole(role)) {
+    return compatibleModels(role).map((listed) => option(listed.id, listed.name, models.find((model) => model.id === listed.id)?.contextLength ?? null))
+  }
   const decisionProvider = DEFAULT_SETTINGS.models.decision.slice(0, DEFAULT_SETTINGS.models.decision.indexOf('/'))
   return role === 'decision'
     ? models.filter((model) => model.provider === decisionProvider)
     : models.filter((model) => model.provider !== decisionProvider)
+}
+
+/** True when a role's model must come from the tested compatibility list: no other ID can be typed in. */
+export function roleIsListed(role: ModelRole): boolean {
+  return isListedModelRole(role)
 }
 
 /** "200K", "1M". */

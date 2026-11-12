@@ -41,6 +41,12 @@ export const fail = (afterMs: number, code: ProviderErrorCode, message = `Provid
   afterMs,
   event: { type: 'failed', error: providerError(code, message) },
 })
+/** The run stops to ask the user `question` (the typed late-clarification signal, Q106). */
+export const askUser = (
+  afterMs: number,
+  question: string,
+  reason: 'missing-information' | 'incompatible-requirements' = 'missing-information',
+): ScriptStep => ({ afterMs, event: { type: 'clarification-needed', reason, question, usage: null } })
 /** A complete answer: `text` at `textAt`, completion at `doneAt`. */
 export const answer = (text: string, textAt: number, doneAt: number): ScriptStep[] => [say(textAt, text), done(doneAt)]
 

@@ -36,6 +36,7 @@ import {
   type NodeId,
   type NodeReason,
   type NodeState,
+  type PauseReason,
   type NodeView,
   type OperationId,
   type OperationStatus,
@@ -164,7 +165,7 @@ export interface SectionOptions {
   status?: SectionStatusKind | SectionStatus | null
   notes?: SectionNote[]
   /** `by`: the replacement section, by name. */
-  superseded?: true | { mark?: string; by?: string } | null
+  superseded?: true | { mark?: string; by?: string; link?: string } | null
   /** The section this one replaces, by name. */
   replaces?: string | null
   kind?: DirectiveKind
@@ -175,6 +176,11 @@ export interface SectionOptions {
   actions?: Partial<SectionView['actions']>
   /** Failure notice for a failed section with no listed attempt. */
   failure?: ProviderError | null
+  /**
+   * Why the section's work is paused. `question`: the clarification question's section, by name. Default for
+   * `state: 'paused'`: awaiting input for the elicitation named like the section.
+   */
+  pause?: { reason: 'awaiting-input'; elicitation: string; question?: string | null } | null
 }
 
 export interface AttemptOptions {
@@ -270,6 +276,8 @@ export interface OperationOptions {
   heldByBarrier?: boolean
   barrierWaitingFor?: string[]
   section?: string | null
+  /** Default: `dependency-recovery` when `status` is `paused`, else null. */
+  pauseReason?: PauseReason | null
   /** For a join-back operation: its sibling group and join-back, by name. */
   group?: string | null
   joinBack?: string | null
@@ -637,7 +645,9 @@ export class ConversationBuilder {
               ? WORDING.interrupted
               : attempt.state === 'superseded'
                 ? WORDING.supersededPartial
-                : null
+                : attempt.state === 'paused'
+                  ? WORDING.pausedPartial
+                  : null
       const directiveAttempts = attemptsOfDirective.get(directive) ?? []
       const nodeName = attempt.node ?? (nodesOfDirective.get(directive) ?? []).at(-1) ?? directive
       if (attempt.node !== undefined) needNode(attempt.node, `attempt "${name}"`)
@@ -699,7 +709,9 @@ export class ConversationBuilder {
         section.status === undefined
           ? section.state === 'pending'
             ? { kind: 'responding', text: STATUS_TEXT.responding }
-            : null
+            : section.state === 'paused'
+              ? { kind: 'paused', text: WORDING.pausedAwaitingInput }
+              : null
           : typeof section.status === 'string'
             ? { kind: section.status, text: STATUS_TEXT[section.status] }
             : section.status
@@ -716,13 +728,14 @@ export class ConversationBuilder {
       const started = directiveState === 'running' || directiveState === 'retrying' || directiveState === 'waiting-for-capacity'
       let superseded: SectionView['superseded'] = null
       if (section.state === 'superseded' || section.superseded) {
-        const given = typeof section.superseded === 'object' && section.superseded !== null ? section.superseded : {}
+        const given: { mark?: string; by?: string; link?: string } = typeof section.superseded === 'object' && section.superseded !== null ? section.superseded : {}
         const finished = sectionAttempts.some((attempt) => d.attempt.get(attempt)?.state === 'completed')
         const by = given.by ? need('section', given.by, `section "${name}"`) : null
         superseded = {
           markText: given.mark ?? (finished ? WORDING.supersededFinished : WORDING.supersededPartial),
           replacementSectionId: given.by ? id('section', given.by) : null,
           replacementResponseId: by ? id('response', by.response) : null,
+          ...(given.link ? { linkText: given.link } : {}),
         }
       }
       if (section.replaces) need('section', section.replaces, `section "${name}"`)
@@ -735,6 +748,14 @@ export class ConversationBuilder {
         title: section.title ?? name,
         state: section.state,
         directiveState,
+        pause:
+          section.pause === null || (section.pause === undefined && section.state !== 'paused')
+            ? null
+            : {
+                reason: 'awaiting-input',
+                elicitationId: id('elicitation', section.pause?.elicitation ?? name),
+                questionSectionId: section.pause?.question ? id('section', section.pause.question) : null,
+              },
         placement: sectionPlaced(name) ? 'fixed' : 'pending',
         status,
         chainId: id('chain', section.chain),
@@ -792,7 +813,7 @@ export class ConversationBuilder {
         else if (state === 'stopped') counts.stopped++
         else if (state === 'interrupted') counts.interrupted++
         else if (state === 'cancelled') counts.cancelled++
-        else if (state === 'pending' || state === 'streaming') counts.inProgress++
+        else if (state === 'pending' || state === 'streaming' || state === 'paused') counts.inProgress++
       }
       const grouped = response.grouped ?? false
       let routing: RoutingStatusView | null = null
@@ -1228,6 +1249,7 @@ export class ConversationBuilder {
         chainId: id('chain', operation.chain),
         status: operation.status,
         statusText: operation.statusText ?? OPERATION_STATUS_TEXT[operation.status],
+        pauseReason: operation.pauseReason !== undefined ? operation.pauseReason : operation.status === 'paused' ? 'dependency-recovery' : null,
         dependsOn: refs(operation.dependsOn),
         waitingFor: refs(operation.waitingFor),
         heldByBarrier: operation.heldByBarrier ?? false,

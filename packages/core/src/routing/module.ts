@@ -10,6 +10,7 @@ import {
   type CoreModule,
   type OutcomeHandler,
   type PlanApplier,
+  type Reaction,
   type StepContext,
 } from '../engine'
 import { createRouter } from './pipeline'
@@ -112,8 +113,26 @@ const answerApplier: PlanApplier = {
 export function answerClarification(ctx: StepContext, elicitationId: ElicitationId, answerMessageId: MessageId): void {
   const row = ctx.state.elicitations[elicitationId]
   if (!row || row.status !== 'open' || row.record.kind !== 'clarification') return
-  const held = row.record.blockedDirectiveIds.filter((id) => ctx.state.directives[id]?.heldBy?.elicitationId === elicitationId)
+  const held = row.record.blockedDirectiveIds.filter((id) => {
+    const d = ctx.state.directives[id]
+    return d?.heldBy?.elicitationId === elicitationId || (d?.pause?.reason === 'awaiting-input' && d.pause.elicitationId === elicitationId)
+  })
   ctx.emit({ type: 'elicitation-answered', elicitationId, resolution: { kind: 'clarification', answerMessageId } })
+  // The answer supplies what was missing: the directive is ready (Q103). When results it waits for have
+  // not arrived yet, the remaining check runs once they have (Q105).
+  for (const id of held) {
+    const d = ctx.state.directives[id]
+    if (!d) continue
+    ctx.emit({
+      type: 'directive-readiness-established',
+      directiveId: id,
+      readiness: { kind: 'ready' },
+      source: 'answer',
+      awaitingResults: queries.unsatisfiedPrerequisites(ctx.state, d).length > 0,
+      basis: null,
+      model: null,
+    })
+  }
   const responses = new Map<MessageId, ResponseId>()
   const byMessage = new Map<MessageId, DirectiveId[]>()
   for (const id of held) {
@@ -127,19 +146,45 @@ export function answerClarification(ctx: StepContext, elicitationId: Elicitation
     for (const id of ids) {
       const d = ctx.state.directives[id]
       if (!d) continue
+      const sectionId = ctx.ids.next('section')
+      // Work paused once it had a section (the preparation step asked, or a run stopped to ask, Q106):
+      // the eventual answer is another additional response. Its partial text stays where it is, labeled;
+      // a bubble that showed nothing is dropped. The earlier response is never reopened (Q23).
+      const paused = d.sectionId
+      if (paused !== null) supersedeSection(ctx, paused, { kind: 'clarified', elicitationId }, sectionId)
       ctx.emit({
         type: 'section-opened',
-        sectionId: ctx.ids.next('section'),
+        sectionId,
         directiveId: id,
         responseId,
         title: d.label,
-        replacesSectionId: null,
+        replacesSectionId: paused,
         operationId: ctx.ids.next('operation'),
         explicitPosition: null,
       })
     }
   }
   for (const id of held) settleWait(ctx, id, true)
+}
+
+/**
+ * A clarification question that nobody waits for any more is withdrawn: the
+ * work it paused was stopped, cancelled or replaced (a revision, Undo
+ * split) while the question was open. The question stays in the transcript
+ * without its reply affordance.
+ */
+const withdrawStaleClarification: Reaction = (_state, event, ctx) => {
+  if (event.type === 'attempt-output') return
+  for (const id of ctx.state.elicitationOrder) {
+    const row = ctx.state.elicitations[id]
+    if (!row || row.status !== 'open' || row.record.kind !== 'clarification') continue
+    const waited = row.record.blockedDirectiveIds.some((directiveId) => {
+      const d = ctx.state.directives[directiveId]
+      if (!d || !queries.isInFlightState(d.state)) return false
+      return d.heldBy?.elicitationId === id || (d.pause?.reason === 'awaiting-input' && d.pause.elicitationId === id)
+    })
+    if (!waited) ctx.emit({ type: 'elicitation-withdrawn', elicitationId: id, reason: 'subject-ended' })
+  }
 }
 
 // ───────────────────────────── target ambiguity ─────────────────────────────
@@ -231,6 +276,7 @@ const commands: CommandHandlers = {
 export const routingModule: CoreModule = {
   name: 'routing',
   commands,
+  reactions: [withdrawStaleClarification],
   planAppliers: [clarificationApplier, answerApplier],
   outcomeHandlers: { 'target-ambiguity': targetAmbiguity },
   createRouter: (deps: CoreDependencies): Router => createRouter(deps),

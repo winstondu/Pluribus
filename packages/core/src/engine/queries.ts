@@ -46,6 +46,11 @@ export function unfinishedOutcome(state: DirectiveState): UnfinishedOutcome | nu
   }
 }
 
+/** True while the directive is paused for the answer to a clarification question (glossary · "Paused", reason `awaiting-input`). */
+export function awaitingInput(d: DirectiveRow): boolean {
+  return d.state === 'paused' && d.pause?.reason === 'awaiting-input'
+}
+
 /** Started work that has not settled: Stop applies to it (PLAN §2 "Stopping"). */
 export function isStartedUnsettled(state: DirectiveState): boolean {
   return state === 'running' || state === 'retrying' || state === 'waiting-for-capacity'
@@ -389,6 +394,10 @@ export function sectionState(state: ConversationState, sectionId: SectionId): Se
       const attempt = latest ? state.attempts[latest] : undefined
       return attempt && attempt.state === 'streaming' ? 'streaming' : 'pending'
     }
+    case 'paused':
+      // Paused awaiting user input is a state a section shows (10). A dependency-recovery pause is a
+      // pending section whose recovery choice is on its queue item.
+      return d.pause?.reason === 'awaiting-input' ? 'paused' : 'pending'
     default:
       return 'pending'
   }

@@ -6,6 +6,7 @@ import {
   createOpenRouterDecisionProvider,
   createOpenRouterDecomposer,
   createOpenRouterModelProvider,
+  createOpenRouterPreparer,
 } from '@committee/providers'
 import { openIndexedDbStorage, type CommitteeStorage } from '@committee/storage'
 import { runAsOwner, type OwnershipLocks } from './ownership'
@@ -48,6 +49,7 @@ async function build(storage: CommitteeStorage): Promise<Backend> {
   void modelProvider.countTokens({ model: '', messages: [] })
   const backend = createBackend({
     modelProvider,
+    preparer: createOpenRouterPreparer({ getKey }),
     decisionProvider: createOpenRouterDecisionProvider({ getKey }),
     decomposer: createOpenRouterDecomposer({ getKey }),
     eventStore: storage.eventStore,

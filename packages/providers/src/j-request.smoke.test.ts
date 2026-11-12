@@ -11,7 +11,7 @@ import {
   type MessageId,
   type SectionId,
 } from '@committee/protocol'
-import { createOpenRouterDecisionProvider, createOpenRouterDecomposer, createOpenRouterModelProvider } from './index'
+import { createOpenRouterDecisionProvider, createOpenRouterDecomposer, createOpenRouterModelProvider, createOpenRouterPreparer } from './index'
 
 /**
  * The spec's J request through the whole embedded backend, live: the real
@@ -40,6 +40,7 @@ async function conversation() {
   const getKey = (): Promise<string | null> => secretsStore.get('openrouter-key')
   const backend = createBackend({
     modelProvider: createOpenRouterModelProvider({ getKey }),
+    preparer: createOpenRouterPreparer({ getKey }),
     decisionProvider: createOpenRouterDecisionProvider({ getKey }),
     decomposer: createOpenRouterDecomposer({ getKey }),
     eventStore: new MemoryEventStore(),

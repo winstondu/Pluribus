@@ -20,6 +20,7 @@ import type { ConversationState } from '../engine/state'
 import { FakeClock } from './fake-clock'
 import { MemoryEventStore, MemoryProjectionCache, MemorySecretsStore } from './memory-stores'
 import { ScriptedModelProvider } from './scripted-model-provider'
+import { ScriptedPreparer } from './scripted-preparer'
 import { ScriptedDecisionProvider, ScriptedDecomposer } from './scripted-providers'
 import { ScriptedRouter } from './scripted-router'
 
@@ -47,6 +48,7 @@ export interface TestBackendOverrides {
   // Reused across a simulated interruption:
   readonly clock?: FakeClock
   readonly model?: ScriptedModelProvider
+  readonly preparer?: ScriptedPreparer
   readonly router?: ScriptedRouter
   readonly decisions?: ScriptedDecisionProvider
   readonly decomposer?: ScriptedDecomposer
@@ -61,6 +63,7 @@ export interface TestBackend {
   readonly internals: EngineInternals
   readonly clock: FakeClock
   readonly model: ScriptedModelProvider
+  readonly preparer: ScriptedPreparer
   readonly router: ScriptedRouter
   readonly decisions: ScriptedDecisionProvider
   readonly decomposer: ScriptedDecomposer
@@ -102,6 +105,7 @@ function macrotask(): Promise<void> {
 export async function createTestBackend(overrides: TestBackendOverrides = {}): Promise<TestBackend> {
   const clock = overrides.clock ?? new FakeClock()
   const model = overrides.model ?? new ScriptedModelProvider(clock)
+  const preparer = overrides.preparer ?? new ScriptedPreparer()
   const router = overrides.router ?? new ScriptedRouter()
   const decisions = overrides.decisions ?? new ScriptedDecisionProvider()
   const decomposer = overrides.decomposer ?? new ScriptedDecomposer()
@@ -115,6 +119,7 @@ export async function createTestBackend(overrides: TestBackendOverrides = {}): P
   const { backend, internals } = createEngine(
     {
       modelProvider: model,
+      preparer,
       decisionProvider: decisions,
       decomposer,
       eventStore,
@@ -153,6 +158,7 @@ export async function createTestBackend(overrides: TestBackendOverrides = {}): P
     internals,
     clock,
     model,
+    preparer,
     router,
     decisions,
     decomposer,
@@ -212,6 +218,7 @@ export async function createTestBackend(overrides: TestBackendOverrides = {}): P
         ...next,
         clock,
         model,
+        preparer,
         router,
         decisions,
         decomposer,

@@ -268,6 +268,8 @@ const itineraryBase = {
   source: { originalMessageId: id('message', 'itinerary'), originalText: ITINERARY, fragment: null },
   instruction: 'Use both to plan the four days.',
   requirements: [dailyLimit],
+  readiness: { readiness: { kind: 'ready' }, source: 'preparation', awaitingResults: false, basis: '8:5f1c2a9e3b7d4c60', model: 'anthropic/claude-haiku-5.5' } as const,
+  pauseReason: null,
   waitingFor: [],
   barrier: null,
   ancestry: itineraryAncestry,
@@ -387,6 +389,8 @@ const stay: RunInspection = {
       inputTokens: 143,
     },
   ),
+  readiness: { readiness: { kind: 'ready' }, source: 'routing', awaitingResults: false, basis: null, model: 'typesafe/jev-1.13' } as const,
+  pauseReason: null,
   waitingFor: [],
   barrier: null,
   ancestry: [{ nodeId: id('node', 'brief'), chainId: id('chain', 'lisbon'), label: 'trip brief' }],
@@ -432,6 +436,8 @@ const packing: RunInspection = {
   instruction: PACKING,
   requirements: [],
   input: null,
+  readiness: { readiness: { kind: 'ready' }, source: 'routing', awaitingResults: true, basis: null, model: 'typesafe/jev-1.13' } as const,
+  pauseReason: null,
   waitingFor: [
     {
       ref: { kind: 'directive', directiveId: id('directive', 'itinerary') },

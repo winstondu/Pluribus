@@ -1,5 +1,5 @@
 import type { DirectiveId, PauseCause, PrerequisiteRef } from '@committee/protocol'
-import { queries, settleWait, type CommandHandlers, type ConversationState, type DirectiveRow, type Reaction } from '../engine'
+import { queries, settleWait, startedInSection, type CommandHandlers, type ConversationState, type DirectiveRow, type Reaction } from '../engine'
 
 /**
  * Dependents of work that did not finish (08, Q48): a dependency-queued
@@ -50,7 +50,7 @@ export const unpauseOnRetry: Reaction = (_state, event, ctx) => {
   if (event.type !== 'retry-requested') return
   for (const id of ctx.state.directiveOrder) {
     const d = ctx.state.directives[id]
-    if (!d || d.state !== 'paused' || !d.pause || d.pause.cause.directiveId !== event.directiveId) continue
+    if (!d || d.state !== 'paused' || d.pause?.reason !== 'dependency-recovery' || d.pause.cause.directiveId !== event.directiveId) continue
     ctx.emit({ type: 'elicitation-answered', elicitationId: d.pause.elicitationId, resolution: { kind: 'recovery-choice', choice: 'retry-prerequisite' } })
     settleWait(ctx, id, true)
   }
@@ -79,7 +79,12 @@ export const pauseCommands: CommandHandlers = {
   'continue-without': (state, command, ctx) => {
     const d = state.directives[command.directiveId]
     if (!d) return { code: 'unknown-target', message: `Unknown directive ${command.directiveId}` }
-    if (d.state !== 'paused' || !d.pause) return { code: 'not-allowed', message: 'Only a paused request can continue without its prerequisite' }
+    // "Continue without" is one of the recovery choices: it applies to a dependency-recovery pause only
+    // (10 · "Continue without | A request paused for dependency recovery"). Work paused for the user's
+    // input resumes by the answer.
+    if (d.state !== 'paused' || d.pause?.reason !== 'dependency-recovery') {
+      return { code: 'not-allowed', message: 'Only a request paused for dependency recovery can continue without its prerequisite' }
+    }
     const { cause, elicitationId } = d.pause
     ctx.emit({ type: 'prerequisite-waived', directiveId: d.id, waivedDirectiveId: cause.directiveId, elicitationId })
     ctx.emit({ type: 'elicitation-answered', elicitationId, resolution: { kind: 'recovery-choice', choice: 'continue-without' } })
@@ -92,6 +97,17 @@ export const pauseCommands: CommandHandlers = {
     const d = state.directives[command.directiveId]
     if (!d) return { code: 'unknown-target', message: `Unknown directive ${command.directiveId}` }
     if (d.state !== 'paused' || !d.pause) return { code: 'not-allowed', message: 'Only a paused request can be cancelled this way' }
+    if (d.pause.reason === 'awaiting-input') {
+      // Cancel applies to any paused request (10 · "Cancel | A paused request"). Work paused for input
+      // that never ran is cancelled; work that ran and stopped to ask keeps its partial text and is
+      // stopped, because cancelled means "before it started" (Q91). Its question is then withdrawn.
+      if (startedInSection(state, d) && d.sectionId !== null) {
+        ctx.emit({ type: 'directive-stopped', directiveId: d.id, sectionId: d.sectionId, scope: 'section' })
+      } else {
+        ctx.emit({ type: 'directive-cancelled', directiveId: d.id, cause: 'paused-cancel' })
+      }
+      return []
+    }
     ctx.emit({ type: 'elicitation-answered', elicitationId: d.pause.elicitationId, resolution: { kind: 'recovery-choice', choice: 'cancel' } })
     ctx.emit({ type: 'directive-cancelled', directiveId: d.id, cause: 'recovery-cancel' })
     return []

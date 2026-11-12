@@ -18,6 +18,8 @@ import type {
   TranscriptProjection,
   UnitRoutingDecision,
   WaitTargetView,
+  PauseReason,
+  ReadinessRecord,
 } from '@committee/protocol'
 import type { ReactNode } from 'react'
 import { useUiState } from '@/app/ui-state'
@@ -57,6 +59,26 @@ const RESULT_WORD: Record<AttemptResultStatus, { text: string; tone: 'quiet' | '
   failed: { text: 'Failed', tone: 'bad' },
   stopped: { text: 'Stopped', tone: 'quiet' },
   interrupted: { text: 'Interrupted', tone: 'warning' },
+  paused: { text: 'Paused', tone: 'quiet' },
+}
+
+/** The typed readiness result and what established it (Q103). */
+const READINESS_SOURCE_WORD: Record<ReadinessRecord['source'], string> = {
+  routing: 'from routing',
+  preparation: 'from the preparation step',
+  answer: 'from your answer',
+  generation: 'found while answering',
+}
+
+function readinessText(record: ReadinessRecord): string {
+  const result = record.readiness.kind === 'ready' ? 'Ready' : 'Clarification needed'
+  const remaining = record.awaitingResults ? ', to be checked again once the results it waits for arrive' : ''
+  return `${result} · ${READINESS_SOURCE_WORD[record.source]}${remaining}`
+}
+
+const PAUSE_WORD: Record<PauseReason, string> = {
+  'awaiting-input': 'Paused — waiting for your answer',
+  'dependency-recovery': 'Paused — waiting for your recovery choice',
 }
 
 const DIRECTIVE_STATE_WORD: Record<DirectiveState, string> = {
@@ -100,9 +122,16 @@ function Inspection({ inspection }: { inspection: RunInspection }) {
       <header className="px-4 pt-3">
         <h3 className="text-sm font-medium">{title}</h3>
         <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-          <span>{DIRECTIVE_STATE_WORD[inspection.directiveState]}</span>
+          <span data-testid="directive-state">
+            {inspection.pauseReason ? PAUSE_WORD[inspection.pauseReason] : DIRECTIVE_STATE_WORD[inspection.directiveState]}
+          </span>
           {attempt ? <ChainName chainId={attempt.chainId} /> : null}
         </p>
+        {inspection.readiness ? (
+          <p className="mt-0.5 text-xs text-muted-foreground" data-testid="readiness">
+            Readiness: {readinessText(inspection.readiness)}
+          </p>
+        ) : null}
         {inspection.attempts.length > 1 ? (
           <div role="group" aria-label="Attempts" className="mt-2 flex flex-wrap gap-1.5">
             {inspection.attempts.map((entry) => {
@@ -258,6 +287,7 @@ const RESULT_SENTENCE: Record<AttemptResultStatus, string> = {
   failed: 'Ended in an error. Nothing depends on its text.',
   stopped: 'Ended by you. Any text it showed stays as partial.',
   interrupted: 'Lost when what was running it stopped unexpectedly.',
+  paused: 'Stopped to ask you a question. Its text stays as partial, and nothing that depends on it was released.',
 }
 
 function clock(ms: number): string {

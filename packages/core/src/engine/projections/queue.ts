@@ -27,7 +27,9 @@ export function queueProjection(s: ConversationState, m: Memo): QueueProjection 
     if (d.state !== 'dependency-queued' && d.state !== 'paused') continue
     const waitingFor = d.waitingFor.map((ref) => waitTarget(s, d, ref))
     let recovery: QueueItemView['recovery'] = null
-    if (d.state === 'paused' && d.pause) {
+    // Only a dependency-recovery pause has a queue item and a recovery choice; work paused for the
+    // user's input shows its question in the transcript (07 · "Where each appears").
+    if (d.state === 'paused' && d.pause?.reason === 'dependency-recovery') {
       const cause = withCurrentLabel(s, d.pause.cause)
       const prerequisite = s.directives[cause.directiveId]
       const labels = recoveryLabels(cause.label, d.label)
@@ -49,7 +51,7 @@ export function queueProjection(s: ConversationState, m: Memo): QueueProjection 
       heldByBarrier: d.heldByBarrier,
       waitingFor,
       text:
-        d.state === 'paused' && d.pause
+        d.state === 'paused' && d.pause?.reason === 'dependency-recovery'
           ? pausedText(withCurrentLabel(s, d.pause.cause))
           : waitingText(
               waitingFor.map((w) => w.label),

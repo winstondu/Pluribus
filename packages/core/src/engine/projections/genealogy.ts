@@ -61,6 +61,8 @@ function exchangeState(s: ConversationState, node: NodeRow): NodeState {
       case 'interrupted':
       case 'cancelled':
         return d.state
+      case 'paused':
+        return d.pause?.reason === 'awaiting-input' ? 'paused' : 'pending'
       default:
         return 'pending'
     }

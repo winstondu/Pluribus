@@ -497,6 +497,7 @@ const REDUCERS: ReducerTable = {
       heldByBarrier: false,
       revised: false,
       pause: null,
+      readiness: null,
       heldBy: null,
       waived: [],
       corrections: [],
@@ -532,8 +533,14 @@ const REDUCERS: ReducerTable = {
       ...d,
       state: 'paused',
       queueItemId: e.queueItemId,
-      pause: { cause: e.cause, elicitationId: e.elicitationId },
+      pause: { reason: 'dependency-recovery', cause: e.cause, elicitationId: e.elicitationId },
       heldByBarrier: false,
+    })),
+
+  'directive-readiness-established': (state, e) =>
+    withDirective(state, e.directiveId, (d) => ({
+      ...d,
+      readiness: { readiness: e.readiness, source: e.source, awaitingResults: e.awaitingResults, basis: e.basis, model: e.model },
     })),
 
   'directive-held': (state, e) =>
@@ -543,9 +550,26 @@ const REDUCERS: ReducerTable = {
       // pause with its recovery choice (07 · "affected queued work holds", P6): the hold is recorded
       // beside them. It is held for the answer alone once nothing else is left to wait for (a second
       // hold for the same elicitation, from `settleWait`).
-      const queued = d.state === 'paused' || (d.state === 'dependency-queued' && d.queueItemId !== null && d.heldBy?.elicitationId !== e.elicitationId)
+      const queued =
+        (d.state === 'paused' && d.pause?.reason === 'dependency-recovery') ||
+        (d.state === 'dependency-queued' && d.queueItemId !== null && d.heldBy?.elicitationId !== e.elicitationId)
       if (e.reason === 'choice-with-default' && queued) {
         return { ...d, heldBy }
+      }
+      // Waiting for the answer to a clarification question is a pause for user input (glossary · "Paused"),
+      // before the work starts or after a run stopped to ask (Q106). It has no queue item: the question is
+      // in the transcript.
+      if (e.reason === 'clarification') {
+        return {
+          ...d,
+          state: 'paused',
+          heldBy,
+          pause: { reason: 'awaiting-input', elicitationId: e.elicitationId },
+          queueItemId: null,
+          waitingFor: [],
+          heldByBarrier: false,
+          retry: null,
+        }
       }
       return { ...d, state: 'awaiting-elicitation', heldBy, queueItemId: null, waitingFor: [], heldByBarrier: false }
     }),
@@ -582,7 +606,7 @@ const REDUCERS: ReducerTable = {
   },
 
   'directive-stopped': (state, e) => {
-    const next = withDirective(state, e.directiveId, (d) => ({ ...d, state: 'stopped', retry: null }))
+    const next = withDirective(state, e.directiveId, (d) => ({ ...d, state: 'stopped', retry: null, pause: null, heldBy: null }))
     return markVisible(next, e.sectionId)
   },
 
@@ -590,6 +614,9 @@ const REDUCERS: ReducerTable = {
     withDirective(state, e.directiveId, (d) => ({
       ...d,
       revised: true,
+      // The request changed: a `ready` finding was about the old one, so it is established again before the
+      // run (Q103). A question already asked stays asked.
+      readiness: d.readiness?.readiness.kind === 'ready' ? null : d.readiness,
       revisedInstruction: { instruction: e.instruction, requirements: e.requirements },
     })),
 
@@ -628,6 +655,7 @@ const REDUCERS: ReducerTable = {
       chunks: 0,
       finishReason: null,
       usage: null,
+      pausedFor: null,
     }
     let next: ConversationState = {
       ...state,
@@ -704,6 +732,18 @@ const REDUCERS: ReducerTable = {
     }
     return next
   },
+
+  // The directive's own pause follows in the same step (`directive-held`, reason `clarification`).
+  // A run that stopped to ask before writing anything leaves a status-only bubble, which is dropped
+  // when the answer opens its own response; one that wrote text keeps it as labeled partial text.
+  'attempt-paused': (state, e) =>
+    withAttempt(state, e.attemptId, (a) => ({
+      ...a,
+      state: 'paused',
+      endedAt: e.at,
+      usage: e.usage,
+      pausedFor: { reason: e.reason, question: e.question },
+    })),
 
   'attempt-stopped': (state, e) => {
     let next = withAttempt(state, e.attemptId, (a) => ({ ...a, state: 'stopped', endedAt: e.at }))
@@ -848,7 +888,9 @@ const REDUCERS: ReducerTable = {
             ? 'prerequisite-revised'
             : cause.kind === 'regenerate'
               ? 'regenerate'
-              : 'redo'
+              : cause.kind === 'clarified'
+                ? 'clarified'
+                : 'redo'
       return {
         ...d,
         nextOrigin: origin,

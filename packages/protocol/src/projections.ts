@@ -25,6 +25,8 @@ import type {
   JoinBackMember,
   ModelRole,
   PauseCause,
+  PauseReason,
+  ReadinessRecord,
   PrerequisiteRef,
   ProviderError,
   RedoOption,
@@ -278,11 +280,11 @@ export type SectionStatusKind =
   | 'waiting-for-capacity'
   /** Dependency-queued: names what it waits for. */
   | 'waiting-for-results'
-  /** Paused on a prerequisite that did not finish. */
+  /** Paused: for the answer to a clarification question, or on a prerequisite that did not finish. `SectionView.pauseReason` says which. */
   | 'paused'
   /** "Waiting for a free slot": held only by the concurrency limit. */
   | 'waiting-for-slot'
-  /** Held by an elicitation. */
+  /** Held by a choice with default. */
   | 'awaiting-answer'
 
 export interface SectionStatus {
@@ -326,6 +328,14 @@ export interface SectionView {
   readonly state: SectionState
   /** The directive's state behind it, for views that need the finer distinction. */
   readonly directiveState: DirectiveState
+  /**
+   * Set while the section's work is paused (glossary · "Paused"), with what
+   * it waits for. For `awaiting-input` the section's `state` is `paused`,
+   * its text is partial, and `questionSectionId` is the clarification
+   * question to answer; the only way on is to answer it (Q98, Q106). For
+   * `dependency-recovery` the recovery choice is on the queue item.
+   */
+  readonly pause: PauseView | null
   /** Whether its position inside its response is fixed. */
   readonly placement: 'pending' | 'fixed'
   /**
@@ -394,6 +404,16 @@ export interface SectionView {
   }
 }
 
+/** Why work is paused and what resumes it. */
+export type PauseView =
+  | {
+      readonly reason: 'awaiting-input'
+      readonly elicitationId: ElicitationId
+      /** The clarification question's section, once it is open. */
+      readonly questionSectionId: SectionId | null
+    }
+  | { readonly reason: 'dependency-recovery'; readonly elicitationId: ElicitationId; readonly cause: PauseCause }
+
 /** One attempt as shown inside its section's bubble. */
 export interface AttemptView {
   readonly id: AttemptId
@@ -408,7 +428,8 @@ export interface AttemptView {
   readonly text: string
   /**
    * Label kept on text that did not complete: "Failed", "Stopped",
-   * "Interrupted", or "Superseded — revised below" (Q22, Q38, Q47, Q52).
+   * "Interrupted", "Superseded — revised below", or "Paused · partial" for
+   * a run that stopped to ask (Q22, Q38, Q47, Q52, Q106).
    * Null for running, streaming and completed attempts.
    */
   readonly markText: string | null
@@ -577,6 +598,8 @@ export interface ChainView {
 export type NodeState =
   | 'pending'
   | 'running'
+  /** Paused awaiting user input: the answer to its clarification question (Q106). */
+  | 'paused'
   | 'completed'
   | 'failed'
   | 'stopped'
@@ -717,6 +740,8 @@ export interface OperationView {
   readonly status: OperationStatus
   /** Ready-to-show status, such as "Waiting for capacity" or "Paused — activities failed". */
   readonly statusText: string
+  /** Set while `status` is `paused`: waiting for the user's input, or for a recovery choice. */
+  readonly pauseReason: PauseReason | null
   /**
    * Result dependencies: the operations whose results this one needs,
    * whether or not they have finished. Edges of the DAG (invariant 1).
@@ -802,6 +827,14 @@ export interface RunInspection {
    * shows the original (Q38, Q39, Q47). Null when not started.
    */
   readonly input: ConsumedContext | null
+  /**
+   * The directive's typed readiness result as last established, and by what
+   * (Q103). Null for a clarification question, and for work in a log
+   * written before readiness was recorded.
+   */
+  readonly readiness: ReadinessRecord | null
+  /** Set while the directive is paused: why, which decides how it resumes. */
+  readonly pauseReason: PauseReason | null
   /** Item 4: unfinished results it is waiting for. Dependency, shown separately from ancestry. */
   readonly waitingFor: readonly WaitTargetView[]
   /**

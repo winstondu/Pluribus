@@ -31,6 +31,7 @@ import {
   resolvePoint,
   currentJoinBack,
   nodeParents,
+  unsatisfiedPrerequisites,
 } from './queries'
 import type { ConversationState, GroupRow } from './state'
 
@@ -334,6 +335,22 @@ function applyUnits(plan: RoutingPlan, target: PlanTarget, ctx: StepContext): vo
       asksElicitationId: null,
     })
     for (const body of placed.after) ctx.emit(body)
+    // The typed readiness result, from the plan's own findings (Q103): a unit a clarification blocks
+    // needs the answer; any other is ready. For a unit that waits for results the finding is
+    // provisional, and the remaining check runs once they have arrived (Q105).
+    const clarification = plan.clarifications.find((c) => c.blockedDirectiveIds.includes(unit.directiveId))
+    const created = ctx.state.directives[unit.directiveId]
+    ctx.emit({
+      type: 'directive-readiness-established',
+      directiveId: unit.directiveId,
+      readiness: clarification
+        ? { kind: 'clarification-needed', reason: clarification.reason, question: null, about: clarification.about }
+        : { kind: 'ready' },
+      source: 'routing',
+      awaitingResults: created !== undefined && unsatisfiedPrerequisites(ctx.state, created).length > 0,
+      basis: null,
+      model: plan.decision.model,
+    })
     if (!blocked.has(unit.directiveId)) {
       const responseId = responseFor(unit)
       const position = explicit && plan.outputOrder ? plan.outputOrder.indexOf(unit.directiveId) : -1
