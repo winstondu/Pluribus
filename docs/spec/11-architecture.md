@@ -430,7 +430,7 @@ With an Anthropic key, the embedded Web Worker also calls the Claude API directl
 
 ### Models
 
-- Model choice is per role (Q65). Each role has a provider and a model, named by that provider's model IDs: OpenRouter, or the Claude API when an Anthropic key is configured. By default every role is on OpenRouter. The roles:
+- Model choice is per role (Q65). Each role has a provider and a model, named by that provider's model IDs: OpenRouter, or the Claude API when an Anthropic key is configured. Without an Anthropic key every role is on OpenRouter. While one is configured, the Claude API is the default for answers, synthesis and decomposition: a role whose provider the user has never chosen, that is on OpenRouter on a model the Claude API also offers, moves to the Claude API on that model, when the key is added or found at start. Choosing a role's provider in settings, either one, makes it the user's; the backend never moves it again. The backend's own moves are not choices. A deployment whose server sets the models moves nothing. The roles:
   - answer runs, including work continuing from a join-back (Q90);
   - generative decomposition;
   - synthesis, for join chains only (Q65, Q90). A join chain exists only where lines of work have truly diverged over further turns, or were separate chains from the start. Work that needs several members of one sibling group continues from that group's join-back, which is bookkeeping: it is an ordinary answer and involves no synthesis (invariant 4; C5);

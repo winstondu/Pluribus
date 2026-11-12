@@ -1,5 +1,5 @@
 import { MODEL_PROVIDER_NAMES, PROVIDER_SELECTABLE_ROLES, type ModelProviderName, type ModelRole, type ProviderSelectableRole } from './model'
-import { LISTED_MODEL_ROLES, compatibleModels, isCompatibleModel, isListedModelRole } from './models'
+import { LISTED_MODEL_ROLES, claudeApiCounterpart, compatibleModels, isCompatibleModel, isListedModelRole } from './models'
 
 /**
  * User settings (10 · "User settings"). App-wide: retry policy, models and
@@ -20,6 +20,14 @@ export type ModelSettings = { readonly [R in ModelRole]: string }
  * endpoint), which `validateSettingsPatch` and `normalizeSettings` enforce.
  */
 export type ModelProviderSettings = { readonly [R in ModelRole]: ModelProviderName }
+
+/**
+ * Whether the user has chosen a provider for each role that has a choice.
+ * Set by the backend when a `change-settings` names the role's provider;
+ * never by a client directly, and never by the backend's own provider moves
+ * (the Claude API default and the fallback when the Anthropic key goes).
+ */
+export type ProviderChoices = { readonly [R in ProviderSelectableRole]: boolean }
 
 /**
  * The model a role gets when its provider is chosen: OpenRouter IDs for
@@ -47,6 +55,38 @@ export const PROVIDER_DEFAULT_MODELS: {
 /** The patch that moves `role` to `provider` with that provider's default model. */
 export function providerChoicePatch(role: ProviderSelectableRole, provider: ModelProviderName): SettingsPatch {
   return { modelProviders: { [role]: provider }, models: { [role]: PROVIDER_DEFAULT_MODELS[provider][role] } }
+}
+
+/**
+ * The patch that moves to the Claude API every role whose provider the user
+ * has not chosen, that is on OpenRouter, and whose OpenRouter model has a
+ * Claude API counterpart on the compatibility list; the model stays the
+ * same model. Applied whenever an Anthropic key is configured (at start and
+ * when the key is added), so the Claude API is the default for those roles
+ * while the key is there. Null when no role qualifies.
+ */
+export function claudeApiDefaultPatch(settings: Pick<Settings, 'modelProviders' | 'models' | 'providerChosen'>): SettingsPatch | null {
+  const modelProviders: { [R in ProviderSelectableRole]?: ModelProviderName } = {}
+  const models: { [R in ProviderSelectableRole]?: string } = {}
+  let any = false
+  for (const role of PROVIDER_SELECTABLE_ROLES) {
+    if (settings.providerChosen[role] || settings.modelProviders[role] !== 'openrouter') continue
+    const counterpart = claudeApiCounterpart(settings.models[role])
+    if (counterpart === null || !counterpart.roles.includes(role)) continue
+    modelProviders[role] = 'anthropic'
+    models[role] = counterpart.id
+    any = true
+  }
+  return any ? { modelProviders, models } : null
+}
+
+/** `settings` with every role whose provider `patch` names marked as chosen by the user. */
+export function markProviderChoices(settings: Settings, patch: SettingsPatch): Settings {
+  const named = PROVIDER_SELECTABLE_ROLES.filter((role) => patch.modelProviders?.[role] !== undefined && !settings.providerChosen[role])
+  if (named.length === 0) return settings
+  const providerChosen = { ...settings.providerChosen }
+  for (const role of named) providerChosen[role] = true
+  return { ...settings, providerChosen }
 }
 
 /** The roles whose runs go to the Claude API under these settings. */
@@ -329,6 +369,7 @@ export interface Settings {
   readonly concurrencyLimit: number
   readonly models: ModelSettings
   readonly modelProviders: ModelProviderSettings
+  readonly providerChosen: ProviderChoices
   readonly thresholds: DecisionThresholds
   readonly routing: RoutingSettings
   readonly debug: DebugToggles
@@ -344,8 +385,10 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultChoiceWaitMs: 30_000,
   concurrencyLimit: 4,
   models: PROVIDER_DEFAULT_MODELS.openrouter,
-  // Everything on OpenRouter unless the user chooses the Claude API for a role.
+  // Everything on OpenRouter until an Anthropic key is configured; then the roles whose provider the user has not
+  // chosen move to the Claude API (`claudeApiDefaultPatch`).
   modelProviders: { answer: 'openrouter', decomposition: 'openrouter', synthesis: 'openrouter', decision: 'openrouter' },
+  providerChosen: { answer: false, decomposition: false, synthesis: false },
   thresholds: {
     targetChoice: 0.7,
     clearlyCorrective: 0.8,
@@ -420,6 +463,7 @@ export function applySettingsPatch(settings: Settings, patch: SettingsPatch): Se
     concurrencyLimit: patch.concurrencyLimit ?? settings.concurrencyLimit,
     models: { ...settings.models, ...definedOnly(patch.models) },
     modelProviders: { ...settings.modelProviders, ...definedOnly(patch.modelProviders) },
+    providerChosen: settings.providerChosen,
     thresholds: { ...settings.thresholds, ...definedOnly(patch.thresholds) },
     routing: {
       referentStrategy: patch.routing?.referentStrategy ?? settings.routing.referentStrategy,
@@ -550,6 +594,7 @@ export function normalizeSettings(stored: Partial<Settings>): Settings {
     ...stored,
     modelProviders: normalizeModelProviders(stored.modelProviders),
     models: normalizeModels({ ...DEFAULT_SETTINGS.models, ...stored.models }, normalizeModelProviders(stored.modelProviders)),
+    providerChosen: normalizeProviderChoices(stored.providerChosen),
     thresholds: { ...DEFAULT_SETTINGS.thresholds, ...stored.thresholds },
     routing: {
       referentStrategy: stored.routing?.referentStrategy ?? DEFAULT_SETTINGS.routing.referentStrategy,
@@ -592,6 +637,12 @@ export function normalizeModels(models: ModelSettings, providers: ModelProviderS
 function normalizeModelProviders(stored: Partial<ModelProviderSettings> | undefined): ModelProviderSettings {
   const of = (role: ProviderSelectableRole): ModelProviderName => MODEL_PROVIDER_NAMES.find((name) => name === stored?.[role]) ?? 'openrouter'
   return { answer: of('answer'), decomposition: of('decomposition'), synthesis: of('synthesis'), decision: 'openrouter' }
+}
+
+/** Stored provider choices; a role an earlier version stored nothing for has not been chosen. */
+function normalizeProviderChoices(stored: Partial<ProviderChoices> | undefined): ProviderChoices {
+  const of = (role: ProviderSelectableRole): boolean => stored?.[role] === true
+  return { answer: of('answer'), decomposition: of('decomposition'), synthesis: of('synthesis') }
 }
 
 /** What `referentBudget.inputTokens` was before the token budget became a setting of its own. */

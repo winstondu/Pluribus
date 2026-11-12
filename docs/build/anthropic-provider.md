@@ -1,6 +1,6 @@
 # The Claude API as a model provider
 
-Branch `claude/anthropic-key`, 2026-11-12. With an Anthropic key, answers, synthesis and decomposition can each run on the Claude API instead of through OpenRouter. Nothing changes for a user who does not add one: every role defaults to OpenRouter.
+Branch `claude/anthropic-key`, 2026-11-12. With an Anthropic key, answers, synthesis and decomposition can each run on the Claude API instead of through OpenRouter. Nothing changes for a user who does not add one: every role is on OpenRouter. Adding one makes the Claude API the default for the roles whose provider the user has not chosen (see "The Claude API default").
 
 ## What is and is not supported per role
 
@@ -80,6 +80,12 @@ The prompt presents OpenRouter and Anthropic keys in the same terms: recognized 
 ## Error mapping
 
 `mapAnthropicError` in `packages/providers/src/anthropic/client.ts`; the table is in 11 · "Claude API error mapping". The API has no error code for an input over the context window, so that one case reads the message.
+
+## The Claude API default
+
+Added 2026-11-12. `Settings.providerChosen` records, per answer, decomposition and synthesis role, whether the user has chosen its provider. The backend sets it when a `change-settings` names the role's provider (`markProviderChoices`); `SettingsPatch` has no such field, so a client cannot set it, and the backend's own moves never set it. `claudeApiDefaultPatch` moves every role not chosen, on OpenRouter, whose model has a Claude API entry of the same name on the compatibility list, to that entry. `syncKeyStatus` applies it whenever the Anthropic key is configured, at start and on `refreshKeyStatus`, in the same step as the key status change, and not when `modelsEditable` is false. Removing the key still falls back; adding it again applies the default again to the roles never chosen.
+
+Settings stored before the field existed have no choices, so a user who had explicitly kept a role on OpenRouter with an Anthropic key gets that role moved once; choosing OpenRouter again in settings makes it stick.
 
 ## Choices
 

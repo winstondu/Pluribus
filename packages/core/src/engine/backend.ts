@@ -14,7 +14,9 @@ import {
   toStreamedEvent,
   upcastEvent,
   validateSettingsPatch,
+  claudeApiDefaultPatch,
   completeSettingsPatch,
+  markProviderChoices,
   describeModelRoles,
   anthropicFallbackPatch,
   rolesOnAnthropic,
@@ -1238,7 +1240,8 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
           const changes = completeSettingsPatch(settings, command.changes)
           const invalid = validateSettingsPatch(changes, settings)
           if (invalid) return { ok: false, error: { code: 'invalid', message: invalid } }
-          const next = applySettingsPatch(settings, changes)
+          // A role whose provider the user names is theirs from now on: the Claude API default leaves it alone.
+          const next = markProviderChoices(applySettingsPatch(settings, changes), command.changes)
           // A role can use the Claude API only while an Anthropic key is configured.
           if (!anthropicKeyConfigured && rolesOnAnthropic(next).length > 0) {
             return { ok: false, error: { code: 'invalid', message: 'Add an Anthropic key before choosing the Claude API for a role' } }
@@ -1302,6 +1305,8 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
   /**
    * Reads which keys the secrets store holds and records what changed. When the Anthropic key is
    * gone, every role on the Claude API returns to OpenRouter and its default model there, in the same step.
+   * While it is there, every role whose provider the user has not chosen and whose model the Claude API
+   * also offers moves to the Claude API (`claudeApiDefaultPatch`), unless the server sets the models.
    */
   async function syncKeyStatus(): Promise<void> {
     const openRouter = (await deps.secretsStore.get('openrouter-key')) !== null
@@ -1309,8 +1314,8 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
     const bodies: AppEventBody[] = []
     if (openRouter !== keyConfigured) bodies.push({ type: 'key-status-changed', configured: openRouter })
     if (anthropic !== anthropicKeyConfigured) bodies.push({ type: 'key-status-changed', configured: anthropic, provider: 'anthropic' })
-    const fallback = anthropic ? null : anthropicFallbackPatch(settings)
-    if (fallback) bodies.push({ type: 'settings-changed', settings: applySettingsPatch(settings, fallback) })
+    const move = anthropic ? (options.modelsEditable ? claudeApiDefaultPatch(settings) : null) : anthropicFallbackPatch(settings)
+    if (move) bodies.push({ type: 'settings-changed', settings: applySettingsPatch(settings, move) })
     // Set before the events are folded so a snapshot taken meanwhile is right; folding sets the same values.
     keyConfigured = openRouter
     anthropicKeyConfigured = anthropic

@@ -6,6 +6,9 @@ import {
   PROVIDER_DEFAULT_MODELS,
   SERVER_MODELS_NOTE,
   anthropicFallbackPatch,
+  claudeApiCounterpart,
+  claudeApiDefaultPatch,
+  markProviderChoices,
   applySettingsPatch,
   compatibleModels,
   completeSettingsPatch,
@@ -105,6 +108,23 @@ describe('per-role model providers', () => {
     expect(after.modelProviders).toEqual(DEFAULT_SETTINGS.modelProviders)
     expect(after.models.decomposition).toBe('anthropic/claude-sonnet-5.5')
     expect(validateSettingsPatch(fallback ?? {}, settings)).toBeNull()
+  })
+
+  test('the Claude API default: roles not chosen, on OpenRouter, whose model the Claude API offers, move with the same model', () => {
+    expect(claudeApiCounterpart('anthropic/claude-sonnet-5.5')?.id).toBe('claude-sonnet-5-5')
+    expect(claudeApiCounterpart('anthropic/claude-haiku-5.5')?.id).toBe('claude-haiku-5-5')
+    expect(claudeApiCounterpart('example/other')).toBeNull()
+    expect(claudeApiDefaultPatch(DEFAULT_SETTINGS)).toEqual({
+      modelProviders: { answer: 'anthropic', decomposition: 'anthropic', synthesis: 'anthropic' },
+      models: { answer: 'claude-sonnet-5-5', decomposition: 'claude-haiku-5-5', synthesis: 'claude-sonnet-5-5' },
+    })
+    const chosen = markProviderChoices(DEFAULT_SETTINGS, { modelProviders: { answer: 'openrouter' } })
+    expect(chosen.providerChosen).toEqual({ answer: true, decomposition: false, synthesis: false })
+    expect(claudeApiDefaultPatch(chosen)?.modelProviders).toEqual({ decomposition: 'anthropic', synthesis: 'anthropic' })
+    // A patch never sets the choices; settings stored before they existed have none.
+    expect(applySettingsPatch(chosen, { modelProviders: { answer: 'anthropic' }, models: { answer: 'claude-sonnet-5-5' } }).providerChosen).toEqual(chosen.providerChosen)
+    const { providerChosen: _dropped, ...older } = DEFAULT_SETTINGS
+    expect(normalizeSettings(older).providerChosen).toEqual({ answer: false, decomposition: false, synthesis: false })
   })
 
   test('the compatibility list is per provider: the same two models, under each provider\'s IDs', () => {

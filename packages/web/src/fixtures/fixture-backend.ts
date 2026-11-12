@@ -6,6 +6,8 @@ import {
   applySettingsPatch,
   diffSnapshots,
   anthropicFallbackPatch,
+  claudeApiDefaultPatch,
+  markProviderChoices,
   completeSettingsPatch,
   describeModelRoles,
   rolesOnAnthropic,
@@ -203,7 +205,7 @@ export function createFixtureBackend(fixture: Fixture, options: { timers?: boole
         const changes = completeSettingsPatch(app.settings, command.changes)
         const invalid = validateSettingsPatch(changes, app.settings)
         if (invalid) return { ok: false, error: { code: 'invalid', message: invalid } }
-        const settings = applySettingsPatch(app.settings, changes)
+        const settings = markProviderChoices(applySettingsPatch(app.settings, changes), command.changes)
         if (!app.anthropicKey.configured && rolesOnAnthropic(settings).length > 0) {
           return { ok: false, error: { code: 'invalid', message: 'Add an Anthropic key before choosing the Claude API for a role' } }
         }
@@ -285,9 +287,9 @@ export function createFixtureBackend(fixture: Fixture, options: { timers?: boole
     },
     setKeyConfigured(provider, configured) {
       let settings = app.settings
-      if (provider === 'anthropic' && !configured) {
-        const fallback = anthropicFallbackPatch(settings)
-        if (fallback) settings = applySettingsPatch(settings, fallback)
+      if (provider === 'anthropic') {
+        const move = configured ? (modelsEditable ? claudeApiDefaultPatch(settings) : null) : anthropicFallbackPatch(settings)
+        if (move) settings = applySettingsPatch(settings, move)
       }
       app = described({ ...app, settings, ...(provider === 'anthropic' ? { anthropicKey: { configured } } : { key: { configured } }) })
       emitApp()

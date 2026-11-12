@@ -98,6 +98,17 @@ export function compatibleModel(id: string, provider: ModelProviderName = 'openr
   return MODEL_COMPATIBILITY.find((model) => model.provider === provider && model.id === id) ?? null
 }
 
+/**
+ * The Claude API entry for the same model as an OpenRouter entry: the one
+ * with the same name. Null when `openRouterId` is not listed for OpenRouter
+ * or the model has no Claude API entry.
+ */
+export function claudeApiCounterpart(openRouterId: string): CompatibleModel | null {
+  const listed = compatibleModel(openRouterId, 'openrouter')
+  if (!listed) return null
+  return MODEL_COMPATIBILITY.find((model) => model.provider === 'anthropic' && model.name === listed.name) ?? null
+}
+
 export function isListedModelRole(role: string): role is ListedModelRole {
   return (LISTED_MODEL_ROLES as readonly string[]).includes(role)
 }

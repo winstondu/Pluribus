@@ -104,7 +104,8 @@ describe('providers and keys', () => {
   test('removing the Anthropic key returns the roles that used it to OpenRouter and its default models, in the same step', async () => {
     const s = await scenario()
     await provide(s, 'anthropic-key', ANTHROPIC_SECRET)
-    await s.t.send({ type: 'change-settings', changes: { modelProviders: { answer: 'anthropic', synthesis: 'anthropic' }, models: { decomposition: 'anthropic/claude-sonnet-5.5' } } })
+    // Decomposition is chosen for OpenRouter, on a non-default model that must survive.
+    await s.t.send({ type: 'change-settings', changes: { modelProviders: { answer: 'anthropic', synthesis: 'anthropic', decomposition: 'openrouter' }, models: { decomposition: 'anthropic/claude-sonnet-5.5' } } })
     expect((await app(s)).settings.modelProviders).toMatchObject({ answer: 'anthropic', synthesis: 'anthropic', decomposition: 'openrouter' })
     const framesBefore = s.t.frames.length
 
@@ -140,6 +141,54 @@ describe('providers and keys', () => {
     const after = await appOf(fell)
     expect(after.anthropicKey.configured).toBe(false)
     expect([after.settings.modelProviders.synthesis, after.settings.models.synthesis]).toEqual(['openrouter', 'anthropic/claude-sonnet-5.5'])
+  })
+
+  test('with an Anthropic key, the Claude API is the default for every role whose provider the user has not chosen, on the same model', async () => {
+    const s = await scenario()
+    // Before any key: a model chosen on OpenRouter, and a provider chosen for synthesis.
+    await s.t.send({ type: 'change-settings', changes: { models: { answer: 'anthropic/claude-haiku-5.5' } } })
+    await s.t.send({ type: 'change-settings', changes: { modelProviders: { synthesis: 'openrouter' } } })
+    expect((await app(s)).settings.providerChosen).toEqual({ answer: false, decomposition: false, synthesis: true })
+
+    const framesBefore = s.t.frames.length
+    await provide(s, 'anthropic-key', ANTHROPIC_SECRET)
+    const after = await app(s)
+    expect(after.settings.modelProviders).toEqual({ answer: 'anthropic', decomposition: 'anthropic', synthesis: 'openrouter', decision: 'openrouter' })
+    // The same model on the other provider; the user's choice of Haiku for answers is kept.
+    expect(after.settings.models).toMatchObject({ answer: 'claude-haiku-5-5', decomposition: 'claude-haiku-5-5', synthesis: 'anthropic/claude-sonnet-5.5' })
+    // The backend's move is not a choice of the user's.
+    expect(after.settings.providerChosen).toEqual({ answer: false, decomposition: false, synthesis: true })
+    // One step: the key status and the move arrive together.
+    const frames = s.t.frames.slice(framesBefore).filter((frame) => frame.kind === 'app')
+    expect(frames).toHaveLength(1)
+    expect(frames[0]?.kind === 'app' && frames[0].events.map((event) => event.type)).toEqual(['key-status-changed', 'settings-changed'])
+    await run(s, 'Plan a trip to Kyoto')
+    expect(s.t.model.requests.at(-1)).toMatchObject({ model: 'claude-haiku-5-5', provider: 'anthropic' })
+
+    // Moving a role back to OpenRouter is a choice: neither a refresh nor a restart undoes it.
+    await s.t.send({ type: 'change-settings', changes: { modelProviders: { answer: 'openrouter' } } })
+    await s.t.backend.refreshKeyStatus()
+    const restarted = await s.t.restart()
+    expect((await appOf(restarted)).settings.modelProviders).toMatchObject({ answer: 'openrouter', decomposition: 'anthropic', synthesis: 'openrouter' })
+
+    // Removing the key falls back; adding it again applies the default again to the roles never chosen.
+    await restarted.secretsStore.delete('anthropic-key')
+    await restarted.backend.refreshKeyStatus()
+    expect((await appOf(restarted)).settings.modelProviders).toMatchObject({ answer: 'openrouter', decomposition: 'openrouter', synthesis: 'openrouter' })
+    await restarted.secretsStore.set('anthropic-key', ANTHROPIC_SECRET)
+    await restarted.backend.refreshKeyStatus()
+    expect((await appOf(restarted)).settings.modelProviders).toMatchObject({ answer: 'openrouter', decomposition: 'anthropic', synthesis: 'openrouter' })
+  })
+
+  test('a key found at start applies the default too; a deployment whose models the server sets moves nothing', async () => {
+    const s = await scenario()
+    await s.t.secretsStore.set('anthropic-key', ANTHROPIC_SECRET)
+    const restarted = await s.t.restart()
+    expect((await appOf(restarted)).settings.modelProviders).toMatchObject({ answer: 'anthropic', decomposition: 'anthropic', synthesis: 'anthropic' })
+
+    const fixed = await scenario({ options: { modelsEditable: false } })
+    await provide(fixed, 'anthropic-key', ANTHROPIC_SECRET)
+    expect((await app(fixed)).settings.modelProviders).toMatchObject({ answer: 'openrouter', decomposition: 'openrouter', synthesis: 'openrouter' })
   })
 
   test('a deployment whose models are set by the server refuses a model or provider change and reports no role as editable', async () => {
