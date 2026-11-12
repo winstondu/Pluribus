@@ -21,7 +21,9 @@ import { estimateRequestTokens } from './ask'
 
 const DECISION_PRICE = DEFAULT_SETTINGS.routing.costGuard.decisionInputPrice
 const HAIKU = { input: DEFAULT_SETTINGS.routing.costGuard.answerInputPrice, output: DEFAULT_SETTINGS.routing.costGuard.answerOutputPrice }
-const MESSAGE = 'Look at that again and tell me what you would change'
+/** The message every cell routes. */
+export const COST_GRID_MESSAGE = 'Look at that again and tell me what you would change'
+const MESSAGE = COST_GRID_MESSAGE
 
 export type CostGridShape = 'flat' | 'early split' | 'bushy' | 'nested forks' | 'many roots'
 const SHAPES: readonly CostGridShape[] = ['flat', 'early split', 'bushy', 'nested forks', 'many roots']
@@ -154,17 +156,32 @@ export interface DecisionCost {
   readonly questions: number
   /** Estimated input tokens of every decision request of the routing. */
   readonly tokens: number
+  /** Input tokens the channel reported for the same requests, when the grid is run through one; null otherwise. */
+  readonly measured: number | null
 }
 
-async function spend(sc: Scene, routing: RoutingSettings): Promise<DecisionCost> {
+/**
+ * A decision provider the grid's requests go through instead of straight to
+ * the worst-case answerer, and what it reports they cost. Used by a
+ * measurement test to count the same requests with a tokenizer
+ * (`packages/providers`, "Measuring tokens"); core itself counts nothing.
+ */
+export interface CostGridChannel {
+  readonly provider: DecisionProvider
+  readonly inputTokens: () => number
+}
+
+async function spend(sc: Scene, routing: RoutingSettings, through?: (worstCase: DecisionProvider) => CostGridChannel): Promise<DecisionCost> {
   const example: CorpusExample = { id: 'grid', covers: ['targets'], note: 'a cost grid cell', scene: sc, text: MESSAGE, expect: {} }
   const { provider, requests } = worstCase()
-  const router = createRouter({ decisionProvider: provider, decomposer: referenceDecomposer(example) })
+  const channel = through?.(provider)
+  const router = createRouter({ decisionProvider: channel?.provider ?? provider, decomposer: referenceDecomposer(example) })
   await router.route(corpusInput(example, { ...DEFAULT_SETTINGS, routing }), NEVER_CANCELLED)
   return {
     requests: requests.length,
     questions: requests.reduce((sum, r) => sum + Object.keys(r.questions).length, 0),
     tokens: requests.reduce((sum, r) => sum + estimateRequestTokens(r.state, r.questions), 0),
+    measured: channel ? channel.inputTokens() : null,
   }
 }
 
@@ -190,15 +207,20 @@ export interface CostGridRow {
  * Every shape and strategy for one size, with the default guard and with
  * the guard off. `unguarded: false` leaves the second out (the row then
  * repeats the guarded figures): unguarded, the worst message in the largest
- * cells takes thousands of requests.
+ * cells takes thousands of requests. `through` routes every request of a
+ * cell through a channel built for it, whose count is the cost's `measured`.
  */
-export async function costGridRows(sections: number, exchange: number, options: { readonly unguarded?: boolean } = {}): Promise<CostGridRow[]> {
+export async function costGridRows(
+  sections: number,
+  exchange: number,
+  options: { readonly unguarded?: boolean; readonly through?: (worstCase: DecisionProvider) => CostGridChannel } = {},
+): Promise<CostGridRow[]> {
   const rows: CostGridRow[] = []
   for (const shape of SHAPES) {
     const sc = conversation(shape, sections, exchange)
     for (const [strategy, settings] of STRATEGIES) {
-      const guarded = await spend(sc, { ...FIXED, ...settings })
-      const unguarded = options.unguarded === false ? guarded : await spend(sc, { ...FIXED, ...settings, ...UNGUARDED })
+      const guarded = await spend(sc, { ...FIXED, ...settings }, options.through)
+      const unguarded = options.unguarded === false ? guarded : await spend(sc, { ...FIXED, ...settings, ...UNGUARDED }, options.through)
       rows.push({ sections, exchange, shape, strategy, guarded, unguarded, answer: haikuAnswer(exchange) })
     }
   }

@@ -292,6 +292,14 @@ The user's decisions of 2026-11-12, in [dependency-decisioning.md](dependency-de
 
 Not done: the e2e flows were not rerun and nothing was looked at in a browser (no client code changed). The spec (11 · "Referent strategies") still describes the removed question and the search of every relevant chunk; it is being edited separately.
 
+### Measuring tokens (2026-11-12)
+
+Token figures are now also measured with no network: a mock of the Decisions API counts each request with a tokenizer (`gpt-tokenizer`, `o200k_base`, a proxy for the decision model's own, calibrated to its reported counts). [dependency-decisioning.md](dependency-decisioning.md) · "Measuring tokens".
+
+| What | Result |
+|---|---|
+| Tokens measured with a tokenizer over a mock Decisions API (`providers/src/decision-tokens.test.ts`, `decision-tokens.smoke.test.ts`) | Corpus, calibrated tokenizer against live: one pass 93,352 / 92,592, tree walk 109,090 / 108,935, rules 110,610 / 110,263; the guard's estimate is 7 to 9% low. Tokenizer ÷ (characters ÷ 4): 0.79 to 1.03, mean 0.90. **Cost grid: worst guarded cell 1.99× by the estimate, 2.79× by the tokenizer; 208 of 360 cells over 2×** (every 120-token and most 300-token cells). Live, the worst cell's request was reported at 1.30 × its estimate. Recorded, not fixed: a calibrated estimator is proposed, not applied |
+
 ## How to run
 
 ```sh

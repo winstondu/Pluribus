@@ -32,7 +32,7 @@ export {
   type SearchOutcome,
   type StartSet,
 } from './referents'
-export { COST_GRID_ROWS_PER_SIZE, COST_GRID_SIZES, costGridRows, formatCostGrid, decisionDollars, type CostGridRow } from './referents/cost-grid'
+export { COST_GRID_MESSAGE, COST_GRID_ROWS_PER_SIZE, COST_GRID_SIZES, costGridRows, formatCostGrid, decisionDollars, type CostGridChannel, type CostGridRow, type DecisionCost } from './referents/cost-grid'
 export {
   applyChoice,
   chooseByRules,

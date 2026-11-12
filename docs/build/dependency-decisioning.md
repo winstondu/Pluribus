@@ -792,6 +792,46 @@ Live, `typesafe/jev-1.13`, 2026-11-12, reference decompositions, 62 examples, on
 - **Cost grid** (`pnpm smoke`, 360 cells): the worst guarded cell is still **1.99×** (the tree walk in an early split, 50 or 500 sections of 120-token exchanges: the routing request alone, cut to its smallest, 11 questions and 2,478 tokens; one pass in a bushy conversation is 1.99× as before). With 300-token exchanges the worst is 1.93× (the tree walk over many roots). The largest guarded routing is 19,082 tokens (500 answers of 2,000 tokens on one chain, with the decision-model selector's request; the budget there is 20,000; 18,106 before). Unguarded, a search whose Points never confirm goes back one part a round: a 500-section chain is 79 requests where it was 4, and 8,000 sections 902. The request backstop (4) is what bounds that, as it bounds a deep tree. The grid table above is from before this change.
 - Not measured live: start candidates (no source exists), safeguards (a) and (b), a search whose Point does not confirm, and a routing that falls back. They are covered by the deterministic tests only.
 
+## Measuring tokens
+
+Added 2026-11-12. Before this, token figures came from live runs (the provider's `usage.input_tokens`, which needs a key) or from the guard's estimate (`estimateRequestTokens`: 265 + 0.2 per character of state + 7 per question + 0.24 per character of question text; the answer side and the log at characters ÷ 4, `textTokens`). Now they are also measured deterministically, with no network, in `pnpm test`.
+
+**How.** `providers/src/openrouter/test-support/decisions-api-mock.ts` is a mock of `POST /api/alpha/decisions` at the HTTP boundary: the real decision provider is driven with an injected `fetch`, the mock parses the exact body (`model`, `state`, the `questions` record), refuses one in the wrong shape as the live API does, answers from a scripted `DecisionProvider` (the corpus oracle, the cost grid's worst case), and returns the documented shape with `usage: { input_tokens, output_tokens, cost }` at $0.042 per million input tokens. It counts the text the decision model reads (the state, and each question's ID, instructions, choice options with their descriptions and score criteria) with `gpt-tokenizer` (`o200k_base`, pure JavaScript, a devDependency of `packages/providers` only; it is not in the app bundle). **This is a proxy:** the decision model's tokenizer and its prompt template are not public. A calibration (`FITTED_CALIBRATION`) maps the tokenizer's count to what the live model reports: **reported ≈ 282 + 6.1 × questions + 1.104 × tokenizer tokens**, a least-squares fit to eight live requests (`decision-tokens.smoke.test.ts`). Core gains no I/O and no tokenizer: the cost grid takes an optional channel (`costGridRows(…, { through })`) that the measurement routes through the mock.
+
+**The corpus** (`decision-tokens.test.ts`, decisions as labelled; live figures from "Measured" above, live answers):
+
+| Configuration | Requests (mock / live) | Tokenizer, text only | Calibrated | Live reported | Guard's estimate |
+|---|---|---|---|---|---|
+| One pass | 74 / 74 | 60,559 | 93,352 (+0.8%) | 92,592 | 85,896 (−7.2%) |
+| Tree walk, long runs searched | 83 / 84 | 72,243 | 109,090 (+0.1%) | 108,935 | 99,468 (−8.7%) |
+| Selected by rules (the default) | 82 / 83 | 73,662 | 110,610 (+0.3%) | 110,263 | 100,907 (−8.5%) |
+
+Over the three configurations' 239 requests the tokenizer counts **0.79 to 1.03 × characters ÷ 4, mean 0.90** (0.93 over all their text), and the calibrated count is **0.99 to 1.21 × the guard's estimate, mean 1.065**.
+
+**Live calibration** (`pnpm smoke`, 2026-11-12, 14 requests, about $0.002):
+
+| Bodies | Reported ÷ calibrated tokenizer | Reported ÷ guard's estimate | Tokenizer ÷ (characters ÷ 4) |
+|---|---|---|---|
+| The CLAUDE.md sample and seven corpus requests (1 to 33 questions, 136 to 14,814 characters) | 0.92 to 1.05; within 1% from 1,000 tokens up | **0.96 to 1.19** | 0.80 to 1.03 |
+| Six cost-grid requests (synthetic text: numbered sections, repeated labels) | 0.91 to 1.07 | **1.07 to 1.38**; the worst cell's request 1.30 | |
+
+A one-off fit over 24 live requests of both kinds (run once, not kept as a test) on characters gives about 0.34 tokens per character of state and 0.33 per character of question text, against the estimate's 0.2 and 0.24: about 3 characters per token, not 4 or 5.
+
+**The cost grid with tokenizer counts.** Every guarded cell (360) recomputed: decision requests by the calibrated tokenizer, the answer by the same tokenizer (the message in; an answer of 85% of the exchange out, at the 4.12 characters per token the tokenizer finds in the corpus's answer prose), Haiku at $0.10 in and $0.50 out per million.
+
+| | Worst guarded cell | Cells over 2× |
+|---|---|---|
+| Guard's estimate | 1.99× (8,000 × 120, early split, tree walk with runs listed: 2,481 tokens) | 0 |
+| Tokenizer, calibrated | **2.79×** (8,000 × 120, bushy, tree walk with runs listed: 3,362 tokens; the cell worst by estimate is 2.74×, 3,298 tokens) | **208 of 360**: all 120 cells of 120-token exchanges, 88 of 120 with 300-token exchanges; none with 2,000 or 10,000 |
+
+**The 2× bound does not hold under tokenizer counts**, and the live check agrees: the worst cell's routing request was reported at 3,223 tokens, 1.30 × its estimate, which is 2.6× the answer by the grid's own pricing. The test records these figures; no assertion was loosened and the guard is unchanged. The cause is the estimate, not the guard's arithmetic: the guard holds requests to its allowance in estimated tokens, and the estimate is low by 7 to 9% on the corpus and by 20 to 40% on text with many short numbered lines.
+
+**Proposed, not applied** (the main session's or the user's decision):
+
+- **Calibrate the estimator**: 0.34 per character of state and 0.33 per character of question text, the fixed 265 and 7 per question kept. Over those 24 live requests that is never below the reported count (reported 0.76 to 0.98 of the estimate); it overcounts prose requests by up to about 30%. Alternatively a flat margin of 1.55 on the present estimate covers the worst live request, but overcounts the corpus by about 45%.
+- **What it would do to the grid**: the allowance is unchanged in tokens, so the guard refuses requests it now sends. Cells of 300 tokens and more come back under 2× at the cost of fewer further requests. Cells of 120-token exchanges cannot: the routing request cut to its smallest is about 3,200 tokens, over the allowance a 102-token answer buys (about 2,500), so `SHORTEST_ANSWER_TOKENS` would have to rise from 100 to about 135 (by the reported count) or 155 (by the proposed estimate, about 3,800 tokens for that request) for the bound to be stated honestly. Not run: the grid with the calibrated estimator in place.
+- **What it would do to the default budgets**: the token budget (2% of the log, floor 16,000, ceiling 40,000) is counted in estimated tokens, so each routing would count 15 to 50% more against it. With decisions as labelled, no corpus routing comes within 80% of its budget under the calibrated estimator, so the corpus would not change. The log itself is still sized at characters ÷ 4 (`textTokens`), which by the tokenizer's 4.1 characters per token of prose is about right.
+
 ## Tests
 
 - `routing/referents/search.test.ts` (2026-11-12), the policies over the oracle and no decision provider: the non-ancestor set (`reduce`) by example and as a property on five shapes; the start set; `exact` (no budget: exactly the deepest relevant nodes on one chain, an early split, nested forks, sibling groups with join-backs and many roots, for relevance inherited upward and for the least a walk descends on; for any relevant set when its deepest nodes are start candidates; and, with neither, only relevant, confirmed nodes none of which is an ancestor of another); `budget` (no round or probe beyond it, only Point- or Group-confirmed nodes, the exact answer when the budget was not reached, the same search twice); `last` (probes logarithmic in the run's length from 100 to 10,000 sections; only the part that holds the last relevant section is opened; a Point that does not confirm sends the search to the plausible part before it and never into one that was not; short runs point by point; nothing above a confirmed section; a correction opens every plausible part; old single answers found all at once); `walk` (child runs and the join-back, pruning, starting at a candidate, safeguards (a) and (b), a tree 3,000 branch points deep, no candidates = the roots); `switches` (exact with each combination; what is asked first); `policy` (the two policy files import only the port, `search.ts` and `tree.ts`, and hold no wording, ID, estimate or decision-provider type).
@@ -815,10 +855,12 @@ Live, `typesafe/jev-1.13`, 2026-11-12, reference decompositions, 62 examples, on
 - `routing/corpus/corpus.test.ts`: every example with decisions as labelled, with the strategy the rules select, which is the default (configured the other way round). The per-strategy runs set strategy selection `off`.
 - `protocol/src/contracts.test.ts`, `web/src/app/app.test.tsx`, `web/src/features/debug/debug.test.tsx`: the mode as a setting, its control in Settings → Routing, and the run inspector's "Strategy" row.
 - `providers/src/referents.smoke.test.ts` (`pnpm smoke`): the corpus for nine configurations (one pass, runs always listed, the default, each switch, both, and the three selectors) with its decision cost, the cost of every long example and a tally of the selections; the J and two-section cases five times per configuration; and the cost grid, printed.
+- `providers/src/decision-tokens.test.ts` (2026-11-12): the Decisions mock's body parsing and usage; the corpus per configuration, the ratio to characters ÷ 4, and the cost grid with tokenizer counts, all against recorded figures (see "Measuring tokens"). `providers/src/decision-tokens.smoke.test.ts` (`pnpm smoke`): the live calibration.
 - `providers/src/j-request.smoke.test.ts` (`pnpm smoke`): the brief, A, B and J through a real backend with the live providers, J sent during and after the siblings' runs.
 
 ## Left open
 
+- **The price guard's 2× bound under tokenizer counts** (2026-11-12): does not hold for answers of 100 to about 255 tokens (worst 2.79×, 208 of 360 grid cells), because the guard's estimate runs low. A calibrated estimator is proposed in "Measuring tokens" and not applied.
 - **A referent below work the decision model finds unrelated** (2026-11-12): reached only as a first-pass section or through a start candidate. No candidate source and no estimator are built. See "What removing the question costs".
 - **The fallback's wording** is no longer the routing request's: its sections are judged beside each other only, not beside the whole window. Not measured live (no corpus routing falls back with the default budget).
 - A referent in a searched run that only its answer text identifies: the chunk question names sections by their requests. Not measured how often this happens.
