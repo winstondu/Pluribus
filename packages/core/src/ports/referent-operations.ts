@@ -4,7 +4,8 @@ import type { ReferentSection, ReferentUnit } from './referent-strategy'
 
 /**
  * The operations a referent search is written against (11 · "Dependency
- * attachment").
+ * attachment"; docs/build/dependency-decisioning.md · "The model and the
+ * operations").
  *
  * The genealogy is read as a graph of answer sections and join-backs. The
  * context of a node is the node and its ancestors. For a unit there is a

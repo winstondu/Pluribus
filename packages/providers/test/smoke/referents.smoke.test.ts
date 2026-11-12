@@ -15,7 +15,8 @@ import {
 import { createOpenRouterDecisionProvider } from '@pluribus/providers'
 
 /**
- * The referent strategies against the live decision model. Run with `pnpm smoke`; skipped
+ * The referent strategies against the live decision model
+ * (docs/build/dependency-decisioning.md). Run with `pnpm smoke`; skipped
  * when OPENROUTER_KEY is absent. The key reaches the provider through
  * `getKey` only.
  *

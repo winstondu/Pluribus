@@ -8,7 +8,7 @@ import { estimateRequestTokens } from '../../../src/routing/referents/ask'
 
 /**
  * The price guard over a grid of conversations of up to a million tokens
- * with the default
+ * (docs/build/dependency-decisioning.md · "The guard"), with the default
  * token budget (relative to the conversation's log). Each cell routes
  * the message that costs a strategy most: every question is answered
  * "plausible" (0.5), so every line of work is walked into and every chunk

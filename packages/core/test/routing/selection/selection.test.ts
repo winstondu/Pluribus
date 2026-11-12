@@ -8,7 +8,8 @@ import { numberedAnswerSections, supply } from '../../../src/routing/supply'
 import { applyChoice, chooseByRules, configuredChoice, describeShape, genealogyShape, shapeSignature, NEVER_SEARCH_RUNS } from '../../../src/routing/selection/index'
 
 /**
- * Strategy selection: the shape a selector reads, the rules, the decision-model
+ * Strategy selection (docs/build/dependency-decisioning.md · "Strategy
+ * selection"): the shape a selector reads, the rules, the decision-model
  * selector and its fallbacks, reuse by shape signature, and that a routing
  * with a selector is the routing the chosen strategy gives when it is
  * configured directly. Decisions about sections are answered as the

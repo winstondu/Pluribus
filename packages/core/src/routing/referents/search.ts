@@ -5,7 +5,8 @@ import { bestNodeFound, referentsFromScores } from './shared'
 import { buildTree, type GroupNode, type ReferentTree, type SectionNode, type TreeNode } from './tree'
 
 /**
- * A referent search as policy over the operations.
+ * A referent search as policy over the operations
+ * (docs/build/dependency-decisioning.md · "The model and the operations").
  *
  * The search looks for the deepest relevant nodes of each unit: every
  * relevant node that has no relevant descendant. A policy decides which

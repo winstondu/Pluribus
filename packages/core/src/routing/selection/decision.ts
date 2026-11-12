@@ -11,7 +11,8 @@ import { FURTHER_REQUEST_ROOM, TRUNK_SKIP, chooseByRules } from './rules'
  * routing's token budget does not allow the request.
  *
  * `includeMessage` adds the new message to what the model is shown. It is
- * off: measured live it did not improve the choice, and a choice made from the shape
+ * off: measured live it did not improve the choice
+ * (docs/build/dependency-decisioning.md · "Strategy selection"), and a choice made from the shape
  * alone can be reused for every routing of the same shape.
  */
 export function createDecisionSelector(options: { readonly includeMessage?: boolean } = {}): StrategySelector {

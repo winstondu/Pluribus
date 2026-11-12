@@ -3,7 +3,8 @@ import type { GenealogyShape, StrategySelection, StrategySelector } from '../../
 
 /**
  * The rule-based strategy selector: when each strategy and each tree-walk
- * switch pays, from what was measured.
+ * switch pays, from what was measured (docs/build/dependency-decisioning.md
+ * · "Evidence and the default", docs/build/dependency-decisioning.md · "Strategy selection").
  *
  * - **One pass** when every answer is listed in the pipeline's request.
  *   Inside the window the two strategies routed every corpus example the

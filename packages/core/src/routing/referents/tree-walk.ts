@@ -6,7 +6,8 @@ import { ancestorsOf, joinBacksOf, reduceToNonAncestors, segmentFrom, stretchOf,
 
 /**
  * Tree walk: the search for the deepest relevant nodes of a unit, from a
- * start set down the lines of work that are relevant.
+ * start set down the lines of work that are relevant
+ * (docs/build/dependency-decisioning.md · "The search").
  *
  * - **Start set.** The roots and the start candidates (`startSet`), reduced
  *   so that no start is an ancestor of another: an ancestor is dropped in

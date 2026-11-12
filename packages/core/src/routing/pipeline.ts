@@ -88,7 +88,7 @@ import { chooseShown, recordLine, shownWords, type Showing, type ShownChoice, ty
  * 3. Deterministic validation (`validatePlan`).
  *
  * Which answer sections a unit refers to is decided by a referent strategy
- * (`referents/`): its questions ride
+ * (`referents/`, docs/build/dependency-decisioning.md): its questions ride
  * in the calls above, and any further call it makes is counted against the
  * routing's decision budget. The pipeline does not know which strategy it
  * has; thresholds, placement and validation are the same after any of them.

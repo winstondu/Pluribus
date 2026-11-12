@@ -57,7 +57,7 @@ const cityAndSky = scene()
  * Three answers about one city, each on its own line. Only the history's
  * answer has a part about the city today, under a heading far below its
  * opening: a message about that part is identifiable only from later in the
- * answer.
+ * answer (docs/build/dependency-decisioning.md · "What a Point shows").
  */
 const kyotoTopics = scene()
   .chain('city', 'root', 'kyoto city')
@@ -304,7 +304,7 @@ const longConversation = (() => {
 })()
 
 /**
- * Long runs: 200
+ * Long runs (docs/build/dependency-decisioning.md · "Long runs"): 200
  * answer sections, far more than the pipeline lists, as one chain that
  * never splits and as 200 unrelated one-answer lines; and a tree whose
  * branches are long runs of only children.
@@ -1111,7 +1111,7 @@ export const ROUTING_CORPUS: readonly CorpusExample[] = [
     },
     expect: { composition: 'atomic', sessionWide: true, parts: [{ kind: 'unit', relation: 'new', placement: 'new-chain' }] },
   },
-  // ── referents with live-style titles ──
+  // ── referents with live-style titles (docs/build/dependency-decisioning.md) ──
   {
     id: 'live-j-those-recommendations',
     covers: ['placement', 'targets'],
@@ -1208,7 +1208,7 @@ export const ROUTING_CORPUS: readonly CorpusExample[] = [
     text: 'Explain how volcanoes form',
     expect: { composition: 'atomic', parts: [{ kind: 'unit', relation: 'new', placement: 'new-chain' }] },
   },
-  // ── long runs ──
+  // ── long runs (docs/build/dependency-decisioning.md · "Long runs") ──
   {
     id: 'long-chain-old-section',
     covers: ['targets', 'placement'],
