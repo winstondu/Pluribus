@@ -1,0 +1,26 @@
+/*
+ * Motion of the debug views. Opacity only: a card's position is written by
+ * the operation graph itself, so an entrance or exit must never touch
+ * `transform`. Curves and durations are the app's tokens (index.css).
+ */
+@keyframes debug-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes debug-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+/* A new operation appears in place. */
+.debug-fade-in {
+  animation: debug-fade-in var(--duration-fast) var(--ease-out) both;
+}
+
+/* A completed operation fades where it stood, faster than it entered, while the rest reflow. */
+.debug-fade-out {
+  animation: debug-fade-out 180ms var(--ease-out) forwards;
+}

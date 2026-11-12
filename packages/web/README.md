@@ -29,6 +29,7 @@ Fixtures are available on the dev server, and in a build made with `VITE_FIXTURE
 | `src/fixtures/` | Fixture types, builder, scripted backend, registry; `cases/<id>.ts` belong to the author named in PLAN section 4 | shared by case |
 | `src/test/` | `setup.ts` (jsdom polyfills), `render.tsx` (`renderWithBackend`) | ui-foundation |
 | `src/features/transcript`, `composer`, `association` | Transcript, composer dock, rails and Focus | ui-transcript |
+| `src/features/debug` | Mini-map, operation graph, run inspector, Compare | ui-debug |
 | `src/worker/` | `backend.worker.ts` (the Worker: takes the `pluribus-backend` lock, opens storage, builds and serves the backend), `client.ts` (one Worker per page, `connectWorker`), `system.ts` (clock, timers, IDs) | integration |
 | `e2e/` | End-to-end flows in Chromium over the Worker with live OpenRouter (`pnpm e2e`, not part of `pnpm test`) | integration |
 
@@ -41,10 +42,12 @@ The shell finds entry components by glob (`src/app/features.ts`), so nobody edit
 | `src/features/transcript/index.ts` | `TranscriptPane` | The transcript region. Give it `min-h-0 flex-1` and its own scrolling; the region is a flex column |
 | `src/features/composer/index.ts` | `ComposerDock` | Under the transcript, not scrolling with it |
 | `src/features/association/index.ts` | `FocusBar` | In the header, after the title. `ChainRail` is yours to use inside the transcript |
+| `src/features/debug/index.ts` | `DebugSidePanel` | Right column from 1180 px, a right sheet below that. Shown when a mini-map, run inspector or Compare toggle is on, or `compare` is set. The sheet opens by itself when `inspected` or `compare` is set |
+| `src/features/debug/index.ts` | `OperationGraphDrawer` | Under the composer, full width of the main column, when its toggle is on |
 
 Until `TranscriptPane` and `ComposerDock` exist, `src/app/stand-ins.tsx` renders the projections plainly so the shell and the gallery are usable. They disappear as soon as the feature exports its component; do not edit or import them.
 
-The shell already handles: the conversation list, the header title, the debug-view toggles (settings), the key prompt, settings, the theme, the standby and failure notices, and clearing `ui-state` when another conversation is opened.
+The shell already handles: the conversation list, the header title, the debug-view toggles (header menu and settings), the key prompt, settings, the theme, the standby and failure notices, and clearing `ui-state` when another conversation is opened.
 
 ## The client store (`@/backend`)
 
@@ -203,7 +206,7 @@ The backend:
 - `fixture.respond(command, current)` is asked first. Return `{ result }` to reject a command, `{ steps }` to script what follows it, `{ app }` to change app state, or `null` to fall through. Every other command is accepted with an empty output.
 - `fixture.runs` answers `run` queries, by directive and then attempt.
 
-Cases in the tree from ui-foundation: `empty`, `no-key`, `routing`, `pending`, `streaming`, `overtaking`, `reply-group-mixed`, `trip`. From ui-transcript: `failed-retry`, `stopped`, `interrupted`, `cancelled`, `superseded`, `section-notes`, `queue-waiting`, `queue-paused`, `barrier-ordered-group`, `modal-target-ambiguity`, `modal-choice-default`, `split-messages`, `clarification`, `group-first-output`, `plain-text`.
+Cases in the tree from ui-foundation: `empty`, `no-key`, `routing`, `pending`, `streaming`, `overtaking`, `reply-group-mixed`, `trip`. From ui-transcript: `failed-retry`, `stopped`, `interrupted`, `cancelled`, `superseded`, `section-notes`, `queue-waiting`, `queue-paused`, `barrier-ordered-group`, `modal-target-ambiguity`, `modal-choice-default`, `split-messages`, `clarification`, `group-first-output`, `plain-text`. From ui-debug: `genealogy-marks`, `operation-states`, `run-inspection`, `compare`; a case that needs debug toggles on or hand-written `RunInspection` records can use `@/features/debug/fixture-support`.
 
 ## Tests
 

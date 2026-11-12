@@ -84,7 +84,9 @@ describe('settings', () => {
     expect(DEFAULT_SETTINGS.defaultChoiceWaitMs).toBe(30_000)
     expect(DEFAULT_SETTINGS.concurrencyLimit).toBe(4)
     expect(DEFAULT_SETTINGS.models.decision).toBe('typesafe/jev-1.13')
-    expect(Object.values(DEFAULT_SETTINGS.debug)).toEqual([false, false, false, false])
+    const { comparePlacement, ...debugToggles } = DEFAULT_SETTINGS.debug
+    expect(Object.values(debugToggles)).toEqual([false, false, false, false])
+    expect(comparePlacement).toBe('sidebar')
     expect(RETRY_POLICIES.standard.maxAutomaticRetries).toBe(3)
     expect(RETRY_POLICIES.manual.maxAutomaticRetries).toBe(0)
     expect(RETRY_POLICIES.persistent.maxAutomaticRetries).toBeGreaterThan(RETRY_POLICIES.standard.maxAutomaticRetries)
