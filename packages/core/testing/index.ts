@@ -29,3 +29,4 @@ export {
 } from './scripted-router'
 export { MemoryEventStore, MemoryProjectionCache, MemorySecretsStore } from './memory-stores'
 export { createTestBackend, type TestBackend, type TestBackendOverrides } from './test-backend'
+export * from './routing/corpus'

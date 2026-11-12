@@ -1,0 +1,47 @@
+import { describe, expect, test } from 'vitest'
+import { ROUTING_CORPUS } from '../../../testing/routing/corpus/examples'
+import { compare, corpusInput, evaluateCorpus, formatCorpusReport, oracleDecisionProvider, referenceDecomposer } from '../../../testing/routing/corpus/evaluate'
+import { createRouter } from '../../../src/routing/pipeline'
+import { NEVER_CANCELLED } from '../../../src/ports'
+
+describe('routing corpus', () => {
+  test('corpus · every example is well formed, has a unique ID and says why its label is right', () => {
+    const ids = ROUTING_CORPUS.map((e) => e.id)
+    expect(new Set(ids).size).toBe(ids.length)
+    expect(ROUTING_CORPUS.length).toBeGreaterThanOrEqual(36)
+    for (const e of ROUTING_CORPUS) {
+      expect(e.note.length).toBeGreaterThan(10)
+      expect(e.covers.length).toBeGreaterThan(0)
+      for (const h of e.replyTo ?? []) expect(e.scene.candidates.sections.some((s) => s.sectionId === `sec_${h}`)).toBe(true)
+    }
+    const topics = new Set(ROUTING_CORPUS.flatMap((e) => e.covers))
+    for (const t of ['targets', 'placement', 'revision', 'splits', 'dependencies']) expect(topics.has(t as never)).toBe(true)
+  })
+
+  test.each(ROUTING_CORPUS.map((e) => [e.id, e] as const))('corpus · with decisions as labelled, the pipeline routes %s as labelled', async (_id, example) => {
+    const input = corpusInput(example)
+    const router = createRouter({ decisionProvider: oracleDecisionProvider(example, input), decomposer: referenceDecomposer(example) })
+    const outcome = await router.route(input, NEVER_CANCELLED)
+    expect(compare(example, outcome)).toEqual([])
+  })
+
+  test('corpus · the evaluator reports per topic, and a provider that always says no fails the labels it should', async () => {
+    const no = {
+      async decide(request: { questions: Record<string, { type: string; options?: Record<string, string> }> }) {
+        const answers: Record<string, unknown> = {}
+        for (const [id, q] of Object.entries(request.questions)) {
+          answers[id] =
+            q.type === 'choice'
+              ? { type: 'choice', choice: Object.keys(q.options ?? {})[0], confidence: 0.4, probabilities: {} }
+              : { type: 'noul', probability: 0 }
+        }
+        return { ok: true, model: 'never', answers, usage: null }
+      },
+    }
+    const report = await evaluateCorpus({ decisionProvider: no as never })
+    expect(report.total).toBe(ROUTING_CORPUS.length)
+    expect(report.passed).toBeLessThan(report.total)
+    expect(report.byTopic.targets?.total).toBeGreaterThan(0)
+    expect(formatCorpusReport(report)).toContain('Routing corpus:')
+  })
+})
