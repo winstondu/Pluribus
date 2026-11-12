@@ -10,7 +10,10 @@
  * Screenshots go to docs/build/screenshots/e2e/. Each flow prints what it saw
  * and the run exits non-zero if any flow failed.
  */
+import { mkdirSync, readFileSync } from 'node:fs'
+import path from 'node:path'
 import {
+  SCREENSHOTS,
   assert,
   redact,
   drawnOrder,
@@ -440,9 +443,45 @@ async function conversations({ page }) {
   await shot(page, '10-conversation-deleted')
 }
 
+/**
+ * Export full logs: run a composite request, export from the header's debug menu (no debug view
+ * open), read the downloaded file, and check it parses, holds the log with its routing decisions,
+ * and does not hold the key.
+ */
+async function exportLogs({ page }) {
+  await newConversation(page)
+  await send(page, 'Name one prime number between 10 and 20. Also, separately, name the largest planet. One line each.')
+  await settled(page)
+  await page.getByRole('button', { name: 'Debug views' }).click()
+  const item = page.getByRole('menuitem', { name: 'Export full logs' })
+  await item.waitFor()
+  const review = path.resolve(SCREENSHOTS, '../review')
+  mkdirSync(review, { recursive: true })
+  const [download] = await Promise.all([page.waitForEvent('download'), item.click()])
+  const filename = download.suggestedFilename()
+  assert(/^committee-log-cnv_[0-9A-Z]+-\d{8}-\d{6}\.json$/.test(filename), `the file is named committee-log-<conversation>-<timestamp>.json (${filename})`)
+  const text = readFileSync(await download.path(), 'utf8')
+  const doc = JSON.parse(text)
+  assert(doc.schema === 'committee.log-export' && doc.version === 1, 'the file is a log export, version 1')
+  assert(doc.events.length > 0 && doc.events.every((e, i) => e.seq === i + 1), 'every event of the log, in order')
+  const decided = doc.events.filter((e) => e.type === 'routing-decided')
+  assert(decided.length >= 1, 'the routing decision is in the log')
+  assert(doc.derived.routingDecisions.length >= 1 && doc.derived.routingDecisions[0].routingInForce !== null, 'the routing decisions index points at it')
+  assert(doc.derived.runs.length >= 1, 'a run inspection for every run')
+  const key = process.env.OPENROUTER_KEY ?? ''
+  assert(key === '' || !text.includes(key), 'the key is not in the export')
+  assert(!/authorization/i.test(text), 'no Authorization value in the export')
+  await page.getByRole('status').filter({ hasText: 'Saved' }).waitFor()
+  await page.screenshot({ path: path.join(review, 'export-full-logs-menu.png') })
+  await page.keyboard.press('Escape')
+  const kinds = [...new Set(doc.events.map((e) => e.type))].length
+  log(`${filename}: ${(text.length / 1024).toFixed(0)} KB, ${doc.events.length} events of ${kinds} types, ${decided.length} routing-decided, ${doc.derived.runs.length} runs`)
+  return `${doc.events.length} events, ${doc.derived.runs.length} runs`
+}
+
 // ───────────────────────── runner ─────────────────────────
 
-const SHARED = { overtaking, replyGroup, dependentFollowUp, pausedDependent, corrective, stopAndRetry, reloadMidAnswer, reloadUnderManual, persistence, conversations, markdown }
+const SHARED = { overtaking, replyGroup, dependentFollowUp, pausedDependent, corrective, stopAndRetry, reloadMidAnswer, reloadUnderManual, persistence, conversations, markdown, exportLogs }
 const SEPARATE = { invalidKey, secondTab }
 
 async function main() {

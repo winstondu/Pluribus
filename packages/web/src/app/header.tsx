@@ -16,11 +16,12 @@ import { DEBUG_VIEWS, useChangeSettings } from './settings/settings-dialog'
 import { useUiState } from './ui-state'
 
 const FocusBar = featureComponent('association', 'FocusBar')
+const ExportLogs = featureComponent('debug', 'ExportLogsMenuItem')
 
 /**
  * The bar above the transcript: the conversation's title, the Focus bar
  * (from the association feature), and the debug menu with the four view
- * toggles. Under 900 px it also carries the button that opens the
+ * toggles and "Export full logs". Under 900 px it also carries the button that opens the
  * conversation list.
  */
 export function Header(props: { sidePanelAsSheet: boolean; sidePanelAvailable: boolean; onOpenSidePanel(): void }) {
@@ -85,6 +86,7 @@ export function Header(props: { sidePanelAsSheet: boolean; sidePanelAvailable: b
                 {view.label}
               </DropdownMenuCheckboxItem>
             ))}
+            {ExportLogs ? <ExportLogs /> : null}
           </DropdownMenuContent>
         </DropdownMenu>
       ) : null}

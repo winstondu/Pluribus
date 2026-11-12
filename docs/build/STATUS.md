@@ -55,6 +55,7 @@ These are covered only by core and component tests, never end to end: clarificat
 | markdown | A fenced code block with Streamdown's chrome, and a table when the model writes one, light and dark | `11-*` |
 | invalidKey | An invalid key is rejected by the prompt. A key saved unverified that OpenRouter rejects fails routing visibly ("Could not route this message: User not found", Retry). Replacing the key and Retry answers | `07-*` |
 | secondTab | A second tab stands by while the first streams; it takes over when the first closes | `08-*` |
+| exportLogs | "Export full logs" from the header's debug menu with no debug view on: the downloaded file parses, holds every event in order, the routing decision and its index entry, a run inspection per run, and neither the key nor an `Authorization` value | `review/export-full-logs-menu.png` |
 
 ## Acceptance conditions
 
@@ -372,6 +373,24 @@ For the specification's edits of 2026-11-12 (07 · "Clarification", 08, 10, 11 �
 | `pnpm vitest run --config vitest.smoke.config.ts packages/providers/src/readiness.smoke.test.ts` | 5 of 5 passed, once: both listed models returned `ready` and `clarification-needed` from the preparation step and ended a streamed answer with the signal; an answer that needs nothing completed without it |
 
 Not done: the e2e flows were not rerun, and no browser flow exercises a clarification. How often a live answer model signals when it should not is not measured.
+
+### Export full logs (2026-11-12)
+
+"Export full logs" in the header's debug menu saves one JSON file per conversation: the complete event log (every routing decision, decomposition, plan, attempt context and outcome, elicitation), the settings in force with their change events, and derived views (the four projections, a run inspection per directive, a per-message index of routing and run decisions). Schema, how to read it and the measurements: [log-export.md](log-export.md).
+
+- **Backend-owned**: a `log-export` snapshot query on `BackendClient`, answered by core with the document already serialized in string chunks (`LogExportFile`). Inputs are read in one queued job; serialization runs after it, in the Worker.
+- **Page**: `LogExportSource.exportLog(conversationId)` → `{ kind: 'blob' } | { kind: 'url' }`. Embedded wraps the chunks in a Blob; a server deployment can return a download URL with the same button. The object URL is revoked afterwards.
+- **Key guard**: the export fails loudly if the stored key occurs anywhere in it (only possible if the user typed it).
+- **Size**: 2,000 sections → 27,400 events, 35.6 MB, built in 933 ms; `JSON.parse` 145 ms.
+- **Tests**: `core/src/engine/log-export.test.ts` (every event in order; round trip through `fold` to the live state, projections and inspections; deterministic, also after a restart; no key or `Authorization`; the guard; unknown conversation), `log-export.measure.test.ts`, `web/src/features/debug/log-export/export-logs.test.tsx` (Blob and URL results, busy, error, retry, revocation), and the `exportLogs` e2e flow.
+
+| Command | Result |
+|---|---|
+| `pnpm typecheck` | 5 packages, no errors |
+| `pnpm test` | 67 files, 1,400 tests, all passed |
+| `pnpm --filter @committee/web lint` | Exit 0, warnings only, none in the new files |
+| `pnpm build` | Succeeds |
+| `COMMITTEE_URL=http://localhost:5199/ pnpm e2e exportLogs` | Passed: 24 events, 2 runs |
 
 ## How to run
 

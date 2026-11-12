@@ -4,7 +4,9 @@ import {
   CONTEXT_WARNING_RATIO,
   DEFAULT_SETTINGS,
   EVENT_SCHEMA_VERSION,
+  PROTOCOL_VERSION,
   applySettingsPatch,
+  isAppEvent,
   diffSnapshots,
   isConversationEvent,
   provisionalLabel,
@@ -69,6 +71,7 @@ import {
   type RouteOptions,
   type StepContext,
 } from './module'
+import { LogExportLeakError, buildLogExport } from './log-export'
 import { checkPlan, nearestSettledAncestor } from './plan'
 import { askKnownClarification, inputDigest, readinessStands } from './readiness'
 import { Projector, projectSnapshot, runInspection } from './projections'
@@ -1237,6 +1240,50 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
     }
   }
 
+  // ── log export ──
+  /**
+   * The full log export (protocol `log-export.ts`). What goes in is read in
+   * one queued job, so it is one consistent point of the log; it is built
+   * after the job, so other steps do not wait while a large log serializes.
+   */
+  async function exportLog(conversationId: ConversationId): Promise<SnapshotResult<'log-export'>> {
+    const gathered = await enqueue(async () => {
+      const runtime = runtimes.get(conversationId)
+      const conversation = conversations.find((c) => c.id === conversationId)
+      if (!runtime || !conversation) return null
+      const state = runtime.state
+      const stored = await deps.eventStore.read(conversationId, 0)
+      const events = stored.map(upcastEvent).filter(isConversationEvent).filter((event) => event.seq <= state.throughSeq)
+      const appEvents = (await deps.eventStore.read(APP_LOG)).map(upcastEvent).filter(isAppEvent)
+      const key = await deps.secretsStore.get('openrouter-key')
+      return { state, snapshot: runtime.snapshot, conversation, events, appEvents, key, settings, keyConfigured, createdAt: deps.clock.now() }
+    })
+    if (!gathered) return { ok: false, error: { code: 'unknown-conversation', message: `Unknown conversation ${conversationId}` } }
+    const { state } = gathered
+    const runs = state.directiveOrder.flatMap((directiveId) => {
+      const run = runInspection(state, directiveId, null)
+      return run ? [run] : []
+    })
+    try {
+      const file = buildLogExport({
+        conversation: gathered.conversation,
+        createdAt: gathered.createdAt,
+        versions: { protocol: PROTOCOL_VERSION, eventSchema: EVENT_SCHEMA_VERSION, state: STATE_VERSION },
+        settings: gathered.settings,
+        keyConfigured: gathered.keyConfigured,
+        appEvents: gathered.appEvents,
+        events: gathered.events,
+        projections: gathered.snapshot,
+        runs,
+        secrets: gathered.key === null ? [] : [gathered.key],
+      })
+      return { ok: true, value: file }
+    } catch (error) {
+      if (error instanceof LogExportLeakError) return { ok: false, error: { code: 'internal', message: error.message } }
+      return { ok: false, error: { code: 'internal', message: error instanceof Error ? error.message : 'The export failed' } }
+    }
+  }
+
   // ── the backend ──
   const backend: Backend = {
     async start() {
@@ -1302,6 +1349,7 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
     },
 
     async snapshot<Q extends SnapshotQuery>(query: Q): Promise<SnapshotResult<Q['kind']>> {
+      if (query.kind === 'log-export') return (await exportLog(query.conversationId)) as SnapshotResult<Q['kind']>
       const answer = await enqueue(async (): Promise<SnapshotResult> => {
         switch (query.kind) {
           case 'app':

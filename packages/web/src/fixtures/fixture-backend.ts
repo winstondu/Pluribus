@@ -1,5 +1,8 @@
+import { STATE_VERSION, buildLogExport } from '@committee/core'
 import {
   DEFAULT_SETTINGS,
+  EVENT_SCHEMA_VERSION,
+  PROTOCOL_VERSION,
   applySettingsPatch,
   diffSnapshots,
   validateSettingsPatch,
@@ -317,6 +320,26 @@ export function createFixtureBackend(fixture: Fixture, options: { timers?: boole
         }
         case 'events':
           return value({ events: [] })
+        case 'log-export': {
+          // A fixture has no log: the export carries its projections and runs, and no events.
+          const snapshot = conversations.get(query.conversationId)
+          const summary = app.conversations.find((c) => c.id === query.conversationId)
+          if (!snapshot || !summary) return { ok: false, error: { code: 'unknown-conversation', message: 'No such conversation' } }
+          return value(
+            buildLogExport({
+              conversation: summary,
+              createdAt: BASE_TIME,
+              versions: { protocol: PROTOCOL_VERSION, eventSchema: EVENT_SCHEMA_VERSION, state: STATE_VERSION },
+              settings: app.settings,
+              keyConfigured: app.key.configured,
+              appEvents: [],
+              events: [],
+              projections: snapshot,
+              runs: Object.values(fixture.runs ?? {}).map((run) => run.latest),
+              secrets: [],
+            }),
+          )
+        }
       }
     },
   }

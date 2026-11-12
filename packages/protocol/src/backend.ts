@@ -1,6 +1,7 @@
 import type { Command, CommandError, CommandResult } from './commands'
 import type { AppEvent, AttemptStarted, ConversationEvent } from './events'
 import type { AttemptId, ConversationId, DirectiveId } from './ids'
+import type { LogExportFile } from './log-export'
 import type { ConsumedContext } from './model'
 import type { ProjectionPatch } from './patches'
 import { applyPatches } from './patches'
@@ -112,12 +113,19 @@ export type SnapshotQuery =
     }
   /** The conversation's stored events after a sequence number, in full, for tools and tests. */
   | { readonly kind: 'events'; readonly conversationId: ConversationId; readonly afterSeq: number }
+  /**
+   * The full log export of one conversation (`log-export.ts`): its complete
+   * event log, the settings in force and derived views, serialized by the
+   * backend. Used by "Export full logs".
+   */
+  | { readonly kind: 'log-export'; readonly conversationId: ConversationId }
 
 export interface SnapshotValues {
   app: AppSnapshot
   conversation: ConversationSnapshot
   run: RunInspection
   events: { readonly events: readonly ConversationEvent[] }
+  'log-export': LogExportFile
 }
 
 export type SnapshotResult<K extends SnapshotQuery['kind'] = SnapshotQuery['kind']> =

@@ -12,7 +12,7 @@ export interface FeatureEntries {
   transcript: 'TranscriptPane'
   composer: 'ComposerDock'
   association: 'ChainRail' | 'FocusBar'
-  debug: 'DebugSidePanel' | 'OperationGraphDrawer'
+  debug: 'DebugSidePanel' | 'OperationGraphDrawer' | 'ExportLogsMenuItem'
 }
 
 /** The entry component `exportName` of feature `feature`, or null while it does not exist. */

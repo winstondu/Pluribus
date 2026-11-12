@@ -37,3 +37,13 @@ export {
   useTranscriptOrder,
 } from './hooks'
 export { connect, type Connection, type ConnectionMode } from './connect'
+export {
+  LogExportError,
+  backendLogExportSource,
+  saveLogExport,
+  useLogExportSource,
+  type LogExportResult,
+  type LogExportSource,
+  type SaveEnvironment,
+} from './log-export'
+export { LogExportSourceProvider } from './log-export-provider'
