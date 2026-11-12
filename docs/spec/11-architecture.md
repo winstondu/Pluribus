@@ -423,6 +423,8 @@ The embedded Web Worker calls OpenRouter directly, with no CORS proxy (Q72). Jev
 
 The backend must expose enough of its records for the run inspector, genealogy, and operation graph to show exact consumed context, routing decisions, and attempt states (Q31, Q87). What each view shows and which are behind debug toggles is specified in [09-debug-views.md](09-debug-views.md).
 
+The backend can also export a conversation's full log: every stored event in order, which is the source of truth for every routing and run decision; the settings in force with their change events; and, marked as derived, the four projections, the run inspection of every directive, and a per-message index of its decision events. The export is built by the backend from the stored log and is the same for the same log at the same clock. It never contains a key: the export fails rather than emit text equal to a stored key. A server deployment may serve the same document as a download.
+
 ## Appendix: integration facts
 
 Facts, not decisions, researched and dated **2026-11-10**. They may go out of date. Committee reaches Jev only through OpenRouter Decisions (Q68), so the direct TypeSafe API details are background, not constraints on the build.

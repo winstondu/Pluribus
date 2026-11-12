@@ -44,6 +44,7 @@ Opening another conversation does not stop work in the previous one (Q100). A se
 | Retry | A failed, stopped, or interrupted section; a request | Starts a new attempt; on a request, only its unfinished sections |
 | Regenerate | Completed work with a superseded-input note | Cancels any of that work still in progress and redoes it against the new version |
 | Undo split | Split messages, until one shows answer text or gets a reply | Restores one atomic request |
+| Export full logs | Header debug menu, available whether or not a debug view is open | Saves one JSON file of the active conversation's complete event log, the settings in force, and derived views. The file contains the full text of the conversation and never a key; it is a local download |
 | Retry / Continue without / Cancel | A dependency-recovery queue item | The recovery choice |
 | Choose section | Target-ambiguity modal above the composer | Picks among candidate sections (Q95) |
 | Choose work to redo | Choice-with-default modal above the composer | Edits the pre-selection until the default runs (Q95) |
@@ -110,6 +111,7 @@ The backend owns all coordination: routing, scheduling, context assembly, and re
 - The client sends **commands**.
 - The backend sends an ordered stream of **domain events and projection updates**.
 - The client can request the backend's **current state** (a projection snapshot) at any time, for example on load or reconnect.
+- The client can request a conversation's **log export** from the backend. It is read-only and records no event. The client obtains it through one interface and does not assemble it: the embedded backend returns the document itself, and a server deployment may return a download ([architecture](11-architecture.md#inspection)).
 - In the embedded deployment the backend runs in a Web Worker; closing the tab interrupts running work. A server deployment uses WebSocket, or SSE with POST.
 
 ### Commands
