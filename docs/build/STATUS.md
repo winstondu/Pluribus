@@ -58,7 +58,7 @@ These are covered only by core and component tests, never end to end: clarificat
 
 ## Acceptance conditions
 
-Every condition has its canonical test, titled with its ID. All 66 pass in the final run (61 from the behavior documents, and DA1–DA5 from 11 · "Dependency attachment", adopted 2026-11-12). Where reviews added more tests under the same ID, they are listed too. Paths are relative to `packages/`.
+Every condition has its canonical test, titled with its ID. All 68 pass in the final run (61 from the behavior documents; DA1–DA5 from 11 · "Dependency attachment", adopted 2026-11-12; D5 and E5 from the specification's edits of the same day). Where reviews added more tests under the same ID, they are listed too. Paths are relative to `packages/`.
 
 | ID | Canonical test file | Further tests under the ID | Result |
 |---|---|---|---|
@@ -74,6 +74,7 @@ Every condition has its canonical test, titled with its ID. All 66 pass in the f
 | R1–R8 | `core/src/recovery/acceptance/revisions.test.ts` | R3, R8 in `core/src/recovery/acceptance/review-3.test.ts` | pass |
 | E1, E2 | `core/src/routing/acceptance/elicitation.test.ts` | `E1 (review)` in `core/src/routing/acceptance/review-2.test.ts` | pass |
 | E3, E4 | `core/src/recovery/acceptance/elicitation.test.ts` | `E3 (Q101) · …` (the default-choice deadline across a restart) in the same file; `E3/E4 (…)` in `core/src/recovery/acceptance/review-2.test.ts` | pass |
+| E5 | `core/src/routing/acceptance/readiness.test.ts` | Each rule by itself in the same file; `E5 (web)` in `web/src/features/transcript/transcript.test.tsx`; live in `providers/src/readiness.smoke.test.ts` | pass |
 | DA1, DA2 | `core/src/routing/selection/selection.test.ts` | On a backend with each selector: `C19 · …`, `C9 · …` in `core/src/routing/acceptance/selection.test.ts`; with each strategy in `core/src/routing/acceptance/referents.test.ts` | pass |
 | DA3, DA4 | `core/src/routing/referents/referents.test.ts` | `I11` in `core/src/routing/acceptance/invariants.test.ts`; the cost grid in `core/src/routing/referents/cost-grid.test.ts`; with no decision provider, `budget · …` in `core/src/routing/referents/search.test.ts` | pass |
 | DA5 | `core/src/routing/acceptance/summaries.test.ts` | `I12` in `core/src/routing/acceptance/invariants.test.ts` | pass |
@@ -89,7 +90,7 @@ PLAN §7 has the full reasoning for each.
 |---|---|
 | Candidates for the decision model | Every current section; every chain with its settled head and tip; every directive not superseded or cancelled; every sibling group not dissolved. Result-dependency candidates are work still in flight (at most 16) and open groups. Trimmed to the 24 most recent sections if over the per-question limit |
 | Trivial messages skip the decision call? | No. The first message of an empty conversation asks only the gate and clarification questions |
-| Do decision and decomposition calls count against concurrency? "Per provider"? | Only answer, clarification-question and synthesis runs take a slot. Routing, label calls and join-backs take none. One pool, keyed `openrouter`. A conversation's messages are routed in submission order (C2) |
+| Do decision and decomposition calls count against concurrency? "Per provider"? | Only answer, clarification-question and synthesis runs take a slot. Routing, label calls, join-backs and the preparation step take none. One pool, keyed `openrouter`. A conversation's messages are routed in submission order (C2) |
 | Backoff | Standard: 3 retries at 1 s, 2 s, 4 s, accepting `Retry-After` up to 60 s. Persistent: 8 retries up to 30 s apart, accepting `Retry-After` up to 10 min. No jitter. Routing failures (408, 429, 502, 503, an empty 200, a dropped connection) retry under the same setting |
 | Pinned decision model, tuned thresholds | `typesafe/jev-1.13`. Thresholds were swept on the 44-example corpus: `targetChoice` 0.7, `clearlyCorrective` 0.8, `composite` 0.65, `dependency` 0.6, `clarification` 0.75, ambiguity floor 0.25. Each is on its best plateau, 42/44 |
 | Which earlier work a message refers to | A referent strategy behind one interface, chosen in settings: `tree-walk` (default) or `one-pass`, with a per-routing decision budget. Measured live at about 0.3% of an answer's cost; bounded at 3.7%. See [dependency-decisioning.md](dependency-decisioning.md) |
@@ -351,6 +352,27 @@ The main session's decision: apply the calibrated estimate proposed under "Measu
 - **Recorded token figures changed.** The gate's new question adds 48 questions and about 3,000 tokenizer tokens over the corpus in each configuration, no request: `providers/src/decision-tokens.test.ts` re-recorded with the earlier figures in its comments; the cost-grid bound still holds on all 360 cells (worst 1.82× by tokenizer, 1.994× by estimate). The live figures quoted in [dependency-decisioning.md](dependency-decisioning.md) predate the question.
 - **Changed tests.** `D3 (review)` used a combined limit as its barrier; it now uses an explicit order. The corpus's `split-combined-limit-barrier` became `combined-limit-atomic` (and `combined-limit-atomic-new` was added); `split-per-part-limit-no-barrier` no longer carries a `combined-limit` barrier in its reference decomposition. Gate question lists in `validation.test.ts` and `F3 (routing)` gained `combinedlimit`.
 
+### Typed readiness, paused for input, the compatibility list (2026-11-12)
+
+For the specification's edits of 2026-11-12 (07 · "Clarification", 08, 10, 11 · "Pipeline" and "Models", the glossary's "Paused"; Q103, Q105–Q107; E5). Design, the choices the text leaves open and how it was read: [readiness.md](readiness.md).
+
+- **Typed readiness.** Every answer directive has a readiness result, `ready` or `clarification-needed`, recorded as `directive-readiness-established` before its run is sent. Routing's plan establishes it for free; the preparation step (a new port, `Preparer`; one structured call on the decomposition model) runs only for a directive that waited for results, once they have arrived, and is reused while the input is unchanged. A directive that never waited for a result is never prepared.
+- **Late clarification.** The model provider port has a typed terminal event, `clarification-needed`. Over OpenRouter it is a function tool on listed models, read from `tool_calls` deltas. The attempt ends `paused` with its text kept and labeled; the question is an additional response recorded without a model call; the directive is paused, its dependents stay queued; the answer is another additional response and never reads the partial text.
+- **One paused state, two reasons.** `awaiting-input` (resumes by the answer; no queue item) and `dependency-recovery` (Retry / Continue without / Cancel on the queue item). The section state "paused awaiting user input", the operation graph, the mini-map and the run inspector show the reason. Work blocked by a clarification before it starts is `paused` too, where it was `awaiting-elicitation`.
+- **Compatibility list.** `MODEL_COMPATIBILITY`: `anthropic/claude-sonnet-5.5` and `anthropic/claude-haiku-5.5`, each tested live for structured preparation and the streamed signal. The answer and decomposition selectors offer only these; a stored answer or decomposition model that is not listed is normalised to the default when settings are read.
+- **Existing tests changed** because the specification changed what they assert: the state of a directive blocked by a clarification is `paused` in `E1`, `E2`, `clarification · one ambiguous shared requirement…` and `stop · a request stop cancels a directive held for a clarification…`; the model provider's stream events gained `clarification-needed` (`I · no LangChain…` type assertion); `DirectiveCancelled.cause` gained `paused-cancel`; the event count is 50; the settings test picks a listed model for decomposition.
+- **Fixture and screenshots.** `?fixture=paused-awaiting-input`; `screenshots/review/paused-awaiting-input-*.png`, `operation-states-pause-reasons-light.png`.
+
+| Command | Result |
+|---|---|
+| `pnpm typecheck` | 5 packages, no errors |
+| `pnpm test` | See the final run in the commit that follows this section |
+| `pnpm --filter @committee/web lint` | Exit 0, warnings only |
+| `pnpm build` | Succeeds |
+| `pnpm vitest run --config vitest.smoke.config.ts packages/providers/src/readiness.smoke.test.ts` | 5 of 5 passed, once: both listed models returned `ready` and `clarification-needed` from the preparation step and ended a streamed answer with the signal; an answer that needs nothing completed without it |
+
+Not done: the e2e flows were not rerun, and no browser flow exercises a clarification. How often a live answer model signals when it should not is not measured.
+
 ## How to run
 
 ```sh
@@ -399,6 +421,14 @@ On the dev server, `/?fixtures` opens the fixture gallery.
 - **Chain colors past the eighth** use CSS relative color syntax, which needs a current browser.
 - **Bundle size.** The main chunk is 1.9 MB. Nothing besides the gallery is code-split.
 - **Plain text or Markdown.** Core's preamble asks for plain text while the transcript renders Markdown. Models mix the two.
+
+**Readiness and clarification (2026-11-12)**
+
+- **Preparation only after a wait.** A directive that never waited for a result relies on routing's finding and on the run's own signal; it gets no preparation step. A request revised in place loses a `ready` finding and is prepared.
+- **The signal depends on the model's judgement.** A listed model decides when to call the tool. The live check covers one prompt that needs the user and one that does not; false signals and missed ones are not measured.
+- **A question the preparation step or a run asks is not rephrased.** It is shown as the model wrote it.
+- **01 · "The unit of work" still describes Paused as the dependency case only**; the glossary and 08 include the wait for input. The build follows the glossary.
+- **No Cancel control for work paused for input.** The command accepts it; the specification places the control on the dependency-recovery queue item only. Stop on the request does the same.
 
 **Providers and runtime**
 

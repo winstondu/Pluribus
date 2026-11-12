@@ -47,7 +47,7 @@ A revision's target is in one of five states (`RevisionTargetState`). The fifth,
 
 ### States
 
-`DirectiveState` is the ten states of 01 plus three build refinements: `ready` (held only by the concurrency limit), `retrying` (between automatic retries), `awaiting-elicitation` (held by a clarification or a choice with default). `IN_FLIGHT_STATES` is the test for "keeps its sibling group open": it includes `retrying` and `paused`, so a group closes only when every member is completed, failed, stopped, interrupted or cancelled. A member or prerequisite cancelled before it started is recorded like a failed one, as a request and a marker (`UnfinishedOutcome`), and pauses its dependents the same way.
+`DirectiveState` is the ten states of 01 plus three build refinements: `ready` (held only by the concurrency limit), `retrying` (between automatic retries), `awaiting-elicitation` (held by a choice with default). Since 2026-11-12 work that waits for the answer to a clarification is `paused` with pause reason `awaiting-input`; the pause after a prerequisite did not finish has reason `dependency-recovery` ([readiness.md](readiness.md)). `IN_FLIGHT_STATES` is the test for "keeps its sibling group open": it includes `retrying` and `paused`, so a group closes only when every member is completed, failed, stopped, interrupted or cancelled. A member or prerequisite cancelled before it started is recorded like a failed one, as a request and a marker (`UnfinishedOutcome`), and pauses its dependents the same way.
 
 ### Stopping
 
@@ -144,7 +144,7 @@ A completed attempt that is its directive's current result has a superseded inpu
 - Clarifications are on the plan (`RoutingPlan.clarifications`), one entry per question with every unit it blocks, so one ambiguous shared requirement is asked once.
 - The question is a directive of kind `clarification-question`, answered by the answer model and shown as an additional response. It is exempt from the whole-request barrier (E1), takes a concurrency slot like any answer run, has no genealogy node of its own, and is never a sibling-group member or anyone's child.
 - Its input is the ancestry of the first directive it blocks, then its own request, which core composes from the blocked requests and the plan's `about`.
-- A blocked directive is `awaiting-elicitation`, has no queue item and no bubble until the answer arrives, then opens its section in a new `clarified-answer` response. Its input ends with its own request, the question (`clarification-question`), and the user's answer (`clarification-answer`).
+- A blocked directive is `paused` with reason `awaiting-input`, has no queue item and no bubble until the answer arrives, then opens its section in a new `clarified-answer` response. A directive paused once it had a section (the preparation step asked, or its run stopped to ask) keeps that section, superseded with cause `clarified`, and answers in a new one ([readiness.md](readiness.md)). Its input ends with its own request, the question (`clarification-question`), and the user's answer (`clarification-answer`).
 - The answering message creates no directive. Its rail (`MessageView.chainIds`) is the chains of the directives it released.
 
 ### Undo split
