@@ -363,6 +363,8 @@ With the routing decision of each message ([Inspection](#inspection)), in additi
 | Strategy selection: the interface, the rules, the decision-model mode, reuse, recording | Implemented. Rules is the default; off and the decision model are available |
 | Optimization: tuning the thresholds and the budget's figures, the size of unbranched run that is searched, how much context a Point and a Segment show, the selector's rules, summary policies, the lexical index's stop words and minimum score, an embedding index behind the candidate source, an index behind Estimate, and the quality of a learned or model-based selector | Beyond the first version |
 
+What the build measured, and where it falls short of this, is in [the build status](../build/STATUS.md).
+
 ### Acceptance conditions
 
 - **DA1.** With either referent strategy, and with strategy selection off, by rules, or by the decision model, a continuation requiring multiple siblings depends on their full join-back (C9) and J continues on the chain A and B forked from (C19).

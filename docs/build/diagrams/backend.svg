@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 985" width="1240" height="985" font-family="Inter, Helvetica, Arial, sans-serif">
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#6b7785"/></marker></defs>
+<rect width="1240" height="985" fill="#ffffff"/>
+<text x="40" y="32" font-size="17" font-weight="700" fill="#26303a" text-anchor="start">Pluribus backend: modules and injected ports</text>
+<rect x="40" y="50" width="1160" height="72" rx="10" fill="#f3f4f6" stroke="#9aa3ad" stroke-width="1.2"/>
+<text x="52" y="72" font-size="13" font-weight="600" fill="#26303a" text-anchor="start">packages/web · React client (main thread)</text>
+<text x="52" y="92" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">Renders the four projections and sends commands. It decides no placement, ordering, dependencies or context.</text>
+<line x1="420" y1="122" x2="420" y2="176" stroke="#6b7785" stroke-width="1.4" marker-end="url(#a)"/>
+<text x="428.0" y="153.0" font-size="11" font-weight="400" fill="#6b7785" text-anchor="start">commands</text>
+<line x1="800" y1="176" x2="800" y2="122" stroke="#6b7785" stroke-width="1.4" marker-end="url(#a)"/>
+<text x="808.0" y="153.0" font-size="11" font-weight="400" fill="#6b7785" text-anchor="start">projections</text>
+<rect x="40" y="178" width="1160" height="700" rx="12" fill="#ffffff" stroke="#9aa3ad" stroke-width="1.2" stroke-dasharray="6 4"/>
+<text x="56" y="200" font-size="12" font-weight="600" fill="#4a5562" text-anchor="start">Web Worker · backend.worker.ts · holds the pluribus-backend Web Lock (a second tab is standby)</text>
+<rect x="52" y="212" width="1136" height="540" rx="12" fill="#fbfcfd" stroke="#c5ccd4" stroke-width="1.2"/>
+<text x="66" y="233" font-size="12" font-weight="600" fill="#4a5562" text-anchor="start">packages/core · deterministic, no I/O: everything outside comes in through a port</text>
+<rect x="66" y="245" width="330" height="128" rx="10" fill="#eaf1fb" stroke="#7a9bd1" stroke-width="1.2"/>
+<text x="78" y="267" font-size="13" font-weight="600" fill="#26303a" text-anchor="start">Engine</text>
+<text x="78" y="287" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">Commands become events in the append-only log</text>
+<text x="78" y="304" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">Reducers fold events into state</text>
+<text x="78" y="321" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">Lifecycle: scheduling, sibling groups, join-back</text>
+<text x="78" y="338" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">Assembles each run's context from the genealogy</text>
+<rect x="410" y="245" width="250" height="128" rx="10" fill="#eaf1fb" stroke="#7a9bd1" stroke-width="1.2"/>
+<text x="422" y="267" font-size="13" font-weight="600" fill="#26303a" text-anchor="start">Recovery</text>
+<text x="422" y="287" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">Retry policy and pause</text>
+<text x="422" y="304" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">Replace and revisions</text>
+<text x="422" y="321" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">Local failure: one failed part</text>
+<text x="422" y="338" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">never fails the whole request</text>
+<rect x="674" y="245" width="500" height="128" rx="10" fill="#eaf1fb" stroke="#7a9bd1" stroke-width="1.2"/>
+<text x="686" y="267" font-size="13" font-weight="600" fill="#26303a" text-anchor="start">Projections (computed from the event log)</text>
+<text x="686" y="287" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">Transcript · Queue · Genealogy · Operation graph</text>
+<text x="686" y="304" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">Run inspection (for the debug views)</text>
+<text x="686" y="321" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">Cached through the projection cache port</text>
+<rect x="66" y="387" width="1108" height="262" rx="10" fill="#eaf6ee" stroke="#74ad85" stroke-width="1.2"/>
+<text x="78" y="409" font-size="13" font-weight="600" fill="#26303a" text-anchor="start">Routing pipeline (once per user message)</text>
+<rect x="86" y="420" width="250" height="34" rx="8" fill="#ffffff" stroke="#74ad85" stroke-width="1.2"/>
+<text x="211" y="442" font-size="12" font-weight="600" fill="#26303a" text-anchor="middle">1 · Decision gate</text>
+<rect x="356" y="420" width="250" height="34" rx="8" fill="#ffffff" stroke="#74ad85" stroke-width="1.2"/>
+<text x="481" y="442" font-size="12" font-weight="600" fill="#26303a" text-anchor="middle">2 · Decomposition</text>
+<rect x="626" y="420" width="250" height="34" rx="8" fill="#ffffff" stroke="#74ad85" stroke-width="1.2"/>
+<text x="751" y="442" font-size="12" font-weight="600" fill="#26303a" text-anchor="middle">3 · Dependency attachment</text>
+<rect x="896" y="420" width="250" height="34" rx="8" fill="#ffffff" stroke="#74ad85" stroke-width="1.2"/>
+<text x="1021" y="442" font-size="12" font-weight="600" fill="#26303a" text-anchor="middle">4 · Validation, then plan to Engine</text>
+<line x1="336" y1="437" x2="354" y2="437" stroke="#6b7785" stroke-width="1.4" marker-end="url(#a)"/>
+<line x1="606" y1="437" x2="624" y2="437" stroke="#6b7785" stroke-width="1.4" marker-end="url(#a)"/>
+<line x1="876" y1="437" x2="894" y2="437" stroke="#6b7785" stroke-width="1.4" marker-end="url(#a)"/>
+<text x="78" y="478" font-size="12" font-weight="600" fill="#4a5562" text-anchor="start">Inside dependency attachment: each box is replaceable on its own</text>
+<rect x="78" y="488" width="171" height="112" rx="10" fill="#f1ecfa" stroke="#9a86c9" stroke-width="1.2"/>
+<text x="90" y="510" font-size="12" font-weight="600" fill="#26303a" text-anchor="start">Strategy selection</text>
+<text x="90" y="530" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">Off, rules (default)</text>
+<text x="90" y="547" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">or decision model</text>
+<text x="90" y="564" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">Chooses from the</text>
+<text x="90" y="581" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">genealogy's shape</text>
+<rect x="261" y="488" width="171" height="112" rx="10" fill="#f1ecfa" stroke="#9a86c9" stroke-width="1.2"/>
+<text x="273" y="510" font-size="12" font-weight="600" fill="#26303a" text-anchor="start">Referent strategy</text>
+<text x="273" y="530" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">Policy only:</text>
+<text x="273" y="547" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">one pass or tree walk</text>
+<text x="273" y="564" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">First pass of five</text>
+<text x="273" y="581" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">Search: last relevant</text>
+<rect x="444" y="488" width="171" height="112" rx="10" fill="#f1ecfa" stroke="#9a86c9" stroke-width="1.2"/>
+<text x="456" y="510" font-size="12" font-weight="600" fill="#26303a" text-anchor="start">Operations</text>
+<text x="456" y="530" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">Ask: Point · Group</text>
+<text x="456" y="547" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">Segment · Several</text>
+<text x="456" y="564" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">Free: Estimate</text>
+<text x="456" y="581" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">Describe · Cost</text>
+<rect x="627" y="488" width="171" height="112" rx="10" fill="#f1ecfa" stroke="#9a86c9" stroke-width="1.2"/>
+<text x="639" y="510" font-size="12" font-weight="600" fill="#26303a" text-anchor="start">Decision budget</text>
+<text x="639" y="530" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">Hard stop per routing</text>
+<text x="639" y="547" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">Token budget and</text>
+<text x="639" y="564" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">2× the answer's cost</text>
+<text x="639" y="581" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">Best node found so far</text>
+<rect x="810" y="488" width="171" height="112" rx="10" fill="#fbf1e6" stroke="#cf9a5b" stroke-width="1.2"/>
+<text x="822" y="510" font-size="12" font-weight="600" fill="#26303a" text-anchor="start">Candidate source</text>
+<text x="822" y="530" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">Seed hints: extra</text>
+<text x="822" y="547" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">starting nodes</text>
+<text x="822" y="564" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">Lexical index</text>
+<text x="822" y="581" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">(being built)</text>
+<rect x="993" y="488" width="171" height="112" rx="10" fill="#fbf1e6" stroke="#cf9a5b" stroke-width="1.2"/>
+<text x="1005" y="510" font-size="12" font-weight="600" fill="#26303a" text-anchor="start">Context summaries</text>
+<text x="1005" y="530" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">Summary provider:</text>
+<text x="1005" y="547" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">pass-through today</text>
+<text x="1005" y="564" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">Summarizer: runs in</text>
+<text x="1005" y="581" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">background, off</text>
+<line x1="249" y1="544" x2="260" y2="544" stroke="#6b7785" stroke-width="1.4" marker-end="url(#a)"/>
+<line x1="432" y1="544" x2="443" y2="544" stroke="#6b7785" stroke-width="1.4" marker-end="url(#a)"/>
+<line x1="615" y1="544" x2="626" y2="544" stroke="#6b7785" stroke-width="1.4" marker-end="url(#a)"/>
+<text x="78" y="628" font-size="11" font-weight="400" fill="#4a5562" text-anchor="start">Purple: the search itself. Orange: optional inputs to it. Only Point and Group can confirm a referent.</text>
+<text x="66" y="676" font-size="12" font-weight="600" fill="#4a5562" text-anchor="start">Ports (interfaces injected into core)</text>
+<rect x="66" y="686" width="130" height="40" rx="8" fill="#ffffff" stroke="#6b7785" stroke-width="1.2"/>
+<text x="131" y="711" font-size="11.5" font-weight="600" fill="#26303a" text-anchor="middle">ModelProvider</text>
+<rect x="205" y="686" width="130" height="40" rx="8" fill="#ffffff" stroke="#6b7785" stroke-width="1.2"/>
+<text x="270" y="711" font-size="11.5" font-weight="600" fill="#26303a" text-anchor="middle">DecisionProvider</text>
+<rect x="344" y="686" width="130" height="40" rx="8" fill="#ffffff" stroke="#6b7785" stroke-width="1.2"/>
+<text x="409" y="711" font-size="11.5" font-weight="600" fill="#26303a" text-anchor="middle">Decomposer</text>
+<rect x="483" y="686" width="130" height="40" rx="8" fill="#ffffff" stroke="#6b7785" stroke-width="1.2"/>
+<text x="548" y="711" font-size="11.5" font-weight="600" fill="#26303a" text-anchor="middle">EventStore</text>
+<rect x="622" y="686" width="130" height="40" rx="8" fill="#ffffff" stroke="#6b7785" stroke-width="1.2"/>
+<text x="687" y="711" font-size="11.5" font-weight="600" fill="#26303a" text-anchor="middle">ProjectionCache</text>
+<rect x="761" y="686" width="130" height="40" rx="8" fill="#ffffff" stroke="#6b7785" stroke-width="1.2"/>
+<text x="826" y="711" font-size="11.5" font-weight="600" fill="#26303a" text-anchor="middle">SecretsStore</text>
+<rect x="900" y="686" width="130" height="40" rx="8" fill="#ffffff" stroke="#6b7785" stroke-width="1.2"/>
+<text x="965" y="711" font-size="11.5" font-weight="600" fill="#26303a" text-anchor="middle">Clock · Timers · Ids</text>
+<rect x="1039" y="686" width="130" height="40" rx="8" fill="#ffffff" stroke="#6b7785" stroke-width="1.2"/>
+<text x="1104" y="711" font-size="11.5" font-weight="600" fill="#26303a" text-anchor="middle">ContextSummariser</text>
+<rect x="52" y="776" width="560" height="84" rx="10" fill="#f3f4f6" stroke="#9aa3ad" stroke-width="1.2"/>
+<text x="64" y="798" font-size="13" font-weight="600" fill="#26303a" text-anchor="start">packages/providers · OpenRouter adapters</text>
+<text x="64" y="818" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">Streaming answers (SSE) with error mapping · Decisions · generative decomposer</text>
+<text x="64" y="835" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">Scripted fake provider for tests</text>
+<rect x="628" y="776" width="560" height="84" rx="10" fill="#f3f4f6" stroke="#9aa3ad" stroke-width="1.2"/>
+<text x="640" y="798" font-size="13" font-weight="600" fill="#26303a" text-anchor="start">packages/storage · adapters</text>
+<text x="640" y="818" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">Event store · projection cache · local secrets store</text>
+<text x="640" y="835" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">IndexedDB in the app, in-memory in tests</text>
+<line x1="131" y1="726" x2="131" y2="774" stroke="#6b7785" stroke-width="1.4" marker-end="url(#a)"/>
+<line x1="270" y1="726" x2="270" y2="774" stroke="#6b7785" stroke-width="1.4" marker-end="url(#a)"/>
+<line x1="409" y1="726" x2="409" y2="774" stroke="#6b7785" stroke-width="1.4" marker-end="url(#a)"/>
+<line x1="687" y1="726" x2="687" y2="774" stroke="#6b7785" stroke-width="1.4" marker-end="url(#a)"/>
+<line x1="826" y1="726" x2="826" y2="774" stroke="#6b7785" stroke-width="1.4" marker-end="url(#a)"/>
+<line x1="548" y1="726" x2="648" y2="774" stroke="#6b7785" stroke-width="1.4" marker-end="url(#a)"/>
+<rect x="52" y="906" width="560" height="60" rx="10" fill="#ffffff" stroke="#6b7785" stroke-width="1.2"/>
+<text x="64" y="928" font-size="13" font-weight="600" fill="#26303a" text-anchor="start">OpenRouter API</text>
+<text x="64" y="948" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">/api/v1/chat/completions (answers, decomposition) · /api/alpha/decisions</text>
+<rect x="628" y="906" width="560" height="60" rx="10" fill="#ffffff" stroke="#6b7785" stroke-width="1.2"/>
+<text x="640" y="928" font-size="13" font-weight="600" fill="#26303a" text-anchor="start">Browser storage</text>
+<text x="640" y="948" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">IndexedDB: event log, projection cache, the user's key</text>
+<line x1="332" y1="860" x2="332" y2="904" stroke="#6b7785" stroke-width="1.4" marker-end="url(#a)"/>
+<line x1="908" y1="860" x2="908" y2="904" stroke="#6b7785" stroke-width="1.4" marker-end="url(#a)"/>
+</svg>
