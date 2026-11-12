@@ -1,4 +1,4 @@
-import type { ProviderError, RequirementScope, TextSpan, WholeRequestBarrier } from '@pluribus/protocol'
+import type { ModelProviderName, ProviderError, RequirementScope, TextSpan, WholeRequestBarrier } from '@pluribus/protocol'
 import type { CancelSignal } from './cancel'
 
 /**
@@ -20,6 +20,8 @@ export interface DecompositionCandidate {
 export interface DecomposeRequest {
   /** The decomposition model, from settings (Q65). */
   readonly model: string
+  /** The provider the decomposition role is set to. Absent means OpenRouter. */
+  readonly provider?: ModelProviderName
   /** The original message, exactly as typed. Spans index into this string. */
   readonly text: string
   readonly candidates: readonly DecompositionCandidate[]
@@ -83,6 +85,8 @@ export type LabelResult = { readonly ok: true; readonly label: string } | { read
 
 export interface LabelRequest {
   readonly model: string
+  /** The provider the decomposition role is set to. Absent means OpenRouter. */
+  readonly provider?: ModelProviderName
   readonly text: string
 }
 

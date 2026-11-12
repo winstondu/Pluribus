@@ -105,6 +105,7 @@ function groupOf(id: string, provider: ModelProviderName): string {
 /** What each provider is called in the settings and the run inspector. */
 export const PROVIDER_LABELS: { readonly [P in ModelProviderName]: string } = {
   openrouter: 'OpenRouter',
+  anthropic: 'Claude API',
 }
 
 /** "200K", "1M". */

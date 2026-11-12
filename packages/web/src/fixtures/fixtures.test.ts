@@ -127,9 +127,28 @@ describe('fixture backend', () => {
     const backend = createFixtureBackend({ ...twoStepFixture(), app: { key: { configured: false } } })
     const keys = createScriptedKeyProvision(backend, 0)
     expect(await keys.set('openrouter', 'sk-or-v1-secret')).toEqual({ ok: true })
+    expect(await keys.set('anthropic', 'sk-ant-secret')).toEqual({ ok: true })
     expect(backend.app.key).toEqual({ configured: true })
+    expect(backend.app.anthropicKey).toEqual({ configured: true })
     expect(backend.sent).toEqual([])
-    expect(JSON.stringify(backend.app)).not.toMatch(/sk-or-v1-secret/)
+    expect(JSON.stringify(backend.app)).not.toMatch(/sk-or-v1-secret|sk-ant-secret/)
+  })
+
+  test('the fixture backend reports each role\'s choices and applies the backend\'s rules to them', async () => {
+    const backend = createFixtureBackend(twoStepFixture())
+    const keys = createScriptedKeyProvision(backend, 0)
+    const answer = () => backend.app.modelRoles.find((role) => role.role === 'answer')
+    expect(answer()?.providers.map((provider) => [provider.provider, provider.available])).toEqual([['openrouter', true], ['anthropic', false]])
+    // Without an Anthropic key the Claude API cannot be chosen.
+    expect((await backend.send({ type: 'change-settings', changes: { modelProviders: { answer: 'anthropic' } } })).ok).toBe(false)
+    await keys.set('anthropic', 'sk-ant-secret')
+    expect(answer()?.providers.every((provider) => provider.available)).toBe(true)
+    // The provider alone: the backend gives the role that provider's default model.
+    expect((await backend.send({ type: 'change-settings', changes: { modelProviders: { answer: 'anthropic' } } })).ok).toBe(true)
+    expect([backend.app.settings.modelProviders.answer, backend.app.settings.models.answer]).toEqual(['anthropic', 'claude-sonnet-5-5'])
+    // Removing the key returns the role to OpenRouter and its default there.
+    await keys.remove('anthropic')
+    expect([backend.app.settings.modelProviders.answer, backend.app.settings.models.answer]).toEqual(['openrouter', 'anthropic/claude-sonnet-5.5'])
   })
 
   test('answers app commands itself, each with an app frame', async () => {

@@ -3,11 +3,18 @@ import { createBackend } from '@pluribus/core'
 import type { Backend } from '@pluribus/core/ports'
 import { servePort, type BackendMessage, type ClientMessage, type WirePort } from '@pluribus/protocol'
 import {
+  checkAnthropicKey,
   checkOpenRouterKey,
+  createAnthropicDecomposer,
+  createAnthropicModelProvider,
+  createAnthropicPreparer,
   createOpenRouterDecisionProvider,
   createOpenRouterDecomposer,
   createOpenRouterModelProvider,
   createOpenRouterPreparer,
+  createRoutedDecomposer,
+  createRoutedModelProvider,
+  createRoutedPreparer,
 } from '@pluribus/providers'
 import { openIndexedDbStorage, type PluribusStorage } from '@pluribus/storage'
 import { serveKeys, type KeyPort, type KeyService } from './key-channel'
@@ -16,8 +23,8 @@ import { runAsOwner, type OwnershipLocks } from './ownership'
 import { createSystemIds, systemClock, systemTimers } from './system'
 
 /**
- * The embedded backend (11 · "Embedded"): core, the OpenRouter providers and
- * IndexedDB storage, served to the page over this Worker's port.
+ * The embedded backend (11 · "Embedded"): core, the OpenRouter and Claude API
+ * providers and IndexedDB storage, served to the page over this Worker's port.
  * Beside the backend protocol the Worker answers the page's key requests
  * (`key-channel.ts`): the one place a provider key is checked and stored.
  *
@@ -53,16 +60,22 @@ serveKeys(scope as unknown as KeyPort, keysReady)
 async function build(storage: PluribusStorage): Promise<Backend> {
   // The only way a provider sees the key: read from the secrets store on each call.
   const getKey = (): Promise<string | null> => storage.secretsStore.get('openrouter-key')
-  const modelProvider = createOpenRouterModelProvider({ getKey })
+  const getAnthropicKey = (): Promise<string | null> => storage.secretsStore.get('anthropic-key')
+  // Each role's provider is a setting; core passes it on every request and these hand the request to that provider's adapter.
+  const modelProvider = createRoutedModelProvider({
+    openrouter: createOpenRouterModelProvider({ getKey }),
+    anthropic: createAnthropicModelProvider({ getKey: getAnthropicKey }),
+  })
   // Every run's tokens are counted before it starts, and the first count reads OpenRouter's model
   // catalog (context limits). Read it now, so the first run after a load, an interrupted attempt
   // retried at start included, does not sit at "Waiting for a free slot" while a slot is free.
   void modelProvider.countTokens({ model: '', messages: [] })
   const backend = createBackend({
     modelProvider,
-    preparer: createOpenRouterPreparer({ getKey }),
+    preparer: createRoutedPreparer({ openrouter: createOpenRouterPreparer({ getKey }), anthropic: createAnthropicPreparer({ getKey: getAnthropicKey }) }),
+    // Decisions run on OpenRouter only: the Claude API has no Decisions endpoint.
     decisionProvider: createOpenRouterDecisionProvider({ getKey }),
-    decomposer: createOpenRouterDecomposer({ getKey }),
+    decomposer: createRoutedDecomposer({ openrouter: createOpenRouterDecomposer({ getKey }), anthropic: createAnthropicDecomposer({ getKey: getAnthropicKey }) }),
     eventStore: storage.eventStore,
     projectionCache: storage.projectionCache,
     secretsStore: storage.secretsStore,
@@ -75,7 +88,7 @@ async function build(storage: PluribusStorage): Promise<Backend> {
     createKeyService({
       vault: storage.secretsStore,
       refreshKeyStatus: () => backend.refreshKeyStatus(),
-      checks: { openrouter: checkOpenRouterKey },
+      checks: { openrouter: checkOpenRouterKey, anthropic: checkAnthropicKey },
     }),
   )
   return backend

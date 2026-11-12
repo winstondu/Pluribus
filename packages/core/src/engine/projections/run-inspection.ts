@@ -63,6 +63,7 @@ export function runInspection(s: ConversationState, directiveId: DirectiveId, at
           state: attempt.state,
           resultStatus: attemptResultStatus(s, attempt.id),
           model: attempt.model,
+          provider: attempt.provider,
           modelRole: attempt.modelRole,
           chainId: attempt.chainId,
           nodeId: attempt.nodeId,

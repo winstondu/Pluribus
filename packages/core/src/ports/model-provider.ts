@@ -1,4 +1,4 @@
-import type { ClarificationReason, ProviderError, TokenUsage } from '@pluribus/protocol'
+import type { ClarificationReason, ModelProviderName, ProviderError, TokenUsage } from '@pluribus/protocol'
 import type { CancelSignal } from './cancel'
 
 /**
@@ -12,8 +12,14 @@ export interface ModelMessage {
 }
 
 export interface ModelRequest {
-  /** OpenRouter model ID, from the per-role settings (Q65). */
+  /** The model ID, from the per-role settings (Q65), as the provider names it. */
   readonly model: string
+  /**
+   * The provider the role is set to. Core passes it through from the
+   * settings and never branches on it; an adapter that serves one provider
+   * ignores it. Absent means OpenRouter.
+   */
+  readonly provider?: ModelProviderName
   /** The exact input, in order. Core records the same messages on the attempt (invariant 2). */
   readonly messages: readonly ModelMessage[]
   /**
@@ -32,7 +38,7 @@ export type ModelStreamEvent =
   | { readonly type: 'text'; readonly text: string }
   /** The run finished successfully. */
   | { readonly type: 'completed'; readonly finishReason: 'stop' | 'length'; readonly usage: TokenUsage | null }
-  /** The run ended in an error, mapped per 11 · "OpenRouter error mapping". */
+  /** The run ended in an error, mapped per 11 · "OpenRouter error mapping" or "Claude API error mapping". */
   | { readonly type: 'failed'; readonly error: ProviderError }
   /** The signal was cancelled and the request was aborted (Q75). */
   | { readonly type: 'cancelled' }

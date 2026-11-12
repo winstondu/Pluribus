@@ -10,11 +10,13 @@ import type { KeyProviderName } from '@pluribus/protocol'
  */
 
 export const OPENROUTER_KEYS_URL = 'https://openrouter.ai/settings/keys'
+export const ANTHROPIC_KEYS_URL = 'https://platform.claude.com/settings/keys'
 
 export const KEY_FORMATS: {
   readonly [P in KeyProviderName]: { readonly name: string; readonly prefix: string; readonly placeholder: string; readonly keysUrl: string; readonly site: string }
 } = {
   openrouter: { name: 'OpenRouter', prefix: 'sk-or-', placeholder: 'sk-or-v1-…', keysUrl: OPENROUTER_KEYS_URL, site: 'openrouter.ai' },
+  anthropic: { name: 'Anthropic', prefix: 'sk-ant-', placeholder: 'sk-ant-…', keysUrl: ANTHROPIC_KEYS_URL, site: 'platform.claude.com' },
 }
 
 /** A message for a key that cannot be this provider's, or null when its shape is plausible. */

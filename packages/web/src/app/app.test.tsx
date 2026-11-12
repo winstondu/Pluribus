@@ -90,6 +90,8 @@ describe('key prompt', () => {
     expect(keyFormatProblem(KEY)).toBeNull()
     expect(keyFormatProblem('sk-or-short')).toMatch(/too short/)
     expect(keyFormatProblem('sk-or-v1 0123456789abcdef0123')).toMatch(/no spaces/)
+    expect(keyFormatProblem(KEY, 'anthropic')).toMatch(/start with “sk-ant-”/)
+    expect(keyFormatProblem('sk-ant-api03-0123456789abcdef0123', 'anthropic')).toBeNull()
   })
 })
 
