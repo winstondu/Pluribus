@@ -1,5 +1,5 @@
-import type { DecisionBudget, ProviderError, SectionId, SiblingGroupId } from '@pluribus/protocol'
-import type { CandidateGroup } from './router'
+import type { ConversationId, DecisionBudget, ProviderError, SectionId, SiblingGroupId } from '@pluribus/protocol'
+import type { CandidateGroup, CandidateSection } from './router'
 import type { ReferentSection, ReferentUnit } from './referent-strategy'
 
 /**
@@ -130,4 +130,45 @@ export interface ReferentTree {
   readonly nodes: readonly ReferentNode[]
   readonly bySection: ReadonlyMap<SectionId, SectionNode>
   readonly byGroup: ReadonlyMap<SiblingGroupId, GroupNode>
+}
+
+// ───────────────────────────── candidates ─────────────────────────────
+
+export interface CandidateQuery {
+  /** The conversation the sections belong to: a source that keeps an index keeps one for each. */
+  readonly conversationId: ConversationId
+  readonly unit: ReferentUnit
+  /** The text of the unit: the message, or the instruction of one part. */
+  readonly text: string
+  /** Every answer section of the conversation, oldest first. Only these may be returned (invariant 9). */
+  readonly sections: readonly CandidateSection[]
+  /** The whole answer text of one of `sections` so far; its `excerpt` is only the opening. */
+  answerText(section: CandidateSection): string
+  /**
+   * The first-pass sections. Every routing asks about each of them by
+   * itself in the routing request, whatever a source returns, so a source
+   * gains nothing by naming one.
+   */
+  readonly firstPass: readonly SectionId[]
+}
+
+/** One candidate section. */
+export interface CandidateHit {
+  readonly sectionId: SectionId
+  /** The source's own score, higher is closer, or null when it has none. Recorded with the routing decision; routing never reads it. */
+  readonly score: number | null
+}
+
+/**
+ * Where a tree walk may start besides the roots: sections that something
+ * outside routing suggests the unit refers to, for example the hits of a
+ * retrieval over the conversation. A candidate is a seed hint, a place to
+ * look, and never a referent: it is asked about like any other node. With
+ * no source the walk starts at the roots alone. Never rejects.
+ */
+export interface CandidateSource {
+  /** Recorded with the routing decision as the source that ran. */
+  readonly name: string
+  /** Best first. */
+  candidates(query: CandidateQuery): Promise<readonly CandidateHit[]>
 }

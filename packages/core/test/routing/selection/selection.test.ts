@@ -290,6 +290,8 @@ describe('strategy selection in the pipeline', () => {
       ['one pass, for a conversation inside the window', trip(0), J, ['A', 'B'], { referentStrategy: 'one-pass' }, { strategy: ['one-pass', 0.9] }, []],
       ['the tree walk, for answers beyond the window', trip(30), J, ['A', 'B'], { referentStrategy: 'tree-walk' }, { strategy: ['tree-walk', 0.9] }, []],
       ['the tree walk from the trunk base, for a long trunk that has split', trunkThatSplits(30), 'Make the answer to question 3 shorter', ['T3'], { referentStrategy: 'tree-walk', treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, startAtTrunkBase: true } }, { strategy: ['tree-walk', 0.9], trunk: 0.9 }, []],
+      // Hop between branch points is the user's setting, not a selector's: set, it is used whoever chose the strategy. The brief above the run is plausible, which is what the walk descends on.
+      ['the tree walk with hop between branch points set, for a long branch run', longBranches(20), 'Redo press step 2', ['A2'], { referentStrategy: 'tree-walk', treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, hopBetweenBranchPoints: true } }, { strategy: ['tree-walk', 0.9] }, ['brief']],
     ] as const
     for (const [name, sc, text, targets, configured, script, context] of cases) {
       const direct = await route(sc, text, targets, { ...configured, strategySelection: 'off' }, { context })

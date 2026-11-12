@@ -33,11 +33,14 @@ export * from './routing/corpus'
 export {
   COST_GRID_MESSAGE,
   COST_GRID_ROWS_PER_SIZE,
+  COST_GRID_SEEDED_MESSAGE,
   COST_GRID_SIZES,
   costGridRows,
   decisionDollars,
   formatCostGrid,
+  worstCaseCandidateSource,
   type CostGridChannel,
+  type CostGridOptions,
   type CostGridRow,
   type DecisionCost,
 } from './routing/referents/cost-grid'

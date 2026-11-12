@@ -85,6 +85,12 @@ export interface ReferentRequest {
   /** `settings.routing.treeWalk`: how a walk treats runs of only children. A strategy that does not walk ignores it. */
   readonly treeWalk: TreeWalkSettings
   /**
+   * By unit key: sections a walk starts at besides the roots, from the
+   * candidate source. Supplied sections only; none when there is no
+   * source. A strategy that does not walk ignores them.
+   */
+  readonly startCandidates: { readonly [key: string]: readonly SectionId[] }
+  /**
    * Whether a run that continues from the section would fit what a run may
    * read. Read by the tree walk with hop between branch points on, which
    * takes the deepest section of an unbranched run that does. Left out:

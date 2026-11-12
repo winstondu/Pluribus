@@ -1,4 +1,4 @@
-import type { DecisionBudget, ProviderError, TreeWalkSettings } from '@pluribus/protocol'
+import type { DecisionBudget, ProviderError, SectionId, TreeWalkSettings } from '@pluribus/protocol'
 import type { GroupProbe, PointProbe, Probe, ReferentOperations, ReferentResult, ReferentStrategy, ReferentUnit, RunEndTaken, SegmentProbe, SeveralProbe, UnitReferents } from '../../ports'
 import { createDecisionOperations, type OperationsFactory } from './operations'
 import { bestNodeFound, referentsFromScores } from './shared'
@@ -160,7 +160,7 @@ export function strategyFromPolicy(policy: ReferentPolicy, operations: Operation
         units: request.units,
         relevance: request.relevance,
         settings: request.treeWalk,
-        starts: () => [],
+        starts: (unit) => startNodes(tree, request.startCandidates[unit.key]),
         corrective: () => false,
       }
       return ops.questions(policy.opening(input, ops))
@@ -173,7 +173,7 @@ export function strategyFromPolicy(policy: ReferentPolicy, operations: Operation
         units: request.units,
         relevance: request.relevance,
         settings: request.treeWalk,
-        starts: () => [],
+        starts: (unit) => startNodes(tree, request.startCandidates[unit.key]),
         corrective: (unit) => gate.corrective.has(unit.key),
         ...(request.runContextFits ? { continuable: (node: SectionNode) => request.runContextFits?.(node.entry.section) ?? true } : {}),
       }
@@ -184,4 +184,11 @@ export function strategyFromPolicy(policy: ReferentPolicy, operations: Operation
       return { ok: true, units, fallback: outcome.stop }
     },
   }
+}
+
+function startNodes(tree: ReferentTree, ids: readonly SectionId[] | undefined): TreeNode[] {
+  return (ids ?? []).flatMap((id) => {
+    const node = tree.bySection.get(id)
+    return node ? [node] : []
+  })
 }

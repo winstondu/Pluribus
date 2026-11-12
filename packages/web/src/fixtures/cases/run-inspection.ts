@@ -467,6 +467,19 @@ const packing: RunInspection = {
       fallback: 'low-confidence',
       reused: false,
     },
+    // The word index handed the walk two places to start: the itinerary the message means, and the brief, which shares its words.
+    candidateSource: {
+      source: 'lexical',
+      units: [
+        {
+          unit: 'message',
+          candidates: [
+            { sectionId: id('section', 'itinerary-revised'), score: 6.4 },
+            { sectionId: id('section', 'brief'), score: 3.9 },
+          ],
+        },
+      ],
+    },
     // The token budget stopped the walk; the target was clear from what had been asked, so nothing had to be taken below the threshold.
     budgetStop: { limit: 'token-budget', fallback: 'one-pass', bestFound: [] },
     // Hop between branch points was on: the line from the brief to the itinerary was asked about as one, and the message was placed on its last answer.

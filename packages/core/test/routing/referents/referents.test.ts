@@ -1,6 +1,6 @@
 import { DEFAULT_SETTINGS, resolveTokenBudget, type NodeId, type DecisionBudget, type DecisionCostGuard, type DecisionTokenBudget, type ReferentStrategyName, type RoutingSettings, type TreeWalkSettings } from '@pluribus/protocol'
 import { describe, expect, test } from 'vitest'
-import { NEVER_CANCELLED, type DecisionContext, type RoutingInput, type DecisionProvider, type DecisionQuestions, type DecisionRequest, type DecisionResult, type ReferentRequest, type ReferentStrategy, type RoutingOutcome, type RoutingPlan } from '../../../src/ports'
+import { NEVER_CANCELLED, type CandidateQuery, type CandidateSource, type DecisionContext, type RoutingInput, type DecisionProvider, type DecisionQuestions, type DecisionRequest, type DecisionResult, type ReferentRequest, type ReferentStrategy, type RoutingOutcome, type RoutingPlan } from '../../../src/ports'
 import { compareWithLabel as compare, corpusInput, oracleDecisionProvider, referenceDecomposer, scene, sceneIds, sceneLogTokens, suppliedIn, type CorpusExample, type Scene } from '../../../testing/routing/corpus'
 import { createRouter } from '../../../src/routing/pipeline'
 import { MIN_SECTIONS, numberedAnswerSections, supply } from '../../../src/routing/supply'
@@ -114,6 +114,8 @@ interface RouteOptions {
   readonly treeWalk?: Partial<TreeWalkSettings>
   readonly costGuard?: Partial<DecisionCostGuard>
   readonly summaries?: (nodeId: NodeId) => DecisionContext | null
+  /** A scripted candidate source: section handles a tree walk starts at besides the roots. */
+  readonly candidates?: readonly string[] | CandidateSource
 }
 
 async function route(sc: Scene, text: string, rules: Rules, routing: RouteOptions = {}): Promise<Routed> {
@@ -128,6 +130,7 @@ async function route(sc: Scene, text: string, rules: Rules, routing: RouteOption
   const settings: RoutingSettings = {
     referentStrategy: routing.strategy ?? 'tree-walk',
     strategySelection: 'off',
+    candidateSource: 'none',
     referentBudget: { requests: routing.budget?.requests ?? DEFAULT_SETTINGS.routing.referentBudget.requests, questions: routing.budget?.questions ?? DEFAULT_SETTINGS.routing.referentBudget.questions },
     tokenBudget,
     treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, ...routing.treeWalk },
@@ -138,10 +141,13 @@ async function route(sc: Scene, text: string, rules: Rules, routing: RouteOption
   const input: RoutingInput = { ...corpusInput(example, { ...DEFAULT_SETTINGS, routing: settings }), ...(routing.summaries ? { decisionContext: routing.summaries } : {}) }
   const numberOf = new Map(numberedAnswerSections(input, supply(input, [])).map((s) => [sc.handles.get(s.section.sectionId) ?? '', s.n]))
   const { provider, requests } = scripted(sc, rules, numberOf, input)
+  const candidateSource: CandidateSource | undefined =
+    routing.candidates === undefined ? undefined : 'candidates' in routing.candidates ? routing.candidates : { name: 'scripted', candidates: async () => (routing.candidates as readonly string[]).map((handle) => ({ sectionId: sceneIds.section(handle), score: null })) }
   const router = createRouter({
     decisionProvider: provider,
     decomposer: referenceDecomposer(example),
     ...(routing.inject ? { referentStrategy: routing.inject } : {}),
+    ...(candidateSource ? { candidateSource } : {}),
   })
   const outcome = await router.route(input, NEVER_CANCELLED)
   const asked = requests.map((r) => Object.keys(r.questions).filter((id) => /^m_((s|j)\d+|c\d+_\d+(_\d+)?)$/.test(id)))
@@ -160,6 +166,14 @@ const unit = (routed: Routed) => {
 }
 
 const sections = (handles: readonly string[]) => handles.map(sceneIds.section)
+/** What the candidate source handed the routing, as the decision records it. */
+const candidateRecord = (outcome: RoutingOutcome) => (outcome.kind === 'plan' ? (outcome.plan.decision.candidateSource ?? null) : null)
+/** The outcome without that record: what is compared with a routing that had no source. */
+function withoutCandidateRecord(outcome: RoutingOutcome): RoutingOutcome {
+  if (outcome.kind !== 'plan') return outcome
+  const { candidateSource: _record, ...decision } = outcome.plan.decision
+  return { ...outcome, plan: { ...outcome.plan, decision } }
+}
 const ids = (routed: Routed, _kind: 's', handles: readonly string[]) => handles.map((h) => `m_s${routed.numberOf.get(h) ?? '?'}`)
 
 const STRATEGIES: readonly ReferentStrategyName[] = ['one-pass', 'tree-walk']
@@ -1080,6 +1094,128 @@ describe.each(COMBINATIONS)('long runs · %s', (_name, treeWalk) => {
   })
 })
 
+// ───────────────────────────── start candidates ─────────────────────────────
+
+describe('start candidates', () => {
+  /** A trunk of ten that splits into X (four answers) and Y (four answers). */
+  const forked = (() => {
+    const s = scene().chain('chat', 'root', 'chat')
+    for (let i = 0; i < 10; i++) s.add(`T${i}`, { chain: 'chat', on: i === 0 ? null : `T${i - 1}`, label: `turn ${i}`, request: `Question ${i}`, answer: `Answer ${i}` })
+    for (const side of ['X', 'Y']) {
+      s.chain(side, 'branch', side)
+      for (let i = 0; i < 4; i++) s.add(`${side}${i}`, { chain: side, on: i === 0 ? 'T9' : `${side}${i - 1}`, label: `side ${side}${i}`, request: `Branch ${side} step ${i}`, answer: `Answer ${side}${i}` })
+    }
+    return s.build()
+  })()
+
+  test('candidates · a candidate is where the walk starts instead of the root above it: its run from the top down to it rides in the routing request, and the trunk is not asked about', async () => {
+    const routed = await route(forked, 'Redo step 1 of branch X', { own: { X1: 0.9 } }, { candidates: ['X2'] })
+    // X0 … X2, each by itself, with the first pass (X3 and Y3). Nothing of the trunk: X2's context holds it.
+    expect(new Set(routed.asked[0])).toEqual(new Set(ids(routed, 's', ['X0', 'X1', 'X2', 'X3', 'Y3'])))
+    expect(routed.requests).toHaveLength(1)
+    expect(unit(routed).targets).toEqual(sections(['X1']))
+    expect(unit(routed).placement).toEqual({ kind: 'continue', buildsOn: { kind: 'node', nodeId: sceneIds.node('X1') } })
+    // With no candidate the walk starts at the root: the trunk is asked about, and nothing below it, because it is not plausible.
+    const plain = await route(forked, 'Redo step 1 of branch X', { own: { X1: 0.9 } })
+    expect(new Set(plain.asked[0])).toEqual(new Set(ids(plain, 's', ['T0', 'T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'X3', 'Y3'])))
+    expect(unit(plain).targets).toEqual([])
+  })
+
+  test('candidates · a candidate is a place to look, never a referent: one the decision model does not confirm is not a target', async () => {
+    const routed = await route(forked, 'Explain how volcanoes form', { relation: 'new' }, { candidates: ['X2', 'Y1'] })
+    expect(unit(routed).targets).toEqual([])
+    expect(unit(routed).placement).toEqual({ kind: 'new-chain' })
+  })
+
+  test('candidates · a start that is not plausible hands over to the root it displaced, in a further request that does not ask again', async () => {
+    // The candidate is in X; the message is about the trunk and Y.
+    const routed = await route(forked, 'Redo step 1 of branch Y', { own: { T9: 0.3, Y1: 0.9 } }, { candidates: ['X2'] })
+    expect(new Set(routed.asked[0])).toEqual(new Set(ids(routed, 's', ['X0', 'X1', 'X2', 'X3', 'Y3'])))
+    // The root: its trunk. Then, the trunk being plausible, the runs below it: Y, and of X only what was not asked about.
+    expect(new Set(routed.asked[1])).toEqual(new Set(ids(routed, 's', ['T0', 'T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9'])))
+    expect(new Set(routed.asked[2])).toEqual(new Set(ids(routed, 's', ['Y0', 'Y1', 'Y2'])))
+    expect(unit(routed).targets).toEqual(sections(['Y1']))
+    const all = routed.asked.flat()
+    expect(new Set(all).size).toBe(all.length)
+  })
+
+  test('candidates · when the message refers to several sections, the root a plausible start displaced is started too: a second referent in another branch is found', async () => {
+    const rules: Rules = { own: { T9: 0.3, X1: 0.9, Y1: 0.9 } }
+    const one = await route(forked, 'Compare step 1 of branch X with step 1 of branch Y', { ...rules, several: 0.2 }, { candidates: ['X2'] })
+    expect(unit(one).targets).toEqual(sections(['X1']))
+    expect(one.requests).toHaveLength(1)
+    const both = await route(forked, 'Compare step 1 of branch X with step 1 of branch Y', { ...rules, several: 0.9 }, { candidates: ['X2'] })
+    expect(new Set(unit(both).targets)).toEqual(new Set(sections(['X1', 'Y1'])))
+    expect(unit(both).placement.kind).toBe('join-chain')
+  })
+
+  test('candidates · a candidate older than the routing request lists is asked about in the first further request, with what it was built on as context', async () => {
+    const sc = flat(200)
+    const routed = await route(sc, 'Make the answer to question 40 shorter', { own: { T40: 0.9 } }, { candidates: ['T40'] })
+    // The run from its top down to T40 is 41 answers: searched for its last relevant one, then that part asked about one by one.
+    expect(routed.requests).toHaveLength(3)
+    const named = Object.values(routed.requests[1]?.questions ?? {}).flatMap((q) => [...q.instructions.matchAll(/\("Question (\d+)"\)/g)].map((m) => Number(m[1])))
+    expect(Math.max(...named)).toBe(40)
+    expect(unit(routed).targets).toEqual(sections(['T40']))
+    // Without the candidate the whole run of 176 older answers is searched: more is named in the first further request.
+    const plain = await route(sc, 'Make the answer to question 40 shorter', { own: { T40: 0.9 } })
+    expect(furtherTokens(routed)).toBeLessThan(furtherTokens(plain))
+  })
+
+  test('candidates · only answer sections of this conversation are accepted, at most twelve, and a source that fails is a source with nothing to say', async () => {
+    const asked: CandidateQuery[] = []
+    const source: CandidateSource = {
+      name: 'scripted',
+      candidates: async (query) => {
+        asked.push(query)
+        return [sceneIds.section('nowhere'), sceneIds.section('X2'), sceneIds.section('X2')].map((sectionId) => ({ sectionId, score: null }))
+      },
+    }
+    const routed = await route(forked, 'Redo step 1 of branch X', { own: { X1: 0.9 } }, { candidates: source })
+    expect(unit(routed).targets).toEqual(sections(['X1']))
+    // The source is asked once per unit, with the unit's text and the conversation's answer sections.
+    expect(asked.map((q) => ({ key: q.unit.key, text: q.text, sections: q.sections.length }))).toEqual([{ key: 'm', text: 'Redo step 1 of branch X', sections: 18 }])
+    const failing: CandidateSource = { name: 'failing', candidates: async () => Promise.reject(new Error('retrieval is down')) }
+    const plain = await route(forked, 'Redo step 1 of branch X', { own: { X1: 0.9 } })
+    const failed = await route(forked, 'Redo step 1 of branch X', { own: { X1: 0.9 } }, { candidates: failing })
+    expect(failed.requests).toEqual(plain.requests)
+    // The routing is the one without a source; its record says which source was asked and that it named nothing.
+    expect(withoutCandidateRecord(failed.outcome)).toEqual(plain.outcome)
+    expect(candidateRecord(failed.outcome)).toEqual({ source: 'failing', units: [{ unit: 'message', candidates: [] }] })
+    expect(candidateRecord(plain.outcome)).toBeNull()
+    // What was accepted is recorded, in the source's order, with the scores it gave (this one gave none).
+    expect(candidateRecord(routed.outcome)).toEqual({ source: 'scripted', units: [{ unit: 'message', candidates: [{ sectionId: sceneIds.section('X2'), score: null }] }] })
+    // One pass does not walk: candidates change nothing for it.
+    const onePass = await route(forked, 'Redo step 1 of branch X', { own: { X1: 0.9 } }, { strategy: 'one-pass' })
+    expect((await route(forked, 'Redo step 1 of branch X', { own: { X1: 0.9 } }, { strategy: 'one-pass', candidates: ['X2'] })).requests).toEqual(onePass.requests)
+    // An explicit reply target is used as given: the source is not asked.
+    expect(asked).toHaveLength(1)
+  })
+
+  test('candidates · no source: the start set is the roots, request for request what a source with nothing to say gives', async () => {
+    const rules: Rules = { own: { brief: 0.4, A: 0.8, B: 0.3 }, together: { G: 0.9 } }
+    const plain = await route(tripFull, 'Use those recommendations to make a five-day itinerary.', rules)
+    const empty = await route(tripFull, 'Use those recommendations to make a five-day itinerary.', rules, { candidates: [] })
+    expect(empty.requests).toEqual(plain.requests)
+    expect(withoutCandidateRecord(empty.outcome)).toEqual(plain.outcome)
+  })
+
+  test('C19 · a candidate that is one sibling still lands J on the full sibling group: the join-back is asked about beside its member', async () => {
+    // A is the candidate. B was continued, so neither sibling is in the first pass and the brief is not started.
+    const sc = trip()
+      .chain('b2', 'branch', 'cheaper activities')
+      .add('B2', { chain: 'b2', on: 'B', label: 'cheaper activities', request: 'Give me three cheaper alternatives', answer: 'Free shrines.', consumed: ['brief', 'B'] })
+      .chain('a2', 'branch', 'quieter neighborhoods')
+      .add('A2', { chain: 'a2', on: 'A', label: 'quieter neighborhoods', request: 'Which is quietest?', answer: 'Higashiyama.', consumed: ['brief', 'A'] })
+      .build()
+    const routed = await route(sc, 'Use those recommendations to make a five-day itinerary.', { own: { A: 0.77, B: 0.3 }, several: 0.4, together: { G: 0.86 } }, { candidates: ['A'] })
+    expect(routed.asked[0]).toContain('m_j1')
+    expect(routed.asked[0]).not.toContain(`m_s${routed.numberOf.get('brief') ?? '?'}`)
+    expect(new Set(unit(routed).targets)).toEqual(new Set(sections(['A', 'B'])))
+    expect(unit(routed).placement).toEqual({ kind: 'continue', buildsOn: { kind: 'sibling-group', groupId: sceneIds.group('G') } })
+  })
+})
+
 // ───────────────────────────── the decision-backed operations ─────────────────────────────
 
 describe('operations over the decision provider', () => {
@@ -1097,6 +1233,7 @@ describe('operations over the decision provider', () => {
       useSummaryIfAvailable: false,
       decisionContext: () => null,
       treeWalk: DEFAULT_SETTINGS.routing.treeWalk,
+      startCandidates: {},
     }
     const node = (h: string) => {
       const found = tree.bySection.get(sceneIds.section(h))
@@ -1129,6 +1266,27 @@ describe('operations over the decision provider', () => {
     const thinner = probe.segment(UNIT, [node('T1'), node('T4')])
     const questions = ops.questions([whole, thinner, whole])
     expect(Object.keys(questions)).toHaveLength(2)
+  })
+
+  test('operations · a section asked about by itself is shown with the nearest answers it was built on; a part of a run with the first answers of the run', async () => {
+    // T40 is a start candidate: its run is searched from the top down to it, then the rest of the run.
+    const routed = await route(flat(200), 'Make the answer to question 40 shorter', { own: { T40: 0.9 } }, { candidates: ['T40'] })
+    const n = (h: string) => routed.numberOf.get(h) ?? '?'
+    const points = routed.requests[2]?.state ?? ''
+    const first = Math.min(...ownIds(routed, 2).map((id) => Number(id.slice(3))))
+    const firstHandle = [...routed.numberOf].find(([, number]) => number === first)?.[0] ?? ''
+    const before = (steps: number) => `T${Number(firstHandle.slice(1)) - steps}`
+    // The sections of the opened part follow one another; the first is shown with the two answers before it, by their requests.
+    expect(points).toContain('Where they come from, for context only')
+    expect(points).toContain(`S${first} builds on S${n(before(1))} ("Question ${before(1).slice(1)}"), which builds on S${n(before(2))} ("Question ${before(2).slice(1)}").`)
+    expect(points).toContain(`S${first} to S${n('T40')} are consecutive answers of one line of work.`)
+    // The answers named as context are not asked about and their lines are not sent.
+    expect(points).not.toContain(`S${n(before(1))}. "`)
+    expect(Object.keys(routed.requests[2]?.questions ?? {})).not.toContain(`m_s${n(before(1))}`)
+    // The parts of the rest of the run, in the same request: the question is about the part, the top of the run is context.
+    expect(points).toContain(`are consecutive answers of one line of work that starts with S${n('T0')} ("Question 0"), S${n('T1')} ("Question 1").`)
+    // A part that starts at the top of a run that was built on nothing needs no such line.
+    expect(routed.requests[1]?.state).not.toContain('Where they come from')
   })
 
   test('operations · a section whose line shows a stored summary is not shown its ancestry again', async () => {

@@ -101,6 +101,12 @@ export interface RoutingInput {
    */
   readonly decisionContext?: (nodeId: NodeId) => DecisionContext | null
   /**
+   * The whole answer text of a supplied section so far, for the candidate
+   * source: `CandidateSection.excerpt` is only its opening. Left out, the
+   * excerpt stands for the answer.
+   */
+  readonly answerText?: (sectionId: SectionId) => string
+  /**
    * The most recent strategy selection recorded in the conversation's
    * routing decisions, or null. A selector whose choice depends on the
    * genealogy's shape alone is not asked again while the shape's signature

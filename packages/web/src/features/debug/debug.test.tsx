@@ -534,6 +534,12 @@ describe('run inspector', () => {
     expect(selection).toHaveTextContent('the decision model was not confident')
     expect(selection).toHaveTextContent('9 answers are older than the routing request lists')
     expect(selection).toHaveTextContent('strategy 0.58')
+    // The candidate source: which one ran, the sections it handed the walk with its scores, and that they are only hints.
+    const seeds = within(routing).getByTestId('candidate-source')
+    expect(seeds).toHaveTextContent('2 · from the word index')
+    expect(seeds).toHaveTextContent('6.4')
+    expect(seeds).toHaveTextContent('3.9')
+    expect(seeds).toHaveTextContent('none is a target because it is listed here')
     // The decision budget stopped the search: which limit, what was done instead, and that the user was not asked.
     const stop = within(routing).getByTestId('budget-stop')
     expect(stop).toHaveTextContent('Reached the token budget · the remaining listed sections were asked about in one request')
