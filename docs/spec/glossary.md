@@ -151,12 +151,16 @@ The first unbranched run of a line of work that starts from nothing: from its fi
 A section, or a sibling group's join-back, that a message or fragment actually refers to. Routing cannot see which nodes are relevant; it can only ask.
 
 **Deepest relevant nodes**:
-The relevant nodes that have no relevant descendant. They are what dependency attachment looks for: the context of each holds every relevant node above it. Inside an unbranched run this is the last relevant section.
+The relevant nodes that have no relevant descendant. They are what dependency attachment looks for: the context of each holds every relevant node above it. Inside an unbranched run this is the last relevant section. With hop between branch points on, the last section of that unbranched run is taken in its place.
 _Avoid_: Best leaf, leaves (a deepest relevant node need not be a leaf)
 
 **Operation**:
-One of the fixed things a referent strategy can do: Point (ask about one section by itself), Group (ask about a sibling group as a whole), Segment (ask about part of an unbranched run), Several (ask whether the message refers to more than one section), and the ones that ask nothing: Estimate, Structure, Describe, Cost. Only Point and Group can confirm a referent.
+One of the fixed things a referent strategy can do: Point (ask about one section by itself), Group (ask about a sibling group as a whole), Segment (ask about part of an unbranched run), Several (ask whether the message refers to more than one section), and the ones that ask nothing: Estimate, Structure, Describe, Cost. Only Point and Group can confirm a referent; the one exception is the last section of an unbranched run under hop between branch points.
 _Avoid_: Question (for an operation that asks nothing), tool
+
+**Hop between branch points**:
+An optional switch of the tree walk, off by default. A message that refers to an unbranched run, and to nothing built on it, is placed on the run's last section without a search for the last relevant section inside the run. It saves decision tokens; the answer then reads everything after the relevant part of the run. Corrections are never placed this way.
+_Avoid_: Skip, jump, hops (for the setting)
 
 **Candidate sections**:
 Sections handed to the tree walk as starting nodes in addition to the roots, for example the ones a retrieval index finds closest to the message. A candidate is where the walk starts looking; it is not a referent until a Point confirms it.
@@ -170,7 +174,7 @@ The limit on the decision-model work that routing one message may use: a number 
 _Avoid_: Rate limit, concurrency limit
 
 **Best node found so far**:
-The section, or the sibling group as a whole, that a message is placed on when its routing reached the decision budget before its target was clear: the best of those that were asked about by themselves and are at least plausible. The user is not asked.
+The section, or the sibling group as a whole, that a message is placed on when its routing reached the decision budget before its target was clear: the best of those that were asked about by themselves and are at least plausible, the last section of an unbranched run taken by hop between branch points among them. The user is not asked.
 _Avoid_: Best leaf, guess
 
 **Context summary**:

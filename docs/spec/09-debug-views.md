@@ -146,7 +146,7 @@ Selecting a run reveals seven things (Q87):
 
 - The seven items above (Q87). Item 6 uses the current attempt states; the original proposal's “cancelled” is replaced by stopped and interrupted (Q50, Q52).
 - Item 3 is the attempt's recorded input, never a recomputation: a replacement or retry shows rewound context without earlier partial text (Q38, Q47); a completed run that consumed a since-superseded result still shows the original (Q39); a superseded attempt is shown as existing and superseded (scenario 5).
-- Item 5 includes what [dependency attachment](11-architecture.md#what-is-recorded) recorded with the decision: a decision budget limit that was reached and the best node found so far where it was used in place of a question to the user, a routing request that listed fewer sections, whether the decision model was shown context summaries, and how the referent strategy was chosen when strategy selection is on.
+- Item 5 includes what [dependency attachment](11-architecture.md#what-is-recorded) recorded with the decision: a decision budget limit that was reached and the best node found so far where it was used in place of a question to the user, the last section of an unbranched run where hop between branch points placed the work on it without a search inside the run, a routing request that listed fewer sections, whether the decision model was shown context summaries, and how the referent strategy was chosen when strategy selection is on.
 - Behind a debug toggle (Q87).
 
 ### Prototype detail

@@ -461,6 +461,8 @@ From what was measured above, when each setting pays:
 
 The two switch rules are derived from the formulae and from one corpus example each; the corpus has no example where they change the result.
 
+(Later on 2026-11-12: the hop rule, `HOP_SKIP` and the `sel_hops` question below are removed, and a choice no longer has `hopBetweenBranchPoints`. See ["Hop between branch points, redefined"](#hop-between-branch-points-redefined).)
+
 ### The decision-model selector (`routing/selection/decision.ts`)
 
 One request to the injected `DecisionProvider`, through the pipeline's `SelectorAsk`. Its state text is the shape in words (`describeShape`: a heading line, seven lines of counts and the budget, under 1,400 characters); its questions are typed, never free text:
@@ -756,6 +758,7 @@ Both still work and are tested in each combination (`referents.test.ts`, `search
 - **Neither is redundant, both matter less.** Without a switch a run over `searchRunsOverTokens` is searched anyway, and now a confirmed section already spares everything above it. What a switch still changes is a **short** run: one Segment instead of a Point per section.
 - **Evidence** (live, below): `startAtTrunkBase` saves 2,002 tokens on the corpus (1.8%), all of it on the three 200-section-chain examples, where two Segment questions replace 23 Points in the routing request (5,377 against 6,086 tokens for a reply to the latest answer); the score is the same. `hopBetweenBranchPoints` changes **nothing** on the corpus now: the same 84 requests and 108,935 tokens to the token. Its one corpus scene with runs below a split (`deep-run-*`) is no longer descended into, and where it would have paid before, a reply to the end of a run, the end is a first-pass section and, confirmed, already spares the run above it with the switch off. What is left for it is a short run that is plausible while its end is not confirmed.
 - The rules of the strategy selector for the two switches (`TRUNK_SKIP`, `HOP_SKIP`) are unchanged.
+- (Later on 2026-11-12: `hopBetweenBranchPoints` has a new meaning, and no rule turns it on. See ["Hop between branch points, redefined"](#hop-between-branch-points-redefined).)
 
 ### What removing the question costs
 
@@ -970,6 +973,72 @@ Before the refit the bound did not hold as the decision model counts tokens: the
 
 **The floor of the bound** (`SHORTEST_ANSWER_TOKENS`, 100, not changed: raising it is the user's decision). At 100 every cell of the grid is covered (its shortest answers are 102 tokens) and none is over 2×. A floor of 135 or 155 would price the 120 cells of 120-token exchanges as if their answers were that long, so the guard would allow more and those cells would no longer be held to the bound. Emulated in `decision-tokens.test.ts` (recorded, not asserted): at 135 all 120 would cost more than twice their own answer by the tokenizer, worst 2.39× (8,000 × 120, nested forks, tree walk with runs listed; 2.63× by the estimate); at 155, worst 2.72× (8,000 × 120, nested forks, one pass; 2.98× by the estimate). Against an answer of the floor's length they stay within it (about 1.8×). Every cell with longer answers is unaffected.
 
+## Hop between branch points, redefined
+
+2026-11-12, on the user's instruction:
+
+> The hop idea is to just not bother looking for the best midpoint node, and just instead take the node at the bottom of the stretch (or as far down towards the bottom as context allows), if no further descendant has relevancy, in order to save tokens
+
+> Keep it as a switch, off by default.
+
+Until then the switch asked about a run's last answer by itself and, when that was not confirmed, searched the answers skipped anyway ("Long runs", "The two switches"). That meaning is dropped. The setting keeps its name and place: `settings.routing.treeWalk.hopBetweenBranchPoints`, default `false`, a stored value kept by `normalizeSettings`. The spec is changed with it (11 · "Referent strategies", DA3, and the lines listed in the commit).
+
+### The rule as built (`routing/referents/tree-walk.ts`, `search.ts`)
+
+- **Applies to** every unbranched run with two or more sections that can be stood for, a root's run (a trunk) included, for a unit that is not clearly corrective.
+- **Evidence that the unit refers to the run.** Points on its sections that are known anyway (first-pass sections; the listed sections of a start part, which ride in the routing request), and one round about the sections that are not: Segments over them, split as a search's first round is; a Point when it is one section; a Point for the candidate section the walk starts at, beside the Segments over the rest of its part. Nothing is asked once a Point of the run is confirmed. No part is opened.
+- **Descent** is unchanged: a run with anything at least plausible (0.25) is descended below, child runs and join-backs.
+- **Placement.** The run's last section is scored with the **highest** answer among that evidence, when it is at least plausible (`RunEnd`, read in `unitReferents`). From there the existing rules apply and nothing else was added: `referentsFromScores` drops it for a clear descendant, so it is a referent only of the run that ends the line of relevance; `bestNodeFound` passes it over for a plausible descendant; `resolveUnitTargets` makes it a target at the target-choice threshold and puts it to the user below it.
+- **The confidence it carries**, then, is the confidence that the unit refers to the run: a run with a clear yes (a Segment or a Point at 0.70 or more) places without asking the user; a run that is only plausible (0.25 to 0.70) is a weak referent exactly as a weakly scored section is with the switch off (elicited; or the best node found so far when the budget was reached). When the last section was also asked about by itself, the higher of the two scores stands.
+- **Context limit.** `ReferentRequest.runContextFits(section)` (as `SearchInput.continuable` for a policy): whether a run continuing from the section fits what a run may read. The deepest section of the run that fits is taken, it stands only for the sections at or above it, and the sections below it are searched as with the switch off; when no section fits, the run is searched as with the switch off. **The pipeline does not supply it: the limit is unbounded in the first version.** What a run may read is the answer model's context limit, which the model provider reports when the run starts (`countTokens`, `engine/backend.ts`; 11 · "Context growth", Q67); routing does not know it. The code path is tested with an explicit limit (`search.test.ts` · "hop · context limit").
+- **Not the hop's.** A correction (the search runs, request for request as with the switch off). A member of a sibling group (asked about by itself beside its group, and no evidence for the run that continues it: a Segment that named it could not be told from a yes about the group). A part whose sections were all asked about by themselves (nothing to save: the last relevant section stands). The pooled old single answers (`loneAnswers`: not a line of work). A run whose question the budget refused (nothing stands for it: `Hop.taken` is set only after the round was answered; its listed sections are then asked about by themselves in the fallback, as with the switch off).
+- **With start at the trunk base on as well**, the base's Point and the Segments above it, which that switch asks in the routing request, are the evidence for the trunk, and no part is opened.
+- **Recorded.** `RoutingDecision.runEnds` (`RunEndRecord`): the unit, the section taken, its confidence, the run (first and last section, length), the question the score comes from (the sections it was about), and whether the context limit moved it up. Only for targets, and only when the section's own question did not score at least as high. The decision's explanation carries a sentence, and the run inspector a row "Hop between branch points" beside the budget and candidate rows.
+
+### Strategy selection: the hop is no longer chosen
+
+The rule that turned hops on (`HOP_SKIP`: a run of six or more answers below a split) was derived for the earlier meaning, in which the placement was the same either way and only the cost differed. The new hop changes where a message is placed and what its answer reads; the shape of the genealogy is no evidence for that. So:
+
+- `HOP_SKIP` and the rule are removed; `StrategyChoice` has no `hopBetweenBranchPoints`; the decision-model selector's `sel_hops` question is removed (its request is three questions).
+- `applyChoice` keeps the configured `hopBetweenBranchPoints` whatever was chosen, so the user's switch applies whenever a tree walk runs: with selection off, by rules (the default) and by the decision model. A choice on record from before, which has the field, is read without it.
+- DA2 holds as before: the selector chooses the strategy, start at the trunk base and whether long runs are searched, and the routing equals the one with those configured directly; `selection.test.ts` · DA2 has a case with the hop set on both sides.
+- Settings → Routing shows the hop switch whenever the tree walk can run (the tree walk is configured, or a selector is on).
+
+### Measured
+
+Oracle double (`search.test.ts`, every probe costs one, a part is 12 sections), one relevant section in the middle of one run:
+
+| Run | Off: rounds, probes | On: rounds, probes |
+|---|---|---|
+| 20 sections | 2, 14 | 1, 2 |
+| 200 sections | 2, 29 | 1, 17 |
+| 2,000 sections | 3, 43 | 1, 24 |
+
+Corpus, 62 examples, configured tree walk, lexical candidate source (the default source):
+
+| | Off | On |
+|---|---|---|
+| Decisions as labelled (`hop-tokens.test.ts`): routed as labelled | 62/62 | 59/62 |
+| requests, questions | 86, 977 | 84, 949 |
+| tokens: guard's estimate, tokenizer, calibrated | 135,719, 72,991, 110,797 | 130,227, 69,339, 106,031 |
+| Live (`typesafe/jev-1.13`, 2026-11-12, `referents.smoke.test.ts`): routed as labelled | 61/62 | 58/62 |
+| requests, questions, tokens reported | 85, 976, 109,128 | 83, 948, 104,535 |
+
+- **What it saves here: 4.0% of the estimated tokens, 4.2% of the live ones, two requests.** The corpus is mostly short conversations inside the window, where every section rides in the routing request by itself and the switch changes nothing. All of the saving is on three examples: `long-chain-old-section` (live 6,440 → 2,847 tokens, 3 → 2 requests), `deep-run-middle-section` (2,554 → 2,005, 2 → 1) and `deep-run-other-branch` (3,011 → 2,560). (These figures are with the guard's estimate as refitted the same day, which sizes the parts of a run. Live before the refit: off 85 requests and 108,412 tokens, on 83 and 104,155.)
+- **The same three are where the placement moves, and the corpus counts each as a miss**: E2 → E198 (the last of a 200-section chain), D2 → D5, H2 → H4. The corpus labels a reply to a section inside a run with that section (the note of `deep-run-middle-section` says "not the end of the run"), which is the behaviour the switch gives up. **The labels were not changed.** `corpus.test.ts` and `hop-tokens.test.ts` name the examples that move and assert where they go. Without a candidate source only `long-chain-old-section` moves (59/62 → 58/62 as labelled): the two `deep-run` examples are not reached with the switch off either.
+- **Live, a Segment over a short part can miss what a Point finds.** In a first live run, before the candidate section was asked about by itself, the Segment over the four sections above and including the candidate E2 was not plausible for "Make the entry on tides shorter", although E2 by itself is confirmed with the switch off; the message was then placed with no target (it still continued the chain's end, through its handling chain). That is why a candidate section is asked about by a Point. Not measured further.
+- **Switch off: identical.** Every decision request, the plan and the explanation of all 62 examples with decisions as labelled were dumped on the commit before this change and after it, for eight configurations (tree walk without and with the lexical source, with the trunk base without and with it, runs listed, one pass, and the tree walk under a request budget of one and under a 7,000-token budget, where 14 routings reach the budget; 650 requests): byte for byte the same. The recorded figures of `decision-tokens.test.ts` are unchanged.
+- **The cost grid bound holds** for all 360 cells with the new hop, by the guard's estimate (`cost-grid.test.ts`) and by tokenizer counts (`decision-tokens.test.ts`), and a guarded routing still never costs more than the unguarded one. The last needed a change to the fallback: with the hop on, a round about runs is cheaper than asking their listed sections one by one, so room is kept only for the fallback as it would be **after** the round at hand (the sections that round stands for left out), and the fallback does not ask about sections whose run was asked about. With the switch off both are what they were.
+
+### Departures from the brief, and what is not verified
+
+- **A trunk is hopped too.** The brief's rule is about unbranched runs; the switch's name is about branch points. A conversation that never split is one run, so with the switch on a reply to an old answer continues from the latest answer.
+- **A candidate section is asked about by a Point** (the brief: "no confirming Points for interior sections"). It does not place the unit on the candidate: it is evidence for the run, and the run's last section is taken.
+- **"Nothing to save" keeps the last relevant section.** When every section of a part was asked about by itself anyway, the hop does not move the placement to the end.
+- **A clear Point inside the run ends the questions about the run** and the end is taken, although two or three further Points would have settled the last relevant section (`deep-run-middle-section`).
+- **The context limit** is implemented and tested, and unused: see above.
+- Not verified: how often, live, a Segment over a short run scores a run plausible or clear when a Point on the section meant would; the hop with the decision-model selector live; the J cases live with the hop on (they pass in `referents.test.ts` with scripted answers in all four combinations).
+
 ## Tests
 
 - `routing/candidates/lexical.test.ts` (2026-11-12), the lexical candidate source. The words of a text (stop words, the words of an instruction, plurals, numbers, other scripts). The index: ranking; the minimum share and half-of-the-best; contentless messages; the cap and ties by recency; exclusion; determinism, and an index brought up to date against one built at once (growing, a streaming answer, a revised and a dropped section, 2,000 sections). The source: whole answers, the first-pass sections left out, one index per conversation. Through the pipeline: the three corpus examples whose referent lies below unrelated work miss with no source and are routed as labelled with the lexical one and nothing scripted; the whole corpus with the tree walk and with the strategy the rules select (62 of 62 each); candidates reduced with the roots by `reduceToNonAncestors`; `DA3` (a candidate is asked about by itself and is never a target for being named, nor on the strength of a question about several sections; every target of a routing was confirmed by its own question or its group's); an injected source wins and `none` asks nothing; one pass sends the same requests; an explicit target asks no source; a contentless message.
@@ -998,6 +1067,7 @@ Before the refit the bound did not hold as the decision model counts tokens: the
 - `protocol/src/contracts.test.ts`, `web/src/app/app.test.tsx`, `web/src/features/debug/debug.test.tsx`: the mode as a setting, its control in Settings → Routing, and the run inspector's "Strategy" row.
 - `providers/src/referents.smoke.test.ts` (`pnpm smoke`): the corpus for twelve configurations (one pass, runs always listed, the default, each switch, both, and the three selectors, all with no candidate source; then one pass, the tree walk and the rules with the lexical one, with the candidate sections each routing was handed) with its decision cost, the cost of every long example and a tally of the selections; the J and two-section cases five times per configuration; and the cost grid, printed.
 - `providers/src/decision-tokens.test.ts` (2026-11-12): the Decisions mock's body parsing and usage; the corpus per configuration and the ratio to characters ÷ 4 against recorded figures; the price bound on all 360 guarded cells under tokenizer-calibrated counts; what a floor of 135 or 155 would do (recorded). `providers/src/decision-estimate.test.ts`: the guard's estimate is never below the reported count on 70 recorded live requests. `providers/src/decision-tokens.smoke.test.ts` and `decision-estimate.smoke.test.ts` (`pnpm smoke`): the live calibration and the live sample the estimate is fitted to (see "Measuring tokens").
+- Hop between branch points (2026-11-12): `routing/referents/search.test.ts` · "hop between branch points" (probe counts for runs of 20, 200 and 2,000; the weak run; a relevant descendant; the property over the five shapes; a correction, round for round as off; the context limit; sibling groups; candidates and the two safeguards; first-pass sections; the budget stop; with the trunk base; old single answers), `referents.test.ts` · DA3 and "long runs · hop between branch points" through the pipeline with the record and the explanation, `corpus.test.ts` and `providers/src/hop-tokens.test.ts` (the corpus off against on), `selection.test.ts` (no rule and no question for the hop; DA2 with it set), `web` (`debug.test.tsx`: the inspector row).
 - `providers/src/j-request.smoke.test.ts` (`pnpm smoke`): the brief, A, B and J through a real backend with the live providers, J sent during and after the siblings' runs.
 
 ## Left open
