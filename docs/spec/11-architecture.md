@@ -245,7 +245,7 @@ Terms the tree walk uses. A **branch point** is a place where a line of work spl
 
 **Tree walk**
 
-- **Starting nodes.** The walk starts from every root, and from any **candidate sections** it is handed besides. Candidates come from a candidate source, an injected port; its intended use is retrieval, the sections an index over the conversation finds closest to the unit. The first version has no source, so there are no candidates and the walk starts from the roots. A source that fails counts as none, and none is asked when the reply target was given.
+- **Starting nodes.** The walk starts from every root, and from any **candidate sections** it is handed besides. Candidates come from a candidate source, an injected port; its intended use is retrieval, the sections an index over the conversation finds closest to the unit. The first version has one source, a lexical index over the answer sections: it hands over the sections whose title, request, and answer share the most words with the unit, when any are close enough. It is on by default and can be turned off; the walk then starts from the roots. A candidate is a hint for the search and nothing more: it is asked about by itself like any other section, and the source's score is never read. A source that fails counts as none, and none is asked when the reply target was given.
 - **No starting node is an ancestor of another.** Before the walk, the roots and the candidates are reduced to the set in which no node is an ancestor of another: an ancestor is dropped in favor of its descendant, whose context holds it. A root with a candidate below it therefore gives way to the candidate.
 - **A dropped ancestor is not lost.** It is taken up again as a starting node when the node that displaced it turns out not to be relevant, and when Several says the unit refers to more than one section, so that a second referent on another line under the same root is still found (C9, C19).
 - **At a starting node** the walk examines the part of the node's unbranched run from the top of the run down to the node: by a Point for each section when the part is short, by a search when it is long.
@@ -341,7 +341,7 @@ With the routing decision of each message ([Inspection](#inspection)), in additi
 | Part | In the first version |
 |---|---|
 | Referent strategy interface; the operations behind one interface; the first pass; one pass; tree walk with the search for the last relevant section of a long unbranched run, trunk base, and hops | Implemented. The configured strategy, used when strategy selection is off, is the tree walk with long unbranched runs searched; the two switches are off |
-| Candidate source for the tree walk's starting nodes | Interface, with a source that returns none. Retrieval over the conversation is beyond the first version |
+| Candidate source for the tree walk's starting nodes | Implemented as a lexical index over the conversation's answer sections, on by default, with a setting to turn it off. Retrieval by meaning (an embedding index) is beyond the first version |
 | Estimate | Operation defined, with no implementation: nothing is ordered or pruned by it |
 | Rules after the strategy: thresholds, elicitation, no subset bypass, acyclicity, leaf repair | Implemented. Unchanged, except that a routing whose decision budget was reached does not elicit the target |
 | Decision budget: token budget (absolute or relative), bound against the answer, backstops, the routing request drawing from it, the hard stop and the best node found so far | Implemented |
@@ -349,7 +349,7 @@ With the routing decision of each message ([Inspection](#inspection)), in additi
 | Background summarizer | Interface, with an implementation that produces nothing |
 | Summary policy, recording, staleness, and invalidation | Design only |
 | Strategy selection: the interface, the rules, the decision-model mode, reuse, recording | Implemented. Rules is the default; off and the decision model are available |
-| Optimization: tuning the thresholds and the budget's figures, the size of unbranched run that is searched, how much context a Point and a Segment show, the selector's rules, summary policies, a lexical or embedding index behind Estimate and the candidate source, and the quality of a learned or model-based selector | Beyond the first version |
+| Optimization: tuning the thresholds and the budget's figures, the size of unbranched run that is searched, how much context a Point and a Segment show, the selector's rules, summary policies, the lexical index's stop words and minimum score, an embedding index behind the candidate source, an index behind Estimate, and the quality of a learned or model-based selector | Beyond the first version |
 
 What the build measured, and where it falls short of this, is in [the build status](../build/STATUS.md).
 

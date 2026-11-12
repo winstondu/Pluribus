@@ -2,6 +2,8 @@
 
 Specified in [11 · Architecture, "Dependency attachment"](../spec/11-architecture.md#dependency-attachment): the stage's contract, the two referent strategies, the decision budget and strategy selection. This document is the build record behind it: the measurements, the departures and what is open. Where the two disagree the spec wins. The spec calls a run of only children an "unbranched run", because in the spec a run is one model call; this document and the code say "run".
 
+**Changed a third time on 2026-11-12**: a candidate source exists and is on by default. A word index over the answer sections hands the tree walk candidate sections as seed hints; see ["The candidate source: a lexical index"](#the-candidate-source-a-lexical-index). Statements below that say no source or no retrieval is built predate it and are marked.
+
 **Changed again on 2026-11-12** by the user's decisions recorded under ["The model, the operations, and the search"](#the-model-the-operations-and-the-search): the question "does it refer to anything built on this?" is removed; the operations a search uses sit behind one interface, and the two strategies are policies over it; a long unbranched run is searched for its last relevant node; a tree walk can start at candidate nodes besides the roots. The sections "Strategy 2: tree walk", "Long runs" and the cost tables before that section describe the walk as it was until then and are marked where they no longer hold.
 
 **Changed on 2026-11-12** by the user's decisions recorded under ["The hard stop, the best node found so far, the first pass, and rules by default"](#the-hard-stop-the-best-node-found-so-far-the-first-pass-and-rules-by-default): the budget is a hard stop and never a reason to ask the user; every routing starts with a first pass; strategy selection defaults to the rules. Statements below that predate it are marked where they no longer hold. The cost and score tables before that section were measured before the change.
@@ -660,8 +662,14 @@ interface ReferentOperations {
   remaining(): DecisionBudget                        // what the budget still allows
 }
 
-interface CandidateSource {                          // CoreDependencies.candidateSource
-  candidates(query: { unit: ReferentUnit; text: string; sections: readonly CandidateSection[] }): Promise<readonly SectionId[]>
+interface CandidateSource {                          // settings.routing.candidateSource, or CoreDependencies.candidateSource
+  name: string                                       // recorded with the routing decision
+  candidates(query: {
+    conversationId: ConversationId; unit: ReferentUnit; text: string
+    sections: readonly CandidateSection[]            // every answer section, oldest first
+    answerText(section: CandidateSection): string    // the whole answer so far
+    firstPass: readonly SectionId[]                  // asked about by themselves anyway
+  }): Promise<readonly { sectionId: SectionId; score: number | null }[]>  // best first; the score is recorded, never read
 }
 ```
 
@@ -719,7 +727,7 @@ The walk is written as steps that say what they want answered next; steps under 
 ### Start candidates
 
 - **Port.** `CandidateSource` (`CoreDependencies.candidateSource`, threaded like the other routing ports; `createTestBackend` takes it too). Asked once per unit before the routing request is put together: the message, or each part of a composite, with its text and the conversation's answer sections. Not asked for an explicit or chosen reply target.
-- **Default: none.** No retrieval is built. The tests use scripted sources.
+- **Default: none.** No retrieval is built. The tests use scripted sources. (Until later on 2026-11-12: the lexical source is built and is the default, see ["The candidate source: a lexical index"](#the-candidate-source-a-lexical-index). An injected source still replaces it.)
 - **Rules.** Only answer sections of this conversation are accepted (invariant 9); at most 12 per unit (`MAX_START_CANDIDATES`); a source that rejects is a source with nothing to say. A candidate is a place to look and never a referent: it is asked about like any other node. One pass ignores candidates.
 - **In the request.** `ReferentRequest.startCandidates`, by unit key.
 - **What a candidate changes.** Its run from the top down to it rides in the routing request when listed, and the root above it is not asked about. An unlisted candidate is examined in the first further request with its ancestry as context.
@@ -739,7 +747,7 @@ Both still work and are tested in each combination (`referents.test.ts`, `search
 - **With decisions strictly as labelled** (the oracle answers "no" for the brief) the tree walk misses all three, and the default, by rules, misses the first: inside the window the rules choose one pass, which asks about every listed section. `corpus.test.ts` expects exactly that.
 - **Live** the brief is plausible for "Swap days 2 and 3 of the Kyoto itinerary", so `live-referent-beyond-window` is found, in three requests as before. It is not plausible for "Make the day 2 plan less packed" or "Which of those hostels has private rooms with a bathroom?": the walk asks nothing below the brief, the ends of the two runs (first pass) are not confirmed, and the reply continues the end of its line (D5, H4) through its handling chain. It reads the section meant, which is in the end's context, and does not branch from it. Configured tree walk: **61/62 → 59/62**. The default (rules): **61/62, unchanged**.
 - **Why.** The question existed because relevance, as the decision model answers a Point, is not inherited upward: the brief scored 0.07 for a message about the itinerary below it. The model above says a relevant node's context is relevant; the decision model's answer about a root by itself does not.
-- **What recovers it**, in the order the user intends: a **candidate source** (a retrieval hit on D2 or H2 is a start: both examples are routed as labelled in `corpus.test.ts` with a scripted source that names the referent, and so is the third); a real **Estimate** (a lexical or embedding prior to rank the runs below a root); or wording the Point of a root so that "the line of work it starts" counts, which is the removed question under another name and was not done.
+- **What recovers it**, in the order the user intends: a **candidate source** (a retrieval hit on D2 or H2 is a start: both examples are routed as labelled in `corpus.test.ts` with a scripted source that names the referent, and so is the third; since built as a lexical index, which names all three by itself: "The candidate source: a lexical index"); a real **Estimate** (a lexical or embedding prior to rank the runs below a root); or wording the Point of a root so that "the line of work it starts" counts, which is the removed question under another name and was not done.
 
 ### Departures
 
@@ -790,7 +798,105 @@ Live, `typesafe/jev-1.13`, 2026-11-12, reference decompositions, 62 examples, on
 - The misses that are not the walk's: `split-correction-and-new-work` under every configuration, as before; under "runs listed", the two 200-section referents, as before. `routing-corpus.smoke.test.ts` (default settings): 60/62 with reference decompositions, the second miss being `split-output-order-barrier` (the barrier question, one borderline answer), and 59/62 with the live decomposer.
 - **What the context costs.** With decisions as labelled and the guard's estimate, the tree walk's requests over the corpus are 102,993 tokens with the context lines and 102,667 without: **326 tokens, 0.3%**. Five of its 18 further requests carry a context block, of about 65 tokens each. The routing request carries none.
 - **Cost grid** (`pnpm smoke`, 360 cells): the worst guarded cell is still **1.99×** (the tree walk in an early split, 50 or 500 sections of 120-token exchanges: the routing request alone, cut to its smallest, 11 questions and 2,478 tokens; one pass in a bushy conversation is 1.99× as before). With 300-token exchanges the worst is 1.93× (the tree walk over many roots). The largest guarded routing is 19,082 tokens (500 answers of 2,000 tokens on one chain, with the decision-model selector's request; the budget there is 20,000; 18,106 before). Unguarded, a search whose Points never confirm goes back one part a round: a 500-section chain is 79 requests where it was 4, and 8,000 sections 902. The request backstop (4) is what bounds that, as it bounds a deep tree. The grid table above is from before this change.
-- Not measured live: start candidates (no source exists), safeguards (a) and (b), a search whose Point does not confirm, and a routing that falls back. They are covered by the deterministic tests only.
+- Not measured live: start candidates (no source exists; since measured, see "The candidate source: a lexical index"), safeguards (a) and (b), a search whose Point does not confirm, and a routing that falls back. They are covered by the deterministic tests only.
+
+## The candidate source: a lexical index
+
+Added 2026-11-12 on the user's decision:
+
+> yes, build a real candidate source with a subagent. Start with lexical index. Recall this is merely to help the search as a seed hints.
+
+**What it is, and what it is not.** A word index over the conversation's answer sections that, for each unit, names the sections whose words are closest to the unit's text. They are handed to the tree walk as start candidates: further places to start, beside the roots. That is all.
+
+- A candidate confirms nothing. It is asked about by itself like any other section, and only that Point (or a Group) makes it a referent (DA3).
+- No score of the source is read by routing. The scores are recorded for the run inspector and nothing else.
+- It replaces no Point and no Group, and it is **not the Estimate operation**: `estimate` still returns nothing and no policy calls it. Nothing is ordered or pruned by the index.
+- One pass does not walk and ignores candidates: with the source on, its request is the same, token for token (live: 74 requests, 92,592 tokens, both ways).
+
+### Built
+
+`packages/core/src/routing/candidates/lexical.ts`, pure and deterministic: no clock, no randomness, no I/O, and no new dependency.
+
+- **What is indexed.** One document per answer section: its title, the request it answered, and its whole answer text so far. A word of the request counts twice: the request names the subject in the user's own words, and the answer is long and names much besides. The candidates the pipeline is handed carry only the opening of an answer (280 characters), so the backend passes the whole text through `RoutingInput.answerText`; where a caller leaves it out (the corpus, which holds whole answers as openings) the opening stands for the answer.
+- **Words** (`lexicalTerms`). Folded to compatibility form (NFKC) and lowercased; a word is a run of letters, digits and combining marks in any script, so a number is a word ("day 2"). English plurals are folded onto the singular ("hostels" = "hostel", "entries" = "entry"); nothing else is stemmed. A stop list of about 210 English words leaves out function words, the pieces of contractions, and the words of an instruction that name the change and not its subject (make, shorter, longer, combine, both, add, rewrite, again, answer, section, …).
+- **Other languages.** Text written with spaces is split into its words in any script; accents are kept ("café" and "cafe" are two words). Chinese, Japanese, Thai, Lao, Khmer and Burmese, written without spaces, are indexed as overlapping pairs of characters. The stop list and the plural folding are English only: in another language every word counts, and a word common to the whole conversation weighs little only because it is common. A contentless message in another language therefore has words to look up, and gets candidates only if they clear the minimum below.
+- **Score.** BM25 with the usual constants (k1 = 1.2, b = 0.75) over the distinct words of the unit's text; a word's weight is ln(1 + (N − n + 0.5) ÷ (n + 0.5)) for N sections of which n contain it, so it is positive for every word and largest for a word no section contains.
+- **Query.** The unit's text: the message, or the instruction of one part of a composite.
+- **Incremental.** One index per conversation, kept by the router between routings (the eight most recently routed conversations). At each routing it is brought up to date: a section whose title, request and answer are the strings it was indexed from is left alone, so only what was written or revised since is read again, and a section that is no longer current is removed. An index brought up to date gives exactly the hits of one built at once (tested); a score is summed in the order of the text's words, so it does not depend on how the index came about. The index is not persisted: after a restart it is rebuilt at the first routing of a conversation.
+
+### The decisions the brief left to the build
+
+| Question | Decided | Why |
+|---|---|---|
+| Are sections that are asked about anyway left out? | **The first-pass sections are left out; other sections the routing request lists are kept** | Every routing asks about each first-pass section by itself in the routing request, with either strategy, so naming one adds nothing and would take one of the twelve places. They are the ends of the most recent lines, so nothing lies below them that a start there would reach. A listed section that is not in the first pass is different: the tree walk asks about a listed section only when it lies on a line it follows, which is exactly the case to recover (`deep-run-middle-section` and `deep-run-other-branch` are inside the window) |
+| Minimum score | **A share of at least 0.3** (`LEXICAL_MIN_SHARE`): the section's score ÷ the summed weight of all the text's words, those no section contains included. **And at least half the best section's score** (`LEXICAL_MIN_OF_BEST`), the best being taken before the first-pass sections are left out | An absolute BM25 score means different things in a conversation of 13 sections and of 200. The share says how much of what the message says is found in the section: a section that shares one or two common words with a message stays below it (on the corpus the sections left out score 0.10 to 0.27), the section a message names clears it (0.67 to 0.80 for the three examples below unrelated work, 1.07 and 1.80 for the single entries of the two long conversations). Half of the best keeps the sections that only share the named section's vocabulary out (the other days of the same plan: 0.31 to 0.32 against 0.67), and keeps two sections that are about equally close |
+| Contentless messages | **No candidates.** "Make that shorter", "combine both", "Use that one", "Try again" have no word left after the stop list, so nothing is looked up | The stop list holds the words of an instruction that name the change. A message with one content word that no section contains has a share of 0 everywhere |
+| Cap | **12 per unit**, the pipeline's existing `MAX_START_CANDIDATES`, applied by the source and again by the pipeline | Unchanged. On the corpus the source never returns more than two |
+| Ties | **By recency: of equal scores the later section first.** Then the cap | Deterministic, and the later of two equally close sections is the likelier referent |
+| Small conversations | Nothing special. In a conversation of one to five sections a word every section contains weighs almost nothing and a word none contains weighs most, so few sections clear the share | There the first pass asks about the ends of every line anyway |
+
+### Wiring, the setting and the record
+
+- **Setting.** `settings.routing.candidateSource: 'none' | 'lexical'` (`CandidateSourceName`, `CANDIDATE_SOURCE_NAMES` in `protocol/src/settings.ts`), validated in `validateSettingsPatch`, defaulted by `normalizeSettings` for settings stored before it existed. Settings → Routing → "Candidate sections": "None" or "Word index", worded as seed hints that cost no decision tokens themselves, each of which may add questions within the decision budget.
+- **Which source runs** (`candidateSourceFor` in `routing/pipeline.ts`): an injected `CoreDependencies.candidateSource` wins; otherwise the lexical source when the setting says so; otherwise none. `createRouter` makes one lexical source for its lifetime, which is what keeps the index between routings.
+- **The port** gained what a real source needs: `CandidateQuery.conversationId`, `answerText` and `firstPass`; a source has a `name` and returns `{ sectionId, score }`. The scripted sources of the tests were updated.
+- **Recorded.** `RoutingDecision.candidateSource` (`CandidateSourceRecord`): the name of the source that was asked and, for each unit, the sections it returned with its scores, after the pipeline's own filter (answer sections of this conversation, no duplicates, at most twelve). Present whenever a source was asked, with empty lists when it named nothing or failed; absent with the setting on `none` and for an explicit or chosen reply target. For a composite the parts stand in place of the message.
+- **Run inspector.** A "Candidate sections" row beside "Strategy" and "Decision budget": how many, from which source, each with its title and score, and that they are seed hints, none a target for being listed.
+- **Strategy selection is unchanged** (DA2 holds). The rules choose from the shape of the genealogy and what may be spent; candidates are not part of the shape. One pass is still chosen while every answer section is listed: it asks about each of them by itself, so a candidate could add nothing there. Candidates matter exactly where the rules choose the tree walk. A routing whose strategy a selector chose is still request for request the routing with that strategy configured: the source is asked the same way in both.
+
+### Measured
+
+Live, `typesafe/jev-1.13`, 2026-11-12, reference decompositions, 62 examples, one run of `providers/src/referents.smoke.test.ts` with the source set explicitly in every configuration (`pnpm smoke` was run once in full first; its output was not captured, as before, so that file was run a second time with the console shown and the figures are the second run's).
+
+| Configuration | Source off: score, requests, tokens reported | Source on (lexical) | Change |
+|---|---|---|---|
+| One pass | 58/62, 74, 92,592 | 58/62, 74, 92,592 | None: the same requests |
+| Tree walk, long runs searched (the configured strategy) | 59/62, 84, 108,935 | **61/62**, 85, 108,412 | **+2 examples**, +1 request, −523 tokens (−0.5%) |
+| **Selected by rules (the default)** | 61/62, 83, 110,263 | **61/62**, 82, 107,841 | The same score, −1 request, −2,422 tokens (−2.2%) |
+
+The source-off figures are the ones recorded before, to the token.
+
+| Case (requests, tokens; ✗ = not routed as labelled) | Tree walk, off | Tree walk, on | What the source handed over (BM25 score) |
+|---|---|---|---|
+| `deep-run-middle-section` | ✗ 1, 1,874: continues D5 | 2, 2,554 | D2 3.9, J 2.7 |
+| `deep-run-other-branch` | ✗ 1, 1,877: continues H4 | 2, 3,011 | H2 6.8 |
+| `live-referent-beyond-window` | 3, 5,282 | 2, 4,728 | J 11.0, B 7.4 |
+| `long-chain-old-section` (reply to the 3rd of 200) | 3, 7,972 | 3, 6,104 | E2 8.8 |
+| `long-roots-old-section` | 3, 9,699 | 3, 9,699 | R16 16.8 (a root: it is a start already, and old single answers are searched together) |
+| `deep-run-end-section` | 1, 1,876 | 1, 1,961 | D1 3.5 (the target, D5, is a first-pass section and is left out) |
+| `long-chain-latest-section`, `long-chain-unrelated`, `live-unrelated-in-long-conversation` | 2, 6,086; 2, 6,080; 2, 4,420 | the same | none |
+
+- **The two examples the removed question cost are routed as labelled again**, with nothing scripted: the walk starts at the section the message names, asks about it by itself, and the reply branches from it. With the rules (the default) both were already routed by one pass; there the gain is `live-referent-beyond-window` in two requests where it took three, and the old section of the 200-section chain for 1,868 fewer tokens, because the walk starts at the candidate and examines the four sections down to it where it searched the 176 older ones.
+- **Candidates were handed to 12 of the 62 routings**, at most two each. Besides the ones above: the trip brief, for six messages or parts about the trip (1.8 to 3.6). An unrelated message got none.
+- **The J request on both siblings, five runs of five cases, and the follow-up naming two sections, five runs of two: 25/25 and 10/10** with each of the twelve configurations, the three with the source on included.
+- **One example changed its failure.** `split-correction-and-new-work` is missed under every configuration, as before. With the configured tree walk and the source on, its second part ("Suggest some day trips from Kyoto") was handed the trip brief, and the routing ended in a question to the user (target ambiguity) where it was a plan on a new chain. Under the default (rules) it is a plan both ways. The same example also ended in that question once with the source off (trunk base and hops), so it is borderline by itself; one run does not say how much is the candidate.
+- **With decisions as labelled** (`candidates/lexical.test.ts`, the oracle): the tree walk with the lexical source routes **62 of 62**, and so does the strategy the rules select (59 and 61 with no source).
+- **Cost grid** (guarded cells, the guard's estimate; `cost-grid.test.ts` asserts the 2× bound and the token budget on each):
+
+| Grid | Worst guarded cell | Guarded requests and tokens, all 360 cells |
+|---|---|---|
+| The grid's message, source off | 1.99× (8,000 × 120, early split, tree walk with runs listed: 1 request, 11 questions, 2,481 tokens) | 867, 2,162,323 |
+| The grid's message, lexical source | The same, to the token: the message names nothing, so there are no candidates | 867, 2,162,323 |
+| A message that names three answers (`COST_GRID_SEEDED_MESSAGE`), source off | 2.00× (50 × 120, early split, one pass: 1 request, 22 questions, 2,528 tokens; the message is longer, and so is the allowance) | 867, 2,176,223 |
+| The same message, lexical source (up to three candidates) | 2.00×, the same cell: one pass ignores candidates | 814, 2,084,287 |
+| A source that hands over twelve sections spread over the conversation (`worstCaseCandidateSource`), the grid's message | 1.99× (50 × 300, flat, tree walk: 3 requests, 37 questions, 6,116 tokens) | 670, 1,921,295 |
+
+  The bound holds with the source on, and with the worst a source can do. Candidates lower the worst message's cost: a root with a candidate below it is not asked about, and a long run is examined down to the candidate where it would be searched whole. The largest guarded routing is 19,634 tokens (500 answers of 2,000 tokens on one chain, twelve candidates; the budget there is 20,000). The tokenizer-count caveat of "Measuring tokens" applies unchanged: the guard holds what it estimates.
+- **Time** (one core, Node, a made-up vocabulary of 20,000 words with a skewed frequency): a conversation of **10,000 sections, 35 MB of text** (about 430 words each) is indexed in **1.9 s**, once per conversation per backend start. After that a routing costs **3 to 4 ms** to bring the index up to date (one new section, or none) and **1.7 ms** for a query of twelve words; a query made only of the twelve most common words, 9 ms.
+
+### Default: `lexical`
+
+The condition set for it was no loss of score and the 2× bound holding on the cost grid. Both hold: no configuration lost an example (the configured tree walk gained two, the default kept its 61), the J and two-section cases are unchanged, the default spends 2.2% fewer decision tokens on the corpus, and the grid's worst guarded cell is unchanged. `none` stays selectable.
+
+### Limits, and what is not verified
+
+- **Words only.** A reply that names its referent in other words ("the lodging one" for the hostels) gets no candidate. That is what an embedding index behind the same port would add; none is built.
+- **A plausible wrong candidate can hide a referent on another line under the same root.** A root with a candidate below it gives way to the candidate and is reinstated only when the candidate is not plausible or the unit refers to several sections (safeguards (a) and (b)). This is the walk's rule for any candidate, not the index's; the more candidates, the more often it can bite. Half-of-the-best keeps the candidates few. Not observed on the corpus.
+- **The minimum share (0.3) and the stop list were set on this corpus**, 62 examples, of which 12 get candidates. Not tuned further, and not measured on conversations in other languages or on long single-subject conversations, where many sections share the message's words and the cap (the twelve best) is what bounds the candidates.
+- **The stop list is English.** A contentless message in another language is looked up word for word.
+- **The index is rebuilt after a restart**, 1.9 s at the first routing of a 10,000-section conversation, on the backend's thread. Not persisted.
+- **One word left the stop list after the live run**: "brief", which in this application names a piece of work ("the trip brief"). With decisions as labelled the candidates of every corpus routing are the same sections as before and the requests are the same to the token; two scores of the trip brief moved by 0.1. The live run was not repeated.
+- **Not looked at live in the app.** The corpus is routed through the pipeline; the Settings control and the inspector row were looked at in the fixture gallery in a browser, and the backend wiring (whole answers, the record) is covered by `routing/acceptance/referents.test.ts`. The e2e flows were not rerun.
 
 ## Measuring tokens
 
@@ -803,10 +909,12 @@ Added 2026-11-12. Before this, token figures came from live runs (the provider's
 | Configuration | Requests (mock / live) | Tokenizer, text only | Calibrated | Live reported | Guard's estimate |
 |---|---|---|---|---|---|
 | One pass | 74 / 74 | 60,559 | 93,352 (+0.8%) | 92,592 | 85,896 (−7.2%) |
-| Tree walk, long runs searched | 83 / 84 | 72,243 | 109,090 (+0.1%) | 108,935 | 99,468 (−8.7%) |
-| Selected by rules (the default) | 82 / 83 | 73,662 | 110,610 (+0.3%) | 110,263 | 100,907 (−8.5%) |
+| Tree walk, long runs searched | 86 / 85 | 72,306 | 109,913 (+1.4%) | 108,412 | 100,067 (−7.7%) |
+| Selected by rules (the default) | 82 / 82 | 72,259 | 108,866 (+1.0%) | 107,841 | 99,304 (−7.9%) |
 
-Over the three configurations' 239 requests the tokenizer counts **0.79 to 1.03 × characters ÷ 4, mean 0.90** (0.93 over all their text), and the calibrated count is **0.99 to 1.21 × the guard's estimate, mean 1.065**.
+Over the three configurations' 242 requests the tokenizer counts **0.79 to 1.04 × characters ÷ 4, mean 0.90** (0.93 over all their text), and the calibrated count is **0.99 to 1.22 × the guard's estimate, mean 1.067**.
+
+These two rows and the line under them were recorded again when the lexical candidate source became the default (see "The candidate source: a lexical index"): the tree walk and the strategy the rules select now start at candidate sections as well, and with decisions as labelled both route all 62 examples. With no source the rows were: tree walk 83 / 84, 72,243, 109,090 (+0.1%), 108,935, 99,468 (−8.7%); rules 82 / 83, 73,662, 110,610 (+0.3%), 110,263, 100,907 (−8.5%); 239 requests, 0.79 to 1.03, mean 0.90, and 0.99 to 1.21, mean 1.065. One pass is unchanged.
 
 **Live calibration** (`pnpm smoke`, 2026-11-12, 14 requests, about $0.002):
 
@@ -834,6 +942,10 @@ A one-off fit over 24 live requests of both kinds (run once, not kept as a test)
 
 ## Tests
 
+- `routing/candidates/lexical.test.ts` (2026-11-12), the lexical candidate source. The words of a text (stop words, the words of an instruction, plurals, numbers, other scripts). The index: ranking; the minimum share and half-of-the-best; contentless messages; the cap and ties by recency; exclusion; determinism, and an index brought up to date against one built at once (growing, a streaming answer, a revised and a dropped section, 2,000 sections). The source: whole answers, the first-pass sections left out, one index per conversation. Through the pipeline: the three corpus examples whose referent lies below unrelated work miss with no source and are routed as labelled with the lexical one and nothing scripted; the whole corpus with the tree walk and with the strategy the rules select (62 of 62 each); candidates reduced with the roots by `reduceToNonAncestors`; `DA3` (a candidate is asked about by itself and is never a target for being named, nor on the strength of a question about several sections; every target of a routing was confirmed by its own question or its group's); an injected source wins and `none` asks nothing; one pass sends the same requests; an explicit target asks no source; a contentless message.
+- `routing/acceptance/referents.test.ts` (2026-11-12): on a backend with the setting on `lexical`, a word found only beyond the opening of an answer makes that section the candidate, the decision records it with its score, and the reply continues from it; with the setting on `none` nothing is recorded.
+- `routing/referents/cost-grid.test.ts` (2026-11-12): the 2× bound and the token budget on every cell again with the lexical source on a message that names answers, and with a source that hands over twelve sections.
+- `protocol/src/contracts.test.ts`, `web/src/app/app.test.tsx`, `web/src/features/debug/debug.test.tsx` (2026-11-12): the candidate source as a setting, its control in Settings → Routing, and the run inspector's "Candidate sections" row.
 - `routing/referents/search.test.ts` (2026-11-12), the policies over the oracle and no decision provider: the non-ancestor set (`reduce`) by example and as a property on five shapes; the start set; `exact` (no budget: exactly the deepest relevant nodes on one chain, an early split, nested forks, sibling groups with join-backs and many roots, for relevance inherited upward and for the least a walk descends on; for any relevant set when its deepest nodes are start candidates; and, with neither, only relevant, confirmed nodes none of which is an ancestor of another); `budget` (no round or probe beyond it, only Point- or Group-confirmed nodes, the exact answer when the budget was not reached, the same search twice); `last` (probes logarithmic in the run's length from 100 to 10,000 sections; only the part that holds the last relevant section is opened; a Point that does not confirm sends the search to the plausible part before it and never into one that was not; short runs point by point; nothing above a confirmed section; a correction opens every plausible part; old single answers found all at once); `walk` (child runs and the join-back, pruning, starting at a candidate, safeguards (a) and (b), a tree 3,000 branch points deep, no candidates = the roots); `switches` (exact with each combination; what is asked first); `policy` (the two policy files import only the port, `search.ts` and `tree.ts`, and hold no wording, ID, estimate or decision-provider type).
 - `routing/referents/referents.test.ts` (2026-11-12): `candidates` (a scripted source through the pipeline: a candidate rides in the routing request and its root is not asked about; never a referent by itself; safeguard (a) in a further request that asks nothing twice; safeguard (b); a candidate older than the window; unknown sections, more than twelve, a failing source, one pass and explicit targets; no source = an empty source; `C19` with one sibling as the candidate); `operations` (one question per probe; two parts with the same ends are two questions; what a Point and a Segment show as context; a summary in place of ancestry).
 - `routing/acceptance/referents.test.ts` (2026-11-12): `candidates` on a backend: the source of `CoreDependencies` is asked per routed message and the J request lands on both siblings from one sibling as the candidate.
@@ -854,14 +966,14 @@ A one-off fit over 24 live requests of both kinds (run once, not kept as a test)
 - `routing/acceptance/selection.test.ts`: on a backend with each selector, C19 (J continues from the join-back and reads both) and C9 (J waits for the whole group); the selection is in the `routing-decided` event and in state; the decision model is asked once per shape and the next message reuses the choice from the log.
 - `routing/corpus/corpus.test.ts`: every example with decisions as labelled, with the strategy the rules select, which is the default (configured the other way round). The per-strategy runs set strategy selection `off`.
 - `protocol/src/contracts.test.ts`, `web/src/app/app.test.tsx`, `web/src/features/debug/debug.test.tsx`: the mode as a setting, its control in Settings → Routing, and the run inspector's "Strategy" row.
-- `providers/src/referents.smoke.test.ts` (`pnpm smoke`): the corpus for nine configurations (one pass, runs always listed, the default, each switch, both, and the three selectors) with its decision cost, the cost of every long example and a tally of the selections; the J and two-section cases five times per configuration; and the cost grid, printed.
+- `providers/src/referents.smoke.test.ts` (`pnpm smoke`): the corpus for twelve configurations (one pass, runs always listed, the default, each switch, both, and the three selectors, all with no candidate source; then one pass, the tree walk and the rules with the lexical one, with the candidate sections each routing was handed) with its decision cost, the cost of every long example and a tally of the selections; the J and two-section cases five times per configuration; and the cost grid, printed.
 - `providers/src/decision-tokens.test.ts` (2026-11-12): the Decisions mock's body parsing and usage; the corpus per configuration, the ratio to characters ÷ 4, and the cost grid with tokenizer counts, all against recorded figures (see "Measuring tokens"). `providers/src/decision-tokens.smoke.test.ts` (`pnpm smoke`): the live calibration.
 - `providers/src/j-request.smoke.test.ts` (`pnpm smoke`): the brief, A, B and J through a real backend with the live providers, J sent during and after the siblings' runs.
 
 ## Left open
 
 - **The price guard's 2× bound under tokenizer counts** (2026-11-12): does not hold for answers of 100 to about 255 tokens (worst 2.79×, 208 of 360 grid cells), because the guard's estimate runs low. A calibrated estimator is proposed in "Measuring tokens" and not applied.
-- **A referent below work the decision model finds unrelated** (2026-11-12): reached only as a first-pass section or through a start candidate. No candidate source and no estimator are built. See "What removing the question costs".
+- **A referent below work the decision model finds unrelated** (2026-11-12): reached only as a first-pass section or through a start candidate. The lexical candidate source now names it when the message shares words with it (all three corpus examples); a reply that names it in other words is still not reached. No embedding index and no estimator are built. See "The candidate source: a lexical index".
 - **The fallback's wording** is no longer the routing request's: its sections are judged beside each other only, not beside the whole window. Not measured live (no corpus routing falls back with the default budget).
 - A referent in a searched run that only its answer text identifies: the chunk question names sections by their requests. Not measured how often this happens.
 - Conversations whose answers are shorter than 100 tokens: the smallest request that routes a message exceeds twice the answer (250 before the pipeline's window became price-aware). Holding the bound lower means fewer than 4 listed sections, or a cheaper request (its fixed part, about 1,000 tokens, is the pipeline's other questions).
