@@ -1,0 +1,200 @@
+import { WORDING } from '@pluribus/protocol'
+import { act, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { describe, expect, test } from 'vitest'
+import type { KeyCheck } from '@pluribus/protocol'
+import { keyFormatProblem } from '@/app/key-validation'
+import { createScriptedKeyProvision, type KeyProvision } from '@/backend'
+import { KeyPrompt } from '@/app/key-prompt'
+import { Shell } from '@/app/shell'
+import { CHAIN_COLOR_LIMIT, chainColor, chainSegments, chainTint } from '@/design/chains'
+import { getFixture } from '@/fixtures'
+import { renderWithBackend } from '@/test/render'
+
+const KEY = 'sk-or-v1-0123456789abcdef0123456789abcdef'
+
+/** The fixture's key provision with the check answered by `check`: nothing is ever sent anywhere. */
+function provision(backend: Parameters<typeof createScriptedKeyProvision>[0], check: () => KeyCheck): KeyProvision {
+  return { ...createScriptedKeyProvision(backend, 0), check: async () => check() }
+}
+
+function fixture(id: string) {
+  const found = getFixture(id)
+  if (!found) throw new Error(`missing fixture ${id}`)
+  return found
+}
+
+describe('key prompt', () => {
+  test('opens by itself on first run, explains itself, and has no environment shortcut outside the dev server', async () => {
+    const { ready } = renderWithBackend(<Shell />, { fixture: fixture('no-key') })
+    await act(() => ready)
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(/kept in\s+this browser/)).toBeInTheDocument()
+    expect(within(dialog).getByRole('link', { name: /Create a key/ })).toHaveAttribute('href', expect.stringContaining('openrouter.ai'))
+    expect(within(dialog).queryByText(/key from this environment/)).not.toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Save key' })).toBeDisabled()
+  })
+
+  test('checks the format, validates live, saves, and never keeps or records the key', async () => {
+    const user = userEvent.setup()
+    const { ready, backend, ui, store } = renderWithBackend(<KeyPrompt />, { fixture: fixture('no-key') })
+    await act(() => ready)
+    act(() => ui.getState().openKeyPrompt())
+    const input = await screen.findByLabelText('API key')
+    expect(input).toHaveAttribute('type', 'password')
+
+    await user.type(input, 'my-key')
+    expect(await screen.findByText(/start with “sk-or-”/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save key' })).toBeDisabled()
+
+    await user.clear(input)
+    await user.type(input, KEY)
+    expect(await screen.findByText(/Key works/)).toBeInTheDocument()
+    expect(screen.getByText('$12.40')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Show key' }))
+    expect(input).toHaveAttribute('type', 'text')
+
+    await user.click(screen.getByRole('button', { name: 'Save key' }))
+    await waitFor(() => expect(store.getState().app?.key.configured).toBe(true))
+    // The first-run prompt keeps its own words while it confirms the save.
+    expect(screen.getByRole('dialog', { name: 'Bring your own OpenRouter key' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Not now' })).toBeInTheDocument()
+    expect(input).toHaveValue('')
+    // The key went to the deployment's key provision: no backend command carries one.
+    expect(JSON.stringify(backend?.sent)).not.toContain(KEY)
+    expect(backend?.sent.some((command) => command.type === 'change-settings')).toBe(false)
+    expect(JSON.stringify(store.getState())).not.toContain(KEY)
+    expect(JSON.stringify(ui.getState())).not.toContain(KEY)
+    expect(document.body.innerHTML).not.toContain(KEY)
+    await waitFor(() => expect(ui.getState().keyPromptOpen).toBe(false), { timeout: 2000 })
+  })
+
+  test('an invalid key cannot be saved; an unreachable OpenRouter can', async () => {
+    const user = userEvent.setup()
+    let result: KeyCheck = { status: 'invalid' }
+    const { ready, ui } = renderWithBackend(<KeyPrompt keys={provision(null, () => result)} />, { fixture: fixture('no-key') })
+    await act(() => ready)
+    act(() => ui.getState().openKeyPrompt())
+    const input = await screen.findByLabelText('API key')
+    await user.type(input, KEY)
+    expect(await screen.findByText(/does not recognize this key/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save key' })).toBeDisabled()
+    result = { status: 'offline' }
+    await user.type(input, 'ff')
+    expect(await screen.findByText(/Could not reach OpenRouter/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save key' })).toBeEnabled()
+  })
+
+  test('the format check knows each provider\'s keys', () => {
+    expect(keyFormatProblem(KEY)).toBeNull()
+    expect(keyFormatProblem('sk-or-short')).toMatch(/too short/)
+    expect(keyFormatProblem('sk-or-v1 0123456789abcdef0123')).toMatch(/no spaces/)
+  })
+})
+
+describe('shell', () => {
+  test('lists conversations, opens one, creates one and deletes one', async () => {
+    const user = userEvent.setup()
+    const { ready, backend, store } = renderWithBackend(<Shell />, { fixture: fixture('trip') })
+    await act(() => ready)
+    const list = screen.getByRole('navigation', { name: 'Conversations' })
+    expect(within(list).getByRole('button', { name: /^Kyoto in November/ })).toHaveAttribute('aria-current', 'page')
+
+    await user.click(within(list).getByRole('button', { name: /^Weekend sourdough/ }))
+    await waitFor(() => expect(store.getState().conversation?.conversationId).toBe('cnv_sourdough'))
+
+    await user.click(screen.getByRole('button', { name: 'New conversation' }))
+    await waitFor(() => expect(store.getState().app?.conversations).toHaveLength(3))
+    await waitFor(() => expect(store.getState().activeConversationId).toBe('cnv_new-1'))
+
+    await user.click(within(list).getByRole('button', { name: 'Options for Weekend sourdough' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Delete' }))
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Delete' }))
+    await waitFor(() => expect(store.getState().app?.conversations).toHaveLength(2))
+    expect(backend?.sent.map((command) => command.type)).toEqual(['create-conversation', 'delete-conversation'])
+  })
+
+  test('the empty state’s New conversation button creates a conversation and opens it', async () => {
+    const user = userEvent.setup()
+    const { ready, store } = renderWithBackend(<Shell />, { fixture: fixture('empty') })
+    await act(() => ready)
+    const list = screen.getByRole('navigation', { name: 'Conversations' })
+    await user.click(within(list).getByRole('button', { name: /^Options for / }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Delete' }))
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Delete' }))
+    const main = screen.getByRole('main')
+    await within(main).findByRole('heading', { name: 'Start the first conversation' })
+
+    await user.click(within(main).getByRole('button', { name: 'New conversation' }))
+    await waitFor(() => expect(store.getState().activeConversationId).toBe('cnv_new-1'))
+    await waitFor(() => expect(within(main).queryByRole('heading', { name: /conversation/ })).toBeNull())
+    expect(store.getState().app?.conversations).toHaveLength(1)
+    expect(await within(main).findByRole('textbox', { name: 'Message' })).toBeInTheDocument()
+  })
+
+  test('settings show every row, send each change, and show only whether a key is configured', async () => {
+    const user = userEvent.setup()
+    const { ready, backend, store } = renderWithBackend(<Shell />, { fixture: fixture('trip') })
+    await act(() => ready)
+    await user.click(screen.getByRole('button', { name: 'Settings' }))
+    const dialog = await screen.findByRole('dialog')
+
+    expect(within(dialog).getByRole('radio', { name: /Standard/ })).toBeChecked()
+    await user.click(within(dialog).getByRole('radio', { name: /Manual/ }))
+    await waitFor(() => expect(store.getState().app?.settings.retryPolicy).toBe('manual'))
+    expect(within(dialog).getByText('Wait before a default choice runs')).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: 'Increase' }))
+    await waitFor(() => expect(store.getState().app?.settings.concurrencyLimit).toBe(5))
+
+    await user.click(within(dialog).getByRole('tab', { name: 'Models' }))
+    for (const role of ['Answers', 'Synthesis', 'Decomposition', 'Decisions']) {
+      expect(within(dialog).getByRole('button', { name: new RegExp(`^${role} model`) })).toBeInTheDocument()
+    }
+    await user.click(within(dialog).getByRole('button', { name: /^Decomposition model/ }))
+    await user.click(await screen.findByRole('option', { name: /Claude Opus 5.5/ }))
+    await waitFor(() => expect(store.getState().app?.settings.models.decomposition).toBe('anthropic/claude-opus-5.5'))
+
+    await user.click(within(dialog).getByRole('tab', { name: 'Routing' }))
+    expect(within(dialog).getAllByRole('slider')).toHaveLength(5)
+
+    await user.click(within(dialog).getByRole('tab', { name: 'Debug views' }))
+    expect(within(dialog).getAllByRole('switch')).toHaveLength(4)
+    await user.click(within(dialog).getByRole('switch', { name: 'Mini-map' }))
+    await waitFor(() => expect(store.getState().app?.settings.debug.miniMap).toBe(true))
+
+    await user.click(within(dialog).getByRole('tab', { name: 'Keys' }))
+    expect(within(dialog).getByTestId('key-status')).toHaveTextContent('Key configured')
+    const sentBefore = backend?.sent.length
+    await user.click(within(dialog).getByRole('button', { name: 'Remove' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Remove' }))
+    await waitFor(() => expect(within(dialog).getByTestId('key-status')).toHaveTextContent('No key'))
+    // Removing a key is the key provision's: no backend command is sent for it.
+    expect(backend?.sent.length).toBe(sentBefore)
+  })
+
+  test('shows the standby notice while another tab runs the backend, then the app', async () => {
+    const { ready, store } = renderWithBackend(<Shell />, { fixture: fixture('empty') })
+    await act(() => ready)
+    act(() => store.setStatus('standby', 'another-tab'))
+    expect(screen.getByRole('status')).toHaveTextContent(WORDING.openInAnotherTab)
+    expect(screen.queryByRole('navigation', { name: 'Conversations' })).not.toBeInTheDocument()
+    act(() => store.setStatus('ready'))
+    expect(screen.getByRole('navigation', { name: 'Conversations' })).toBeInTheDocument()
+  })
+})
+
+describe('chain colors', () => {
+  test('a chain color is its token; several chains are hard segments, never a blend', () => {
+    expect(chainColor(3)).toBe('var(--chain-3)')
+    // 01 · Chain colors: every chain has its own. Past the eight tokens a color is derived from one, never repeated.
+    expect(chainColor(9)).toContain('from var(--chain-1)')
+    const colors = Array.from({ length: CHAIN_COLOR_LIMIT }, (_, index) => chainColor(index))
+    expect(new Set(colors).size).toBe(CHAIN_COLOR_LIMIT)
+    expect(CHAIN_COLOR_LIMIT).toBeGreaterThanOrEqual(32)
+    expect(new Set(colors.map((_, index) => chainTint(index))).size).toBe(CHAIN_COLOR_LIMIT)
+    expect(chainSegments([0, 1])).toBe(
+      'linear-gradient(to bottom, var(--chain-0) 0.000% 50.000%, var(--chain-1) 50.000% 100.000%)',
+    )
+  })
+})
