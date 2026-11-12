@@ -213,13 +213,13 @@ describe('the candidate source', () => {
 describe('the decision token budget', () => {
   const relative = DEFAULT_RELATIVE_TOKEN_BUDGET
 
-  test('budget · the default is relative to the conversation\'s log: 2% of it, never below 16,000 tokens and never above 40,000', () => {
-    expect(DEFAULT_SETTINGS.routing.tokenBudget).toEqual({ mode: 'relative', fraction: 0.02, floor: 16_000, ceiling: 40_000 })
+  test('budget · the default is relative to the conversation\'s log: 3% of it, never below 16,000 tokens and never above 40,000', () => {
+    expect(DEFAULT_SETTINGS.routing.tokenBudget).toEqual({ mode: 'relative', fraction: 0.03, floor: 16_000, ceiling: 40_000 })
     expect(DEFAULT_ABSOLUTE_TOKEN_BUDGET).toEqual({ mode: 'absolute', inputTokens: 16_000 })
     expect(resolveTokenBudget(relative, 0)).toBe(16_000)
     expect(resolveTokenBudget(relative, 500_000)).toBe(16_000)
-    expect(resolveTokenBudget(relative, 1_000_000)).toBe(20_000)
-    expect(resolveTokenBudget(relative, 1_234_567)).toBe(24_691)
+    expect(resolveTokenBudget(relative, 1_000_000)).toBe(30_000)
+    expect(resolveTokenBudget(relative, 1_234_567)).toBe(37_037)
     expect(resolveTokenBudget(relative, 5_000_000)).toBe(40_000)
     // A multiple of the log is a fraction above 1.
     expect(resolveTokenBudget({ mode: 'relative', fraction: 2, floor: 0, ceiling: 1_000_000 }, 3_000)).toBe(6_000)
@@ -256,7 +256,7 @@ describe('the decision token budget', () => {
     // A budget stored by this version is kept, whatever the earlier field says; a broken one is repaired field by field.
     expect(normalizeSettings(stored({ referentBudget: { requests: 4, questions: 96, inputTokens: 30_000 }, tokenBudget: { mode: 'absolute', inputTokens: 7_000 } })).routing.tokenBudget).toEqual({ mode: 'absolute', inputTokens: 7_000 })
     expect(normalizeSettings(stored({ tokenBudget: { mode: 'relative', fraction: 0.05, floor: 8_000, ceiling: 4_000 } })).routing.tokenBudget).toEqual({ mode: 'relative', fraction: 0.05, floor: 8_000, ceiling: 40_000 })
-    expect(normalizeSettings(stored({ tokenBudget: { mode: 'relative', fraction: -1, floor: 8_000, ceiling: 9_000 } })).routing.tokenBudget).toEqual({ mode: 'relative', fraction: 0.02, floor: 8_000, ceiling: 9_000 })
+    expect(normalizeSettings(stored({ tokenBudget: { mode: 'relative', fraction: -1, floor: 8_000, ceiling: 9_000 } })).routing.tokenBudget).toEqual({ mode: 'relative', fraction: 0.03, floor: 8_000, ceiling: 9_000 })
     expect(normalizeSettings(stored({})).routing.tokenBudget).toEqual(relative)
     // Normalised settings are valid as a patch.
     expect(validateSettingsPatch({ routing: { tokenBudget: chosen.tokenBudget } })).toBeNull()

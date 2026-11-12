@@ -253,6 +253,12 @@ export type RoutingOutcome =
       readonly kind: 'target-ambiguity'
       /** Existing sections only. */
       readonly candidates: readonly { readonly sectionId: SectionId; readonly confidence: number }[]
+      /**
+       * The decision behind the question, recorded on the elicitation's event: the questions put to the decision
+       * model with their answers, the thresholds in force. No units: nothing was placed. Left out by a router that
+       * keeps no record (a scripted one).
+       */
+      readonly decision?: RoutingDecision
     }
   /** The decision provider or the decomposer failed. The engine records `routing-failed`; Retry routes again. */
   | { readonly kind: 'failed'; readonly error: ProviderError }

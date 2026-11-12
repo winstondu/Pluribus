@@ -186,18 +186,18 @@ describe('shell', () => {
     expect(within(dialog).getByText(/A combined limit like “under 100 words total” always keeps a message as one request/)).toBeInTheDocument()
 
     await user.click(within(dialog).getByRole('tab', { name: 'Routing' }))
-    // Five thresholds and the decision token budget's value.
-    expect(within(dialog).getAllByRole('slider')).toHaveLength(6)
+    // Six thresholds and the decision token budget's value.
+    expect(within(dialog).getAllByRole('slider')).toHaveLength(7)
     // The token budget: a share of the conversation by default, or a fixed number; one setting, the mode and its value.
     expect(within(dialog).getByRole('radio', { name: /Share of the conversation/ })).toBeChecked()
     expect(within(dialog).getByText(/Never fewer than 16,000 tokens.*never more than 40,000/)).toBeInTheDocument()
-    expect(within(dialog).getByText('2.0%')).toBeInTheDocument()
+    expect(within(dialog).getByText('3.0%')).toBeInTheDocument()
     await user.click(within(dialog).getByRole('radio', { name: /Fixed/ }))
     await waitFor(() => expect(store.getState().app?.settings.routing.tokenBudget).toEqual({ mode: 'absolute', inputTokens: 16_000 }))
     expect(await within(dialog).findByText('16,000')).toBeInTheDocument()
     expect(within(dialog).getByText('Tokens per message')).toBeInTheDocument()
     await user.click(within(dialog).getByRole('radio', { name: /Share of the conversation/ }))
-    await waitFor(() => expect(store.getState().app?.settings.routing.tokenBudget).toEqual({ mode: 'relative', fraction: 0.02, floor: 16_000, ceiling: 40_000 }))
+    await waitFor(() => expect(store.getState().app?.settings.routing.tokenBudget).toEqual({ mode: 'relative', fraction: 0.03, floor: 16_000, ceiling: 40_000 }))
     // Strategy selection: by the rules unless changed; the decision model, or the strategy as set below.
     expect(within(dialog).getByRole('radio', { name: /By rules/ })).toBeChecked()
     expect(within(dialog).getByText(/the ones set below are not used/)).toBeInTheDocument()

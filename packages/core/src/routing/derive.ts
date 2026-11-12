@@ -1,5 +1,7 @@
 import {
   deepEqual,
+  JOIN_CHOICE_OFF,
+  type ChainId,
   type DecisionThresholds,
   type DirectiveId,
   type NodeId,
@@ -35,7 +37,8 @@ import type { Supplied } from './supply'
  * is a target too. Set from the first live corpus run (PLAN §7). It is also
  * the plausibility floor of the best node found so far, which stands in
  * for the question to the user when the decision budget stopped the search
- * (`resolveUnitTargets`).
+ * (`resolveUnitTargets`), and the floor of a section taken as a target
+ * when a reply joins several lines instead of asking (`joinedTargets`).
  */
 export const AMBIGUITY_FLOOR = 0.25
 
@@ -48,6 +51,11 @@ export type TargetResolution =
       readonly mode: TargetMode
       /** True when the targets are the best node found so far, taken because the decision budget was reached. */
       readonly bestFound?: boolean
+      /**
+       * Set when the targets join several lines of work where the user would otherwise have been asked: the
+       * decision model's confidence that the unit brings those lines together (`thresholds.joinChoice`).
+       */
+      readonly joined?: { readonly confidence: number }
     }
   | { readonly kind: 'ambiguous'; readonly candidates: readonly { readonly sectionId: SectionId; readonly confidence: number }[] }
 
@@ -56,9 +64,14 @@ export type TargetResolution =
  * used as given (for a fragment: those of them it refers to). Otherwise a
  * section is inferred at or above `targetChoice`, several sections may be
  * inferred, and sections that only reach the ambiguity floor are a
- * question to the user, never a guess. The one exception is a routing
- * whose referent strategy the decision budget stopped (`budgetStop`): the
- * user is not asked, and the best node found so far is taken.
+ * question to the user, never a guess. Two exceptions, neither a guess
+ * about which one section is meant:
+ * - a routing whose referent strategy the decision budget stopped
+ *   (`budgetStop`): the user is not asked, and the best node found so far
+ *   is taken;
+ * - a unit the decision model says brings several lines of work together,
+ *   at `joinChoice`: the question "which one?" has no single answer, so
+ *   the lines are joined (`joinedTargets`).
  */
 export function resolveUnitTargets(
   signals: UnitSignals,
@@ -79,6 +92,8 @@ export function resolveUnitTargets(
      * neither the handling chain nor the placement they give (see `referentCovered`).
      */
     readonly covered: (accepted: readonly SectionId[], weak: SectionId) => boolean
+    /** The line of work a section is on, for joining instead of asking; null for a section that is not an answer. Left out, nothing is joined. */
+    readonly lineOf?: (sectionId: SectionId) => ChainId | null
     /**
      * Set when the decision budget stopped the referent strategy (11 · "Decision budget"): the best node found so
      * far, empty when there is none. The budget is a hard stop, so the user is not asked: where the rules below
@@ -115,6 +130,8 @@ export function resolveUnitTargets(
         else uncovered = true
       }
       if (uncovered && options.mayBeReply && !options.budgetStop) {
+        const joined = joinedTargets(signals, ranked, accepted, thresholds, options.lineOf)
+        if (joined) return joined
         return {
           kind: 'ambiguous',
           candidates: ranked.filter((t) => t.confidence >= AMBIGUITY_FLOOR).map((t) => ({ sectionId: t.id, confidence: t.confidence })),
@@ -130,9 +147,43 @@ export function resolveUnitTargets(
       const best = options.budgetStop.best
       return { kind: 'resolved', sectionIds: best, mode: best.length > 0 ? 'inferred' : 'none', bestFound: best.length > 0 }
     }
+    const joined = joinedTargets(signals, ranked, [], thresholds, options.lineOf)
+    if (joined) return joined
     return { kind: 'ambiguous', candidates: weak.map((t) => ({ sectionId: t.id, confidence: t.confidence })) }
   }
   return { kind: 'resolved', sectionIds: [], mode: 'none' }
+}
+
+/**
+ * Joining instead of asking (05). Called only where the user would
+ * otherwise be asked which section a unit means. That question presumes
+ * one answer; when the decision model says, at `joinChoice`, that the unit
+ * brings several lines of work together, there is none to give, and the
+ * unit takes what it would have offered the user: the targets already
+ * accepted and every other answer section at the ambiguity floor.
+ * Placement then makes the join chain (`derivePlacement`): a section in
+ * another's ancestry is read through it, so each line contributes one
+ * parent, which the engine moves to that line's leaf.
+ *
+ * Null, so the user is asked, when the threshold is off or not reached,
+ * or when those sections are all on one line: "which of these?" is then
+ * the real question.
+ */
+function joinedTargets(
+  signals: UnitSignals,
+  ranked: readonly Scored<SectionId>[],
+  accepted: readonly SectionId[],
+  thresholds: DecisionThresholds,
+  lineOf: ((sectionId: SectionId) => ChainId | null) | undefined,
+): Extract<TargetResolution, { kind: 'resolved' }> | null {
+  const confidence = signals.lines
+  if (!lineOf || confidence === null || thresholds.joinChoice >= JOIN_CHOICE_OFF || confidence < thresholds.joinChoice) return null
+  const sectionIds = [...accepted]
+  for (const t of ranked) {
+    if (t.confidence >= AMBIGUITY_FLOOR && !sectionIds.includes(t.id) && lineOf(t.id) !== null) sectionIds.push(t.id)
+  }
+  const lines = new Set(sectionIds.map(lineOf).filter((line) => line !== null))
+  return lines.size >= 2 ? { kind: 'resolved', sectionIds, mode: 'inferred', joined: { confidence } } : null
 }
 
 /**
