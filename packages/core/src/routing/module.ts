@@ -194,6 +194,8 @@ const targetAmbiguity: OutcomeHandler<'target-ambiguity'> = (_state, outcome, ta
   ctx.emit({
     type: 'elicitation-raised',
     elicitation: { kind: 'target-ambiguity', elicitationId: ctx.ids.next('elicitation'), messageId: target.messageId, candidates: outcome.candidates },
+    // Why it was asked: the questions behind it and their answers, for the log and its export.
+    ...(outcome.decision ? { decision: outcome.decision } : {}),
   })
 }
 

@@ -350,7 +350,7 @@ async function routeMessage(deps: Deps, input: RoutingInput, signal: CancelSigna
     lineOf: (id) => lineOfSection(supplied, id),
     budgetStop: referents.stop ? { best: referents.stop.best.get('m')?.sectionIds ?? [] } : null,
   })
-  if (resolution.kind === 'ambiguous') return { kind: 'target-ambiguity', candidates: resolution.candidates }
+  if (resolution.kind === 'ambiguous') return { kind: 'target-ambiguity', candidates: resolution.candidates, decision: askRecord(input, record, compositeDecided) }
   if (resolution.joined) record.joinedLines.push({ unit: 'message', sectionIds: resolution.sectionIds, confidence: resolution.joined.confidence })
   if (resolution.bestFound) record.bestFound.push({ unit: 'message', sectionIds: resolution.sectionIds, confidence: referents.stop?.best.get('m')?.confidence ?? 0 })
   noteRunEnds(record, 'message', referents.units['m'], resolution.sectionIds)
@@ -604,6 +604,7 @@ async function routeComposite(deps: Deps, input: RoutingInput, signal: CancelSig
     return {
       kind: 'target-ambiguity',
       candidates: [...ambiguous].sort((x, y) => y[1] - x[1]).map(([sectionId, confidence]) => ({ sectionId, confidence })),
+      decision: askRecord(input, record, { value: 'composite', confidence: c.composite }),
     }
   }
 
@@ -1387,6 +1388,14 @@ function decisionRecord(
     ...(record.runEnds.length > 0 ? { runEnds: record.runEnds } : {}),
     ...(record.joinedLines.length > 0 ? { joinedLines: record.joinedLines } : {}),
   }
+}
+
+/**
+ * The decision behind a question to the user about the reply target: what was asked of the decision model and what it
+ * answered, with no units, because nothing is placed until the user has chosen.
+ */
+function askRecord(input: RoutingInput, record: Record, composition: Decided<'atomic' | 'composite'>): RoutingDecision {
+  return decisionRecord(input, record, composition, [], 'No section is a clear reply target and several are plausible: the user is asked which is meant.')
 }
 
 /** The whole message answers an open clarification question (Q98): no directive, the blocked work is released. */

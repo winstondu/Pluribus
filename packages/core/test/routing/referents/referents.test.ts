@@ -957,10 +957,10 @@ describe('long runs · hop between branch points', () => {
     expect(clear.outcome.kind).toBe('plan')
     expect(unit(clear).targets).toEqual(sections(['B3']))
     const weak = await route(runs, 'Tell me more about pricing step 1', { own: { brief: 0.3 }, chunk: { B1: 0.4 } }, { treeWalk: on })
-    expect(weak.outcome).toEqual({ kind: 'target-ambiguity', candidates: [{ sectionId: sceneIds.section('B3'), confidence: 0.4 }, { sectionId: sceneIds.section('brief'), confidence: 0.3 }] })
+    expect(weak.outcome).toMatchObject({ kind: 'target-ambiguity', candidates: [{ sectionId: sceneIds.section('B3'), confidence: 0.4 }, { sectionId: sceneIds.section('brief'), confidence: 0.3 }] })
     // Off, a section that is weakly plausible by itself is asked about the same way.
     const off = await route(runs, 'Tell me more about pricing step 1', { own: { brief: 0.3, B1: 0.4 } })
-    expect(off.outcome).toEqual({ kind: 'target-ambiguity', candidates: [{ sectionId: sceneIds.section('B1'), confidence: 0.4 }, { sectionId: sceneIds.section('brief'), confidence: 0.3 }] })
+    expect(off.outcome).toMatchObject({ kind: 'target-ambiguity', candidates: [{ sectionId: sceneIds.section('B1'), confidence: 0.4 }, { sectionId: sceneIds.section('brief'), confidence: 0.3 }] })
   })
 
   test('hops · a relevant descendant stands for the run above it: the walk goes on below a run that is referred to, and the last section of that run is not a target', async () => {

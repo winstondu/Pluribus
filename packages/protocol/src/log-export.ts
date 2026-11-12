@@ -83,6 +83,12 @@ export interface RoutingDecisionIndexEntry {
   /** The latest `routing-decided` for the message, which is the one in force. */
   readonly routingInForce: EventRef | null
   /**
+   * Each `elicitation-raised` of the message that carries the routing
+   * decision behind a question about its reply target (`decision` on the
+   * event): the questions put to the decision model and their answers.
+   */
+  readonly routingAsks: readonly EventRef[]
+  /**
    * Every event about the message or its work, in order, except streamed
    * answer text: routing, decomposition, directives, waits, attempts and
    * their outcomes, revisions, elicitations and choices.

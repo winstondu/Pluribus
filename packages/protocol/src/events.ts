@@ -926,6 +926,16 @@ export interface RegenerateRequested extends ConversationEnvelope<'regenerate-re
 /** Pluribus asked the user to decide something (07). */
 export interface ElicitationRaised extends ConversationEnvelope<'elicitation-raised'> {
   readonly elicitation: ElicitationRecord
+  /**
+   * For a target ambiguity raised by the routing pipeline: the decision
+   * behind the question. It holds every question put to the decision model
+   * with its answer and what it was shown, the thresholds in force, and how
+   * the referent strategy was chosen, as a `routing-decided` does. It has
+   * no units, because nothing was placed: the message is routed again once
+   * the user has chosen, and that routing records its own decision. Left
+   * out on other kinds, and on events recorded before this was kept.
+   */
+  readonly decision?: RoutingDecision
 }
 
 /** The user edited the selection of a choice with default without confirming it. The wait continues (Q45). */

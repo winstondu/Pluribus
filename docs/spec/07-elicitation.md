@@ -11,6 +11,8 @@ When Pluribus asks the user to decide, and when it may go ahead on its own.
 | **Choice with default** | Pluribus can propose a reasonable action, but its scope is the user's call | Affected running work stops; affected queued work holds; unaffected work continues | Yes (Q42, Q44–Q46) |
 | **Recovery choice** | A dependency-queued request's prerequisite failed, was stopped, or was interrupted | The request stays paused | Never (Q48, Q52) |
 
+**What is recorded.** A target-ambiguity elicitation records the decision behind it: the questions put to the decision model, their answers, and the thresholds in force. The reply has no routing decision of its own until the user has chosen, so this is what says why Pluribus asked.
+
 **Where each appears.** Clarification questions are additional responses in the transcript. The recovery choice is on the paused request's queue item. Target-ambiguity and choice-with-default elicitations appear as a modal above the composer (Q95).
 
 ## Clarification

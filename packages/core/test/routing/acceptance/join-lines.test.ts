@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest'
 import type { TestBackendOverrides } from '../../../testing'
 import { answer } from '../../../testing'
 import { routingScenario } from '../../../testing/acceptance/routing'
+import { routingDecisionIndex } from '../../../src/engine/log-export'
 
 /**
  * Joining instead of asking (05 · "Joining instead of asking", T4;
@@ -78,6 +79,27 @@ describe('joining instead of asking', () => {
     expect(s.state().directiveOrder).toHaveLength(before)
     const elicitation = Object.values(s.state().elicitations).at(-1)
     expect(elicitation?.record.kind).toBe('target-ambiguity')
+  })
+
+  test('T4 · a question about the reply target records the decision behind it: the questions asked, their answers and the thresholds, and the export indexes it', async () => {
+    const s = await cityAndSky()
+    const messageId = await s.send(BOTH, { message: { relation: 'addition', several: 0.66, lines: 0.6, targets: WEAK } })
+    const events = await s.events()
+    const raised = events.find((e) => e.type === 'elicitation-raised')
+    if (raised?.type !== 'elicitation-raised' || !raised.decision) throw new Error('expected an elicitation-raised event with its decision')
+    const decision = raised.decision
+    expect(decision.source).toBe('decision-model')
+    // Nothing was placed: the message is routed again once the user has chosen.
+    expect(decision.units).toEqual([])
+    expect(decision.thresholds).toMatchObject({ targetChoice: 0.7, joinChoice: 0.8, ambiguityFloor: 0.25 })
+    const answers = Object.fromEntries(decision.questions.map((q) => [q.id, q.answer]))
+    expect(answers).toMatchObject({ m_lines: 0.6, m_several: 0.66, m_s1: 0.57, m_s2: 0.39, m_s3: 0.43 })
+    expect(decision.explanation).toContain('the user is asked which is meant')
+    // No routing decision is in force yet, and the index points at the ask.
+    expect(events.filter((e) => e.type === 'routing-decided' && e.messageId === messageId)).toHaveLength(0)
+    const entry = routingDecisionIndex(events).find((x) => x.messageId === messageId)
+    expect(entry?.routingInForce).toBeNull()
+    expect(entry?.routingAsks).toEqual([{ seq: raised.seq, type: 'elicitation-raised' }])
   })
 
   test('T4 · with the join threshold off the question about the lines is not asked, and the user is', async () => {

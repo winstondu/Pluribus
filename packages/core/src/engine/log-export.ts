@@ -153,6 +153,7 @@ interface IndexBuilder {
   readonly submittedSeq: number
   readonly text: string
   routingInForce: EventRef | null
+  readonly routingAsks: EventRef[]
   readonly events: EventRef[]
   readonly directives: Map<DirectiveId, { directiveId: DirectiveId; label: string; attempts: AttemptIndex[] }>
   readonly elicitationIds: Set<ElicitationId>
@@ -208,6 +209,7 @@ export function routingDecisionIndex(events: readonly ConversationEvent[]): Rout
         submittedSeq: event.seq,
         text: event.text.slice(0, 120),
         routingInForce: null,
+        routingAsks: [],
         events: [],
         directives: new Map(),
         elicitationIds: new Set(),
@@ -245,6 +247,7 @@ export function routingDecisionIndex(events: readonly ConversationEvent[]): Rout
       }
       case 'elicitation-raised':
         entry.elicitationIds.add(event.elicitation.elicitationId)
+        if (event.decision) entry.routingAsks.push(ref)
         break
       default:
         if (TERMINAL_ATTEMPT_TYPES.has(event.type) && 'attemptId' in event) {
@@ -260,6 +263,7 @@ export function routingDecisionIndex(events: readonly ConversationEvent[]): Rout
     submittedSeq: entry.submittedSeq,
     text: entry.text,
     routingInForce: entry.routingInForce,
+    routingAsks: entry.routingAsks,
     events: entry.events,
     directives: [...entry.directives.values()].map((directive) => ({
       directiveId: directive.directiveId,

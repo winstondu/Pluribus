@@ -44,7 +44,7 @@ Start at `derived.routingDecisions`, find the message, and follow its `seq`s int
 - `directive-created` and the waits that follow (`directive-waiting`, `-held`, `-paused`, `-ready`, `prerequisites-changed`, `sibling-*`, `join-back-formed`): the plan carried out.
 - `attempt-started`: each attempt's model, role, parents and the exact `context` it read (messages, node ids, inputs, corrections, session requirements, counted input tokens). Then `attempt-output` chunks and one of `attempt-completed`, `-failed` (with the retry plan), `-stopped`, `-interrupted`.
 - `revision-recorded`, `section-superseded`, `superseded-input-noted`: corrections and recovery.
-- `elicitation-raised`, `-edited`, `-answered`, `-defaulted`, `-withdrawn`: questions put to the user and the choices made.
+- `elicitation-raised`, `-edited`, `-answered`, `-defaulted`, `-withdrawn`: questions put to the user and the choices made. An `elicitation-raised` for a target ambiguity carries `decision`: the routing decision behind the question, in the shape of a `routing-decided` decision with no `units`. Its `questions` are every question put to the decision model with its answer (each section by itself, several sections, several lines of work, the line choice), beside the `thresholds` in force. No `routing-decided` exists for the message until the user has chosen, so this is the only record of why it was asked. `derived.routingDecisions[].routingAsks` points at these events.
 
 The export carries events and inspections whole, so fields that later work adds to them (for example more of what the decision model was shown, or readiness results) are exported without a change here.
 
