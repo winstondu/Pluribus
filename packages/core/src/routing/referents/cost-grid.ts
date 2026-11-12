@@ -66,8 +66,8 @@ function conversation(shape: CostGridShape, n: number, exchange: number): Scene 
       on,
       label: filler(`topic ${count}`, 30),
       request: filler(`Please go into point ${count} of the plan in detail`, Math.round(exchange * 0.15 * 4)),
-      answer: filler(`Here is what matters about point ${count}.`, Math.min(280, answerLength)),
-      answerLength,
+      // The whole answer, written out: a question about a section by itself shows as much of it as the budget allows.
+      answerText: filler(`Here is what matters about point ${count}.`, answerLength),
     })
   }
   if (shape === 'flat') {

@@ -39,6 +39,7 @@ export function routingCandidates(state: ConversationState): RoutingCandidates {
       request: d.instruction,
       excerpt: latest ? (state.attemptText[latest] ?? '').slice(0, 280) : '',
       answerLength: latest ? (state.attemptText[latest] ?? '').length : 0,
+      attemptId: latest ?? null,
       state: sectionState(state, section.id),
       chainId: d.chainId,
       nodeId: d.nodeId,

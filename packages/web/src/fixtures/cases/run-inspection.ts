@@ -213,6 +213,16 @@ const dailyLimit = {
   },
 }
 
+/** The wording of a question about one section by itself, as the pipeline asks it. */
+const OWN = (n: string, title: string): string =>
+  `Does the new message refer to answer section ${n} ("${title}"): reply to it, build on it, compare or combine it with another answer, or correct it?`
+const SHOWN_BRIEF_OPENING =
+  'Four days in Lisbon in May: warm days, cool evenings, and hills everywhere. Plan one neighbourhood a day, keep the tram 28 for an early morning, and leave an afternoon open for a day trip. Book the castle and the Jerónimos monastery ahead; both have long queues by ten.'
+const SHOWN_FOOD_OPENING =
+  'Cervejaria Ramiro for prawns and clams (no booking, go before seven). Taberna da Rua das Flores for small plates. Sea Me in Chiado for a modern take. In Belém, the grilled sardines at the stalls by the river are the cheap and right answer in May,'
+const SHOWN_FOOD_PASSAGE =
+  '## Walking between them Ramiro is at the bottom of Avenida Almirante Reis, an easy walk from Baixa on the flat. Taberna da Rua das Flores is a short climb into Chiado. Plan both on days you are already near; neither is worth a cross-town trip on foot when the day is long.'
+
 const itineraryRouting = decision(
   {
     key: 'message',
@@ -254,8 +264,49 @@ const itineraryRouting = decision(
         confidence: 0.88,
         probabilities: null,
       },
+      {
+        id: 'm_s1',
+        type: 'noul',
+        instructions: OWN('S1', 'trip brief'),
+        candidates: {},
+        answer: 0.21,
+        confidence: null,
+        probabilities: null,
+      },
+      {
+        id: 'm_s2',
+        type: 'noul',
+        instructions: OWN('S2', 'where to stay'),
+        candidates: {},
+        answer: 0.88,
+        confidence: null,
+        probabilities: null,
+      },
+      {
+        id: 'm_s3',
+        type: 'noul',
+        instructions: OWN('S3', 'seafood places'),
+        candidates: {},
+        answer: 0.86,
+        confidence: null,
+        probabilities: null,
+      },
     ],
+    shownRecorded: true,
   },
+  [
+    null,
+    null,
+    [{ sectionId: id('section', 'brief'), form: 'opening', text: `S1. "trip brief": request "Trip brief: Lisbon, four days, in May"; answer "${SHOWN_BRIEF_OPENING}"` }],
+    [{ sectionId: id('section', 'stay'), form: 'full', text: `S2. "where to stay": request "${STAY}"; answer "${STAY_ANSWER}"` }],
+    [
+      {
+        sectionId: id('section', 'food'),
+        form: 'passages',
+        text: `S3. "seafood places": request "Which seafood places should we try?"; answer, its opening and the passages that share the most words with the message: "${SHOWN_FOOD_OPENING}" … "${SHOWN_FOOD_PASSAGE}"`,
+      },
+    ],
+  ],
 )
 
 const itineraryAttempts = [
@@ -463,6 +514,18 @@ const packing: RunInspection = {
     needsClarification: 0.07,
     explanation: '“That plan” is the itinerary, which is still being written, so the packing list waits for it.',
   }, {
+    // Recorded before the text a question showed of its sections was kept: the inspector shows the question alone.
+    questions: [
+      {
+        id: 'm_s4',
+        type: 'noul',
+        instructions: OWN('S4', 'itinerary'),
+        candidates: {},
+        answer: 0.84,
+        confidence: null,
+        probabilities: null,
+      },
+    ],
     // A strategy selector was on: the decision model was not confident, so the rules chose.
     strategySelection: {
       selector: 'rules',

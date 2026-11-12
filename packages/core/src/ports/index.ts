@@ -47,6 +47,7 @@ export type {
 export type { CachedState, EventStore, JsonValue, ProjectionCache, SecretName, SecretsStore } from './stores'
 export { EventStoreConflictError } from './stores'
 export type {
+  AnswerSource,
   CandidateChain,
   CandidateGroup,
   CandidateSection,
@@ -74,6 +75,7 @@ export type {
   ReferentStrategy,
   ReferentUnit,
   ScoredSection,
+  ShownSubjects,
   UnitReferents,
 } from './referent-strategy'
 export type {

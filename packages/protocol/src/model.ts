@@ -506,6 +506,69 @@ export interface DecisionQuestionRecord {
   readonly answer: number | string
   readonly confidence: number | null
   readonly probabilities: { readonly [option: string]: number } | null
+  /**
+   * What the decision model was shown for the answer sections the question
+   * is about: the section asked about by itself (a Point), or every member
+   * of a sibling group asked about as a whole. Each is the section's line in
+   * the request's state text, exactly as sent. Left out for a question about
+   * no section or about a part of a run (whose sections the question names
+   * itself), and on every question of a decision recorded before it was
+   * kept (`RoutingDecision.shownRecorded`).
+   */
+  readonly shown?: readonly ShownSection[]
+}
+
+/**
+ * How much of a section's answer the decision model was shown in a question
+ * about it (docs/build/dependency-decisioning.md · "What a Point shows").
+ * - `full`: the whole answer so far.
+ * - `passages`: its opening and the passages that best match the message's words; the whole did not fit the budget.
+ * - `opening`: its first 280 characters, as every section listed in a request is shown.
+ * - `summary`: a stored summary of the work before it and the section's own content, in place of the answer.
+ */
+export type ShownAnswerForm = 'full' | 'passages' | 'opening' | 'summary'
+
+/**
+ * A piece of a section's line as the decision model was shown it: literal
+ * text, or a span of an attempt's recorded answer text. A span is shown
+ * with its whitespace collapsed to single spaces and trimmed
+ * (`renderShownLine`). Attempt text only grows, so a span recorded while
+ * the answer was still streaming still reads the same text on replay.
+ */
+export type ShownPiece =
+  | { readonly kind: 'text'; readonly text: string }
+  | { readonly kind: 'answer'; readonly attemptId: AttemptId; readonly start: number; readonly end: number }
+  /**
+   * A stored context summary, by its ID. Its text is never written to the
+   * log (invariant 12: no record holds a summary), so the inspector shows
+   * where it stood, not what it said.
+   */
+  | { readonly kind: 'summary'; readonly summaryId: string; readonly characters: number }
+
+/** One answer section as a decision request showed it. */
+export interface ShownSection {
+  readonly sectionId: SectionId
+  readonly form: ShownAnswerForm
+  /** The section's line of the request's state text, in pieces: answer text by reference, so a long answer is not copied into the log. */
+  readonly line: readonly ShownPiece[]
+}
+
+/** The text a span of answer text is shown as: whitespace collapsed to single spaces, trimmed. */
+export function collapseShownText(text: string): string {
+  return text.replace(/\s+/g, ' ').trim()
+}
+
+/** A section's line as it was sent, from its pieces and the recorded text of the attempts they name. */
+export function renderShownLine(line: readonly ShownPiece[], attemptText: (attemptId: AttemptId) => string): string {
+  return line
+    .map((piece) =>
+      piece.kind === 'text'
+        ? piece.text
+        : piece.kind === 'answer'
+          ? collapseShownText(attemptText(piece.attemptId).slice(piece.start, piece.end))
+          : `[context summary ${piece.summaryId}, ${piece.characters} characters: its text is not kept in the log]`,
+    )
+    .join('')
 }
 
 /** A reply to a superseded section resolves to its current replacement (Q43, T3). */
@@ -678,6 +741,12 @@ export interface RoutingDecision {
   readonly thresholds: { readonly [name: string]: number }
   readonly explanation: string
   readonly questions: readonly DecisionQuestionRecord[]
+  /**
+   * True on decisions recorded since the text shown for a question's
+   * sections is kept (`DecisionQuestionRecord.shown`). Left out on older
+   * records, whose questions carry only their wording.
+   */
+  readonly shownRecorded?: boolean
   /** How the referent strategy was chosen, when a strategy selector was on (`settings.routing.strategySelection`). */
   readonly strategySelection?: StrategySelectionRecord | null
   /** Set when a limit of the decision budget stopped the referent strategy, with the best node found so far where one was used. */

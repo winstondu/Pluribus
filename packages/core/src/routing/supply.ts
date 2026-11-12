@@ -1,6 +1,7 @@
 import { IN_FLIGHT_STATES, type DirectiveId, type NodeId, type SectionId, type SiblingGroupId } from '@committee/protocol'
 import { FIRST_PASS_SECTIONS, firstPassSectionIds } from './referents/first-pass'
-import type { CandidateChain, CandidateGroup, CandidateSection, CandidateWork, DecisionContext, ReferentSection, RoutingInput } from '../ports'
+import type { AnswerSource, CandidateChain, CandidateGroup, CandidateSection, CandidateWork, DecisionContext, ReferentSection, RoutingInput } from '../ports'
+import { createShowing, renderLine, shownWords, type Line, type Showing, type ShownChoice } from './shown'
 
 /**
  * Which candidates the decision model is asked about (12 · "Left to the
@@ -78,10 +79,7 @@ function quote(text: string, max = 400): string {
   return `"${flat.length > max ? `${flat.slice(0, max)}…` : flat}"`
 }
 
-/** The most of a summary shown in a section's line. */
-export const SUMMARY_SHOWN = 600
-/** The most messages of a section's own content shown after a summary: the latest ones. */
-export const OWN_MESSAGES_SHOWN = 6
+export { SUMMARY_SHOWN, OWN_MESSAGES_SHOWN } from './shown'
 
 /**
  * What the decision model is shown for a section in place of its usual
@@ -95,20 +93,39 @@ export function decisionContextOf(input: Pick<RoutingInput, 'settings' | 'decisi
   return context?.kind === 'summary' ? context : null
 }
 
+/** The texts a routing shows answers from (`routing/shown.ts`): the whole answers the engine supplied, and the message's words. */
+export function showingFor(input: Pick<RoutingInput, 'answerText' | 'text'>): Showing {
+  return createShowing({ answerOf: answerOf(input), words: shownWords(input.text) })
+}
+
+/** A section's whole answer so far as the engine supplied it, with the attempt it is the text of. */
+export function answerOf(input: Pick<RoutingInput, 'answerText'>): (section: CandidateSection) => AnswerSource {
+  return (section) => ({ attemptId: section.attemptId ?? null, text: input.answerText?.(section.sectionId) ?? section.excerpt })
+}
+
+/** Lines with the excerpt alone: what every section shows unless it is a Point with room to show more. */
+const PLAIN = createShowing({})
+
 /**
- * A section's line. With a summary: the summary of its context up to the
- * anchor, then the content specific to the section (the exchanges after
- * the anchor, the section's own last).
+ * A section's line, its answer by its opening. With a summary: the summary
+ * of its context up to the anchor, then the content specific to the
+ * section (the exchanges after the anchor, the section's own last). A
+ * section asked about by itself may be shown more of its answer: see
+ * `routing/shown.ts`.
  */
 export function sectionLine(s: CandidateSection, n: number, context: DecisionContext | null = null): string {
-  if (s.asksElicitationId) return `S${n}. A question Committee asked the user, still unanswered: ${quote(s.excerpt || s.request)}`
-  if (context?.kind === 'summary') {
-    const own = context.own.slice(-OWN_MESSAGES_SHOWN).map((m) => `${m.role === 'assistant' ? 'answer' : 'request'} ${quote(m.content, m.role === 'assistant' ? 280 : 240)}`)
-    const after = own.length > 0 ? `; after that: ${own.join('; ')}` : ''
-    return `S${n}. "${s.title}": the work before it, summarised: ${quote(context.summary.text, SUMMARY_SHOWN)}${after}`
-  }
-  const answer = s.excerpt ? `answer ${s.state === 'completed' ? '' : `so far (${s.state}) `}${quote(s.excerpt)}` : `no answer yet (${s.state})`
-  return `S${n}. "${s.title}": request ${quote(s.request, 240)}; ${answer}`
+  return renderLine(PLAIN.line(s, n, context))
+}
+
+/** What the sections of a request are shown with: the texts, and the form chosen for each Point (the opening for the rest). */
+export interface Shown {
+  readonly showing: Showing
+  readonly choices: ReadonlyMap<SectionId, ShownChoice>
+}
+
+/** A listed section's line in the pipeline's state text. */
+export function listedLine(input: RoutingInput, s: CandidateSection, n: number, shown: Shown | null): Line {
+  return (shown?.showing ?? PLAIN).line(s, n, decisionContextOf(input, s), shown?.choices.get(s.sectionId))
 }
 
 function chainLine(chain: CandidateChain, n: number): string {
@@ -120,11 +137,11 @@ function chainLine(chain: CandidateChain, n: number): string {
  * the candidates describe it, then the subject. Candidates are numbered so
  * that questions can name them; the numbers are the option keys.
  */
-export function describeState(input: RoutingInput, supplied: Supplied, subject: string): string {
+export function describeState(input: RoutingInput, supplied: Supplied, subject: string, shown: Shown | null = null): string {
   const lines: string[] = []
   if (supplied.sections.length > 0) {
     lines.push('Answer sections in this conversation, oldest first:')
-    supplied.sections.forEach((s, i) => lines.push(sectionLine(s, i + 1, decisionContextOf(input, s))))
+    supplied.sections.forEach((s, i) => lines.push(renderLine(listedLine(input, s, i + 1, shown))))
   } else {
     lines.push('The conversation has no answers yet.')
   }

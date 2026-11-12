@@ -1,7 +1,7 @@
-import type { DecisionBudget, ProviderError, ReferentStrategyName, SectionId, TreeWalkSettings } from '@committee/protocol'
+import type { DecisionBudget, ProviderError, ReferentStrategyName, SectionId, ShownSection, TreeWalkSettings } from '@committee/protocol'
 import type { DecisionContext } from './context-summary'
 import type { NoulQuestion } from './decision-provider'
-import type { CandidateSection, RoutingCandidates } from './router'
+import type { AnswerSource, CandidateSection, RoutingCandidates } from './router'
 
 /**
  * How routing decides which earlier work a message refers to, and through
@@ -37,6 +37,13 @@ export interface ReferentStrategy {
   questions(request: ReferentRequest): ReferentQuestions
   /** The referents of every unit of the request. Never rejects. */
   resolve(request: ReferentRequest, gate: ReferentGate, ask: ReferentAsk): Promise<ReferentResult>
+  /**
+   * False for a strategy that never sends a further request (one pass): the
+   * routing request may then show answers with the whole of the routing's
+   * budget. Left out or true, it keeps half for the strategy's further
+   * requests (`ROUTING_REQUEST_SHOWN_SHARE`). Read for that and nothing else.
+   */
+  readonly furtherRequests?: boolean
 }
 
 export type ReferentQuestions = { readonly [id: string]: NoulQuestion }
@@ -83,6 +90,14 @@ export interface ReferentRequest {
    * that writes state texts of its own passes it to the same line.
    */
   decisionContext(section: CandidateSection): DecisionContext | null
+  /**
+   * The whole answer of a section so far, for a question about the section
+   * by itself (a Point), which shows as much of it as the budget allows
+   * (`routing/shown.ts`). Left out: the excerpt is all there is.
+   */
+  answerOf?(section: CandidateSection): AnswerSource
+  /** The words passages of a long answer are matched against: the message's (`lexicalTerms`). Left out: none, so only the whole answer or its opening is shown. */
+  readonly words?: readonly string[]
   /** `settings.routing.treeWalk`: how a walk treats runs of only children. A strategy that does not walk ignores it. */
   readonly treeWalk: TreeWalkSettings
   /**
@@ -122,8 +137,12 @@ export type ReferentAskResult =
   | { readonly kind: 'failed'; readonly error: ProviderError }
 
 /** A further decision request, counted against the routing's budget. */
+/** By question ID: the lines of the answer sections a question is about, as sent, for the decision record. */
+export type ShownSubjects = { readonly [id: string]: readonly ShownSection[] }
+
 export interface ReferentAsk {
-  (stateText: string, questions: ReferentQuestions): Promise<ReferentAskResult>
+  /** `shown`: what each question showed of its sections, recorded with its answer. */
+  (stateText: string, questions: ReferentQuestions, shown?: ShownSubjects): Promise<ReferentAskResult>
   /** What the budget still allows. */
   remaining(): DecisionBudget
   /** The input tokens a request is counted as. Deterministic: an estimate from its size, not the provider's usage. */

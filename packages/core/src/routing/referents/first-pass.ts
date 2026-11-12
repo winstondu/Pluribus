@@ -1,5 +1,5 @@
 import type { SectionId } from '@committee/protocol'
-import type { ReferentQuestions, ReferentRequest, RoutingCandidates } from '../../ports'
+import type { ReferentQuestions, ReferentRequest, ReferentSection, RoutingCandidates } from '../../ports'
 import { groupQuestion, ownQuestion, questionId } from './shared'
 import { buildTree, type ReferentTree, type TreeNode } from './tree'
 
@@ -69,6 +69,27 @@ export function firstPassQuestions(request: ReferentRequest, tree: ReferentTree 
   )
   for (const unit of request.units) {
     for (const node of nodes) out[questionId.of(unit, node)] = node.kind === 'section' ? ownQuestion(unit, node) : groupQuestion(unit, node)
+  }
+  return out
+}
+
+/**
+ * The answer sections each question a referent strategy may put in the
+ * routing request is about, by question ID: a section asked about by itself
+ * (`point`), or every member of a sibling group asked about as a whole.
+ * What the pipeline records each question was shown, and which sections it
+ * may show at more length (the Points).
+ */
+export function questionSubjects(
+  request: ReferentRequest,
+  tree: ReferentTree = buildTree(request),
+): Map<string, { readonly kind: 'point' | 'group'; readonly sections: readonly ReferentSection[] }> {
+  const out = new Map<string, { readonly kind: 'point' | 'group'; readonly sections: readonly ReferentSection[] }>()
+  for (const unit of request.units) {
+    for (const node of tree.nodes) {
+      if (node.kind === 'section') out.set(questionId.own(unit, node), { kind: 'point', sections: [node.entry] })
+      else out.set(questionId.group(unit, node), { kind: 'group', sections: node.members.map((m) => m.entry) })
+    }
   }
   return out
 }

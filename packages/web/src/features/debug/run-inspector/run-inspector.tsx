@@ -28,6 +28,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { RequirementItem } from '../compare/compare'
 import { segmentText } from '../compare/spans'
+import { DecisionQuestions } from './decision-questions'
 import { ChainName, EmptyState, Id, Pill, Row, Verbatim } from '../parts'
 
 /**
@@ -648,27 +649,7 @@ function Routing(props: { inspection: RunInspection; transcript: TranscriptProje
         {decision.runEnds ? <RunEndsRow ends={decision.runEnds} unitKey={unit?.key ?? null} transcript={transcript} /> : null}
         <Row label="Explanation">{unit?.explanation || decision.explanation || 'None recorded.'}</Row>
       </dl>
-      {decision.questions.length > 0 ? (
-        <details className="mt-1.5 text-xs">
-          <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
-            Questions put to the decision model ({decision.questions.length})
-          </summary>
-          <ul className="mt-1.5 flex flex-col gap-1.5">
-            {decision.questions.map((question) => (
-              <li key={question.id} className="rounded-md border border-border bg-background px-2.5 py-2 leading-relaxed">
-                <p>{question.instructions}</p>
-                <p className="mt-1 text-muted-foreground">
-                  <span className="font-mono text-2xs">{question.type}</span> · answered{' '}
-                  <span className="text-foreground">
-                    {typeof question.answer === 'number' ? question.answer.toFixed(2) : question.answer}
-                  </span>
-                  {question.confidence !== null ? ` · confidence ${question.confidence.toFixed(2)}` : ''}
-                </p>
-              </li>
-            ))}
-          </ul>
-        </details>
-      ) : null}
+      <DecisionQuestions routing={routing} />
     </div>
   )
 }

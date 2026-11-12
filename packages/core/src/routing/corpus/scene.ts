@@ -26,6 +26,8 @@ export interface Scene {
   readonly sessionRequirements: readonly Requirement[]
   /** Handle of every ID the scene contains, for reading a plan back. */
   readonly handles: ReadonlyMap<string, string>
+  /** The whole answer of each section written out in full (`answerText`), as the engine's `RoutingInput.answerText` reads it. Others have only their opening. */
+  readonly answers: ReadonlyMap<SectionId, string>
 }
 
 export const ids = {
@@ -46,6 +48,8 @@ interface WorkSpec {
   readonly label: string
   readonly request: string
   readonly answer?: string
+  /** The whole answer, written out: its first 280 characters are the opening (`answer` is then left out). */
+  readonly answerText?: string
   /** Characters of the whole answer, of which `answer` is the opening. Default: `ANSWER_LENGTH` once there is an answer. */
   readonly answerLength?: number
   readonly state?: DirectiveState
@@ -129,6 +133,7 @@ export class SceneBuilder {
     }
     const heldBy = new Set(this.questions.map((q) => q.blocks))
     const sections: CandidateSection[] = []
+    const answers = new Map<SectionId, string>()
     const work: CandidateWork[] = []
     for (const w of this.work) {
       const s = state(w.handle)
@@ -138,15 +143,17 @@ export class SceneBuilder {
       const hasSection = !heldBy.has(w.handle)
       if (hasSection) {
         handles.set(ids.section(w.handle), w.handle)
+        if (w.answerText !== undefined) answers.set(ids.section(w.handle), w.answerText)
+        const opening = w.answerText !== undefined ? w.answerText.slice(0, 280) : w.answer
         sections.push({
           sectionId: ids.section(w.handle),
           directiveId: ids.directive(w.handle),
           messageId: ids.message(w.message ?? w.handle),
           title: w.label,
           request: w.request,
-          excerpt: w.answer ?? '',
-          answerLength: w.answerLength ?? (w.answer ? Math.max(ANSWER_LENGTH, w.answer.length) : 0),
-          state: SECTION_STATE[s] ?? (s === 'running' && w.answer ? 'streaming' : 'pending'),
+          excerpt: opening ?? '',
+          answerLength: w.answerText !== undefined ? w.answerText.length : (w.answerLength ?? (w.answer ? Math.max(ANSWER_LENGTH, w.answer.length) : 0)),
+          state: SECTION_STATE[s] ?? (s === 'running' && opening ? 'streaming' : 'pending'),
           chainId: ids.chain(w.chain),
           nodeId: ids.node(w.handle),
           asksElicitationId: null,
@@ -213,7 +220,7 @@ export class SceneBuilder {
       }
     })
     for (const r of this.requirements) handles.set(r.id, r.id.slice(4))
-    return { candidates: { sections, chains, work, groups }, sessionRequirements: this.requirements, handles }
+    return { candidates: { sections, chains, work, groups }, sessionRequirements: this.requirements, handles, answers }
   }
 
   private nodeId(handle: string): NodeId {

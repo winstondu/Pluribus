@@ -392,6 +392,24 @@ Not done: the e2e flows were not rerun, and no browser flow exercises a clarific
 | `pnpm build` | Succeeds |
 | `COMMITTEE_URL=http://localhost:5199/ pnpm e2e exportLogs` | Passed: 26 events, 2 runs. The shared setup's model picker step now also matches the picker's "Search the tested models…" placeholder (`e2e/lib.mjs`), which changed with the compatibility list; the other flows were not rerun |
 
+### What a Point shows, and what the run inspector says was sent (2026-11-12)
+
+The user's report: the run inspector's "questions put to the decision model" showed each question, but for a message about modern Kyoto the question about S3 ("kyoto history") was answered 0.59 although S3's answer has a section on modern Kyoto. The question shown was the whole question; the decision model was shown only the first 280 characters of each answer. [dependency-decisioning.md](dependency-decisioning.md) · "What a Point shows".
+
+- **A section asked about by itself is shown as much of its answer as the budget allows** (`core/src/routing/shown.ts`, behind Describe and the pipeline's request): the whole answer; else its opening and the passages that share the most words with the message (blocks cut at blank lines and headings, ranked with the lexical source's tokeniser); else the opening, as before. A context summary still takes the place of the answer. Group and Segment questions are unchanged. The routing request's window is chosen as before, every answer by its opening, so no listed section is dropped; it then shows more with what is left, up to all of the budget for one pass and half for the tree walk. Further requests share what is spare among the requests still allowed. With no room, requests are as they were.
+- **Recorded**: each question about a section (and each Group question, for its members) keeps the section's line as sent, with its form, in `DecisionQuestionRecord.shown`; answer text by spans of the attempt's recorded text, not copied; a summary by its ID only (invariant 12). `RoutingDecision.shownRecorded`; `STATE_VERSION` 4. Old records show their questions with a note.
+- **Run inspector**: each question card keeps its header; "Show what was sent" opens a dialog with the question, the form ("Whole answer", "Opening and matching passages", "Opening only", "Summary") and the line exactly as sent. Screenshots in `docs/build/screenshots/review/shown-*.png`.
+- **Measured**: the new corpus example `target-later-in-answer` (the only one whose answers are written out in full) costs 1,540 → 1,870 estimated tokens and is routed right by all three configurations, deterministically and live. The other examples carry only openings, so the corpus does not measure the rise on them. Cost grid (whole answers now written out): the bound holds on all 360 cells by the estimate and by the tokenizer; the worst cells are not changed by this (after the rebase 1.994× and 1.819×, 3,300 × 300, nested forks, one pass); 500 × 2,000 rose from 0.898× to 0.960× (estimate) and 0.766× to 0.811× (tokenizer). Live, before the rebase onto the combined-limit question: 59/63, 62/63, 62/63; 75, 86, 83 requests; 94,042, 110,578, 110,007 tokens (before, on 62 examples: 58/62, 61/62, 61/62; 74, 85, 82; 92,592, 109,128, 108,557).
+- **Not verified**: the estimate undercounts text in scripts written without spaces (about one token per character against 0.35); whole answers in Chinese or Japanese make more of a request such text.
+
+| Command | Result |
+|---|---|
+| `pnpm typecheck` | 5 packages, no errors |
+| `pnpm test` | 74 files, 1,467 tests, all passed (after the rebase onto `141ab9b`) |
+| `pnpm --filter @committee/web lint` | Exit 0, warnings only, none in the new files |
+| `pnpm build` | Succeeds |
+| `pnpm smoke` (`referents.smoke.test.ts`, before the rebase) | Passed; scores above |
+
 ## How to run
 
 ```sh

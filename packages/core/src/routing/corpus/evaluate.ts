@@ -117,6 +117,7 @@ export function corpusInput(example: CorpusExample, settings: Pick<Settings, 'mo
     candidates: example.scene.candidates,
     sessionRequirements: example.scene.sessionRequirements,
     sessionLogTokens: sceneLogTokens(example),
+    answerText: (sectionId) => example.scene.answers.get(sectionId) ?? example.scene.candidates.sections.find((s) => s.sectionId === sectionId)?.excerpt ?? '',
     settings: { models: settings.models, thresholds: settings.thresholds, routing: settings.routing },
     ids: idFactory ?? createIdFactory(createUlidFactory(() => 0, createSeededRandom(11))),
   }

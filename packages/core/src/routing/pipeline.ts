@@ -55,9 +55,10 @@ import { Batch, ask, type Answers } from './batch'
 import { createLexicalCandidateSource } from './candidates'
 import { AMBIGUITY_FLOOR, derivePlacement, neededWork, placedWithoutTarget, referentCovered, resolveUnitTargets, selected, validatePlan, type TargetMode } from './derive'
 import { askUnit, readUnit, sectionNumbers, withReferents, type UnitScope, type UnitSignals } from './questions'
-import { createReferentAsk, estimateRequestTokens, firstPassQuestions, firstPassSectionIds, referentStrategyFor, routingTokenBudget, type ReferentSpend, type RoutingTokenBudget } from './referents'
+import { createReferentAsk, estimateRequestTokens, firstPassQuestions, firstPassSectionIds, questionSubjects, referentStrategyFor, routingTokenBudget, type ReferentSpend, type RoutingTokenBudget } from './referents'
 import { applyChoice, choiceText, selectStrategy, strategySelectorFor } from './selection'
-import { MAX_SECTIONS, MIN_SECTIONS, decisionContextOf, describeState, numberedAnswerSections, supply, type Supplied } from './supply'
+import { MAX_SECTIONS, MIN_SECTIONS, answerOf, decisionContextOf, describeState, listedLine, numberedAnswerSections, showingFor, supply, type Supplied } from './supply'
+import { chooseShown, recordLine, shownWords, type Showing, type ShownChoice, type ShownPoint } from './shown'
 
 /**
  * The default router: the routing pipeline of 11 · "Routing".
@@ -196,8 +197,9 @@ async function routeMessage(deps: Deps, input: RoutingInput, signal: CancelSigna
   const startCandidates = given ? {} : await startCandidatesFor(deps, input, [{ unit: messageUnit, text: input.text }], record)
 
   // ── 1. The decision gate ──
-  /** The gate's request when the pipeline lists at most `window` answer sections. */
-  const buildGate = (window: number) => {
+  const showing = showingFor(input)
+  /** The gate's request when the pipeline lists at most `window` answer sections, each Point's answer in the form `choices` gives (the opening when left out). */
+  const buildGate = (window: number, choices: ReadonlyMap<SectionId, ShownChoice> | null) => {
     const supplied = supply(input, given?.sectionIds ?? [], window)
     const numbers = sectionNumbers(supplied)
     const gate = new Batch()
@@ -227,14 +229,14 @@ async function routeMessage(deps: Deps, input: RoutingInput, signal: CancelSigna
       `New message: "${input.text}"`,
       ...(given ? [`The user replied to ${given.sectionIds.map((id) => `S${numbers.get(id) ?? '?'}`).join(' and ')}.`] : []),
     ].join('\n')
-    const stateText = describeState(input, supplied, subject)
     // Explicit and chosen targets are used as given: nothing is asked about the message's referents.
-    const referentRequest = referentRequestFor(input, supplied, given ? [] : [messageUnit], stateText, subject, treeWalk, startCandidates)
-    addReferentQuestions(gate, strategy, referentRequest)
-    return { supplied, batch: gate, messageScope, subject, stateText, referentRequest }
+    const request = referentRequestFor(input, supplied, given ? [] : [messageUnit], '', subject, treeWalk, startCandidates)
+    addReferentQuestions(gate, strategy, request)
+    const { stateText, points } = showRequest(input, supplied, gate, request, subject, showing, choices)
+    return { supplied, batch: gate, messageScope, subject, stateText, referentRequest: { ...request, stateText }, points }
   }
-  // The request lists as many answer sections as the routing's token budget has room for.
-  const fitted = fitWindow(input, buildGate, tokenBudgetFor(input, 1), record)
+  // The request lists as many answer sections as the routing's token budget has room for, then shows more of the Points' answers with what it has left.
+  const fitted = fitWindow(input, buildGate, tokenBudgetFor(input, 1), record, { showing, share: shownShare(strategy) })
   const { supplied, batch: gate, messageScope, subject, stateText, referentRequest } = fitted
   // Which the decision model saw, for the run inspector: a stored summary and the section's own content, or the usual line.
   const summarised = supplied.sections.filter((s) => decisionContextOf(input, s) !== null).length
@@ -469,8 +471,9 @@ async function routeComposite(deps: Deps, input: RoutingInput, signal: CancelSig
   const relate = input.candidates.sections.length > 0 || input.candidates.chains.length > 0
   const shared = requirements.sharedRequirements()
 
-  /** The request about the parts when the pipeline lists at most `window` answer sections. */
-  const buildParts = (window: number) => {
+  const showing = showingFor(input)
+  /** The request about the parts when the pipeline lists at most `window` answer sections, each Point's answer in the form `choices` gives. */
+  const buildParts = (window: number, choices: ReadonlyMap<SectionId, ShownChoice> | null) => {
     const supplied = supply(input, given?.sectionIds ?? [], window)
     const numbers = sectionNumbers(supplied)
     const batch = new Batch()
@@ -510,13 +513,16 @@ async function routeComposite(deps: Deps, input: RoutingInput, signal: CancelSig
       ...fragments.map((f, i) => `F${i + 1}. ${JSON.stringify(f.instruction)} (from ${JSON.stringify(f.sourceSpans.map((s) => input.text.slice(s.start, s.end)).join(' … '))})`),
       ...(given ? [`The user replied to ${given.sectionIds.map((id) => `S${numbers.get(id) ?? '?'}`).join(' and ')}.`] : []),
     ].join('\n')
-    const stateText = describeState(input, supplied, subject)
-    const referentRequest = referentRequestFor(input, supplied, scopes.map((scope) => ({ key: scope.key, name: scope.name })), stateText, subject, c.treeWalk, startCandidates)
-    addReferentQuestions(batch, c.strategy, referentRequest)
-    return { supplied, batch, scopes, stateText, referentRequest }
+    const request = referentRequestFor(input, supplied, scopes.map((scope) => ({ key: scope.key, name: scope.name })), '', subject, c.treeWalk, startCandidates)
+    addReferentQuestions(batch, c.strategy, request)
+    const { stateText, points } = showRequest(input, supplied, batch, request, subject, showing, choices)
+    return { supplied, batch, scopes, stateText, referentRequest: { ...request, stateText }, points }
   }
   // Each part is a piece of work with an answer of its own, so the budget is that of as many answers.
-  const { supplied, batch, scopes, stateText, referentRequest } = fitWindow(input, buildParts, tokenBudgetFor(input, fragments.length), record)
+  const { supplied, batch, scopes, stateText, referentRequest } = fitWindow(input, buildParts, tokenBudgetFor(input, fragments.length), record, {
+    showing,
+    share: shownShare(c.strategy),
+  })
   const result = await record.ask(deps.decisionProvider, input.settings.models.decision, stateText, batch, signal)
   if (!result.ok) return failed(result.error)
   const a = result.answers
@@ -719,6 +725,8 @@ function referentRequestFor(
     relevance: { clear: input.settings.thresholds.targetChoice, floor: AMBIGUITY_FLOOR },
     useSummaryIfAvailable: input.settings.routing.useSummaryIfAvailable,
     decisionContext: (section) => decisionContextOf(input, section),
+    answerOf: answerOf(input),
+    words: shownWords(input.text),
     treeWalk,
     startCandidates,
   }
@@ -954,24 +962,85 @@ function guardedBudget(input: RoutingInput, units: number, pipelineTokens: numbe
 }
 
 /**
+ * The share of what the routing's budget has left that the routing request
+ * may use once it shows more of the Points' answers, when the strategy may
+ * send further requests: the rest is kept for them. A strategy that sends
+ * none (one pass) lets it use the whole.
+ */
+export const ROUTING_REQUEST_SHOWN_SHARE = 0.5
+
+function shownShare(strategy: ReferentStrategy): number {
+  return strategy.furtherRequests === false ? 1 : ROUTING_REQUEST_SHOWN_SHARE
+}
+
+/**
+ * The state text of a request whose questions are in `batch`, each Point's
+ * answer in the form `choices` gives, and what each referent question was
+ * shown of its sections, recorded on the batch. Also the Points: the
+ * sections asked about by themselves, which may be shown at more length.
+ */
+function showRequest(
+  input: RoutingInput,
+  supplied: Supplied,
+  batch: Batch,
+  request: ReferentRequest,
+  subject: string,
+  showing: Showing,
+  choices: ReadonlyMap<SectionId, ShownChoice> | null,
+): { readonly stateText: string; readonly points: readonly ShownPoint[] } {
+  const shown = { showing, choices: choices ?? new Map<SectionId, ShownChoice>() }
+  const points: ShownPoint[] = []
+  for (const [id, subjects] of questionSubjects(request)) {
+    if (!batch.has(id)) continue
+    batch.show(id, subjects.sections.map((entry) => recordLine(entry.section.sectionId, listedLine(input, entry.section, entry.n, shown))))
+    for (const entry of subjects.kind === 'point' ? subjects.sections : []) points.push({ section: entry.section, n: entry.n, context: decisionContextOf(input, entry.section) })
+  }
+  return { stateText: describeState(input, supplied, subject, shown), points }
+}
+
+/**
  * The pipeline's request with as many answer sections listed as the
  * routing's token budget has room for, after what the routing has already
  * used. The full window when it fits; otherwise the widest that fits, found
  * by halving (a request only grows with its window), and never fewer than
  * `MIN_SECTIONS`: a request has to be sent for the message to be routed at
  * all, so below that the budget is exceeded by what the smallest request
- * costs, and the decision's explanation says so.
+ * costs, and the decision's explanation says so. The window is chosen with
+ * every answer by its opening.
+ *
+ * Then the Points' answers are shown at more length (`chooseShown`) with
+ * what is left of `shown.share` of the room: the whole answer where it
+ * fits, else the opening and the best-matching passages, else the opening.
+ * No listed section is dropped to make room, and the request never grows
+ * past that share of what the budget has left.
  */
-function fitWindow<T extends { readonly stateText: string; readonly batch: Batch }>(
+function fitWindow<T extends { readonly stateText: string; readonly batch: Batch; readonly points: readonly ShownPoint[] }>(
   input: RoutingInput,
-  build: (window: number) => T,
+  build: (window: number, choices: ReadonlyMap<SectionId, ShownChoice> | null) => T,
   budget: RoutingTokenBudget,
   record: Record,
+  shown: { readonly showing: Showing; readonly share: number },
 ): T {
   const available = budget.total - record.pipelineTokens
   const cost = (built: T): number => estimateRequestTokens(built.stateText, built.batch.questions)
+  const { built, window } = fitListing(input, (w) => build(w, null), cost, available, budget, record)
+  const room = Math.floor(Math.min(available, shown.share * available)) - cost(built)
+  if (built.points.length === 0 || !(room > 0)) return built
+  const more = build(window, chooseShown(shown.showing, built.points, room))
+  return cost(more) <= cost(built) + room ? more : built
+}
+
+/** The widest window whose request fits, every answer by its opening; the explanation says why it was cut. */
+function fitListing<T>(
+  input: RoutingInput,
+  build: (window: number) => T,
+  cost: (built: T) => number,
+  available: number,
+  budget: RoutingTokenBudget,
+  record: Record,
+): { readonly built: T; readonly window: number } {
   const full = build(MAX_SECTIONS)
-  if (cost(full) <= available) return full
+  if (cost(full) <= available) return { built: full, window: MAX_SECTIONS }
   const listable = Math.max(input.candidates.sections.length, input.candidates.chains.length)
   const limit = budget.limitedBy === 'price-guard' ? 'the price guard on decision cost' : 'the decision token budget'
   let fitting: { readonly built: T; readonly window: number } | null = null
@@ -987,7 +1056,7 @@ function fitWindow<T extends { readonly stateText: string; readonly batch: Batch
   }
   if (fitting) {
     record.windowNote = ` The routing request listed the ${fitting.window} most recent answer sections and lines of work, not ${MAX_SECTIONS}, to stay within ${limit}.`
-    return fitting.built
+    return fitting
   }
   // The smallest request: the first-pass sections, which every routing asks about by themselves, and nothing older.
   const smallest = build(MIN_SECTIONS)
@@ -997,7 +1066,7 @@ function fitWindow<T extends { readonly stateText: string; readonly batch: Batch
   if (cost(smallest) >= cost(full)) record.windowNote = ` The routing request costs more than ${limit} allows (${left} tokens) and could not be made smaller.`
   else if (cost(smallest) <= available) record.windowNote = ` The routing request listed only ${sections}, the fewest it lists, to stay within ${limit}.`
   else record.windowNote = ` The routing request listed only ${sections}, the fewest it lists, and still costs more than ${limit} allows (${left} tokens).`
-  return smallest
+  return { built: smallest, window: MIN_SECTIONS }
 }
 
 function clamp01(value: number): number {
@@ -1278,6 +1347,7 @@ function decisionRecord(
     thresholds: { ...input.settings.thresholds, ambiguityFloor: AMBIGUITY_FLOOR },
     explanation: `${explanation}${selectionNote(record.selection)}${record.windowNote}${record.referentNote}${runEndNote(input, record)}${bestFoundNote(input, record)}${record.contextNote}`,
     questions: record.questions,
+    shownRecorded: true,
     ...(record.selection ? { strategySelection: record.selection } : {}),
     ...(record.budgetStop ? { budgetStop: { ...record.budgetStop, bestFound: record.bestFound } } : {}),
     ...(record.candidates ? { candidateSource: record.candidates } : {}),

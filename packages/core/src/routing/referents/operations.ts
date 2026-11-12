@@ -1,6 +1,6 @@
-import type { DecisionBudget } from '@committee/protocol'
-import type { Probe, ReferentAsk, ReferentGate, ReferentOperations, ReferentQuestions, ReferentRequest, ReferentUnit, SegmentProbe } from '../../ports'
-import { sectionLine } from '../supply'
+import type { DecisionBudget, SectionId, ShownSection } from '@committee/protocol'
+import type { Probe, ReferentAsk, ReferentGate, ReferentOperations, ReferentQuestions, ReferentRequest, ReferentUnit, SegmentProbe, ShownSubjects } from '../../ports'
+import { chooseShown, createShowing, OPENING, recordLine, renderLine, type ShownChoice } from '../shown'
 import { estimateDecisionTokens, STATE_TOKENS_PER_CHARACTER } from './ask'
 import { chunkQuestion, digest, groupQuestion, list, ownQuestion, questionId, severalQuestion } from './shared'
 import type { ReferentTree, SectionNode, TreeNode } from './tree'
@@ -15,8 +15,11 @@ import type { ReferentTree, SectionNode, TreeNode } from './tree'
  *   (`ReferentAsk`) and is refused when it would pass a limit.
  * - Describe: a section is shown by its line (title, request, opening of
  *   the answer, or a stored summary and the section's own content where the
- *   summary provider has one). In a round, a section asked about by itself
- *   is followed by the nearest answers it was built on, named by their
+ *   summary provider has one). A section asked about by itself (a Point) is
+ *   shown as much more of its answer as the round's share of the budget
+ *   allows: the whole, else its opening and the passages that best match
+ *   the message, else the opening (`routing/shown.ts`). In a round, it is
+ *   followed by the nearest answers it was built on, named by their
  *   requests, as context; a part of an unbranched run is followed by the
  *   first answers of the run and what the run was built on.
  * - Cost: the guard's own estimate of a request, before anything is sent.
@@ -56,6 +59,10 @@ interface Built {
   readonly questions: ReferentQuestions
   /** Question ID per probe, in the round's order. */
   readonly ids: readonly string[]
+  /** What each question showed of its sections, for the decision record. */
+  readonly shown: ShownSubjects
+  /** The sections asked about by themselves, whose answers may be shown at more length. */
+  readonly points: readonly SectionNode[]
 }
 
 export const createDecisionOperations: OperationsFactory = ({ request, tree, gate, ask }) => {
@@ -64,6 +71,9 @@ export const createDecisionOperations: OperationsFactory = ({ request, tree, gat
   const recent = mostRecent(tree)
   const sizes = new Map<string, number>()
   const built = new WeakMap<readonly Probe[], Built>()
+  /** The reserve each round was last checked with (`fits`): the room its answers may not take when it is sent. */
+  const reserves = new WeakMap<readonly Probe[], number>()
+  const showing = createShowing({ answerOf: request.answerOf?.bind(request), words: request.words })
   const segmentIds = new Map<string, string>()
   const takenIds = new Set<string>()
 
@@ -94,7 +104,8 @@ export const createDecisionOperations: OperationsFactory = ({ request, tree, gat
         : probe.kind === 'segment'
           ? chunkQuestion(probe.unit, probe.nodes)
           : severalQuestion(probe.unit)
-  const lineOf = (node: SectionNode): string => sectionLine(node.entry.section, node.n, request.decisionContext(node.entry.section))
+  const lineAt = (node: SectionNode, choice: ShownChoice = OPENING) => showing.line(node.entry.section, node.n, request.decisionContext(node.entry.section), choice)
+  const lineOf = (node: SectionNode, choice?: ShownChoice): string => renderLine(lineAt(node, choice))
 
   const questions = (probes: readonly Probe[]): ReferentQuestions => {
     const out: { [id: string]: ReferentQuestions[string] } = {}
@@ -118,10 +129,14 @@ export const createDecisionOperations: OperationsFactory = ({ request, tree, gat
     return found
   }
 
-  /** One round as a decision request: only the answers its questions are about, what they come from, then the subject. */
-  const build = (round: readonly Probe[]): Built => {
-    const cached = built.get(round)
+  /**
+   * One round as a decision request: only the answers its questions are about, what they come from, then the subject.
+   * `choices`: the form each Point's answer is shown in; left out, every answer by its opening.
+   */
+  const build = (round: readonly Probe[], choices: ReadonlyMap<SectionId, ShownChoice> | null = null): Built => {
+    const cached = choices ? undefined : built.get(round)
     if (cached) return cached
+    const subjects = new Map<string, readonly SectionNode[]>()
     const asked: { [id: string]: ReferentQuestions[string] } = {}
     const ids: string[] = []
     const shown = new Set<TreeNode>()
@@ -135,7 +150,11 @@ export const createDecisionOperations: OperationsFactory = ({ request, tree, gat
       if (probe.kind === 'point') {
         shown.add(probe.node)
         points.push(probe.node)
-      } else if (probe.kind === 'group') shown.add(probe.node)
+        subjects.set(id, [probe.node])
+      } else if (probe.kind === 'group') {
+        shown.add(probe.node)
+        subjects.set(id, probe.node.members)
+      }
       else if (probe.kind === 'segment') {
         segments.push(probe)
         searching.add(probe.unit)
@@ -146,11 +165,13 @@ export const createDecisionOperations: OperationsFactory = ({ request, tree, gat
       for (const unit of searching) {
         if (asked[questionId.own(unit, recent)] !== undefined) continue
         asked[questionId.recent(unit)] = ownQuestion(unit, recent)
+        subjects.set(questionId.recent(unit), [recent])
         shown.add(recent)
       }
     }
     const lines = new Map<number, string>()
-    for (const node of shown) for (const s of node.kind === 'section' ? [node] : node.members) lines.set(s.n, lineOf(s))
+    const choiceOf = (node: SectionNode): ShownChoice => choices?.get(node.entry.section.sectionId) ?? OPENING
+    for (const node of shown) for (const s of node.kind === 'section' ? [node] : node.members) lines.set(s.n, lineOf(s, choiceOf(s)))
     // What the pipeline's state text says under "Lines of work": which of these were requested side by side.
     const parallel = [...shown].flatMap((node) =>
       node.kind === 'group'
@@ -209,9 +230,28 @@ export const createDecisionOperations: OperationsFactory = ({ request, tree, gat
       '',
       request.subject,
     ].join('\n')
-    const made: Built = { stateText, questions: asked, ids }
-    built.set(round, made)
+    const record: { [id: string]: readonly ShownSection[] } = {}
+    for (const [id, nodes] of subjects) record[id] = nodes.map((node) => recordLine(node.entry.section.sectionId, lineAt(node, choiceOf(node))))
+    const made: Built = { stateText, questions: asked, ids, shown: record, points }
+    if (!choices) built.set(round, made)
     return made
+  }
+
+  /**
+   * The round as it is sent: its Points shown at more length with what the budget has to spare after the round
+   * itself and the reserve it was checked with, shared evenly with the requests that may still follow. What is
+   * decided to be asked is decided on the round's size with every answer by its opening (`size`, `fits`), so
+   * showing more never changes which rounds a search sends, only how much of the room left they use.
+   */
+  const expanded = (round: readonly Probe[], left: DecisionBudget): Built => {
+    const base = build(round)
+    if (base.points.length === 0) return base
+    const cost = estimate(base.stateText, base.questions)
+    const spare = Math.floor((left.inputTokens - cost - (reserves.get(round) ?? 0)) / Math.max(1, left.requests))
+    if (!(spare > 0)) return base
+    const points = base.points.map((node) => ({ section: node.entry.section, n: node.n, context: request.decisionContext(node.entry.section) }))
+    const more = build(round, chooseShown(showing, points, spare))
+    return estimate(more.stateText, more.questions) <= cost + spare ? more : base
   }
 
   const costOf = (round: readonly Probe[]): Cost => {
@@ -250,6 +290,7 @@ export const createDecisionOperations: OperationsFactory = ({ request, tree, gat
       const left = ask.remaining()
       const first = costOf(round)
       const second = costOf(reserve)
+      reserves.set(round, second.inputTokens)
       const limits: readonly (keyof DecisionBudget)[] = ['requests', 'questions', 'inputTokens']
       return limits.find((limit) => left[limit] < first[limit] + second[limit]) ?? null
     },
@@ -257,8 +298,8 @@ export const createDecisionOperations: OperationsFactory = ({ request, tree, gat
     async ask(round) {
       if (round.length === 0) return { kind: 'answered' }
       if (!ask) return { kind: 'refused', limit: 'requests' }
-      const { stateText, questions: asked } = build(round)
-      const result = await ask(stateText, asked)
+      const { stateText, questions: asked, shown } = expanded(round, ask.remaining())
+      const result = await ask(stateText, asked, shown)
       if (result.kind !== 'answered') return result
       for (const id of Object.keys(asked)) {
         const p = result.probability(id)

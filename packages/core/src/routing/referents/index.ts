@@ -40,4 +40,4 @@ export {
 } from './ask'
 export { buildTree, branchingDepth, ancestorsOf, ancestorsOfAll, joinBacksOf, reduceToNonAncestors, segmentFrom, stretchOf, type ReferentTree, type TreeNode } from './tree'
 export { bestNodeFound, referentsFromScores, questionId as referentQuestionId } from './shared'
-export { FIRST_PASS_SECTIONS, firstPassQuestions, firstPassSectionIds } from './first-pass'
+export { FIRST_PASS_SECTIONS, firstPassQuestions, firstPassSectionIds, questionSubjects } from './first-pass'

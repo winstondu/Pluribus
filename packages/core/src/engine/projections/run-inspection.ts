@@ -1,4 +1,4 @@
-import type { AttemptId, DirectiveId, NodeId, RunInspection } from '@committee/protocol'
+import { renderShownLine, type AttemptId, type DirectiveId, type NodeId, type RoutingDecision, type RunInspection, type ShownSectionView } from '@committee/protocol'
 import { barrierOf, nodeParents, sectionTitle, unsatisfiedPrerequisites } from '../queries'
 import { computeWait } from '../lifecycle'
 import type { ConversationState } from '../state'
@@ -55,7 +55,7 @@ export function runInspection(s: ConversationState, directiveId: DirectiveId, at
       const label = node?.kind === 'join-back' ? 'join-back' : node?.directiveId ? (s.directives[node.directiveId]?.label ?? '') : ''
       return { nodeId, chainId: node?.chainId ?? d.chainId, label }
     }),
-    routing: decision ? { decision, unit } : null,
+    routing: decision ? { decision, unit, shown: shownOf(s, decision) } : null,
     attempt: attempt
       ? {
           number: attempt.number,
@@ -78,6 +78,18 @@ export function runInspection(s: ConversationState, directiveId: DirectiveId, at
     }),
     section: section ? { sectionId: section.id, responseId: section.responseId, title: sectionTitle(s, section) } : null,
   }
+}
+
+/**
+ * What each question of a routing decision showed of its sections, as the
+ * text that was sent: the recorded pieces, answer spans read from the
+ * attempts' recorded text, which only ever grows.
+ */
+function shownOf(s: ConversationState, decision: RoutingDecision): (readonly ShownSectionView[] | null)[] {
+  const text = (attemptId: AttemptId): string => s.attemptText[attemptId] ?? ''
+  return decision.questions.map((question) =>
+    question.shown ? question.shown.map((shown) => ({ sectionId: shown.sectionId, form: shown.form, text: renderShownLine(shown.line, text) })) : null,
+  )
 }
 
 /**
