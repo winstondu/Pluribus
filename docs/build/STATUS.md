@@ -298,7 +298,7 @@ Token figures are now also measured with no network: a mock of the Decisions API
 
 | What | Result |
 |---|---|
-| Tokens measured with a tokenizer over a mock Decisions API (`providers/src/decision-tokens.test.ts`, `decision-tokens.smoke.test.ts`) | Corpus, calibrated tokenizer against live: one pass 93,352 / 92,592, tree walk 109,913 / 108,412, rules 108,866 / 107,841 (recorded again with the lexical candidate source as the default; with no source 109,090 / 108,935 and 110,610 / 110,263); the guard's estimate is 7 to 9% low. Tokenizer ÷ (characters ÷ 4): 0.79 to 1.03, mean 0.90. **Cost grid: worst guarded cell 1.99× by the estimate, 2.79× by the tokenizer; 208 of 360 cells over 2×** (every 120-token and most 300-token cells). Live, the worst cell's request was reported at 1.30 × its estimate. Recorded, not fixed: a calibrated estimator is proposed, not applied |
+| Tokens measured with a tokenizer over a mock Decisions API (`providers/src/decision-tokens.test.ts`, `decision-tokens.smoke.test.ts`) | Corpus, calibrated tokenizer against live: one pass 93,352 / 92,592, tree walk 109,913 / 108,412, rules 108,866 / 107,841 (recorded again with the lexical candidate source as the default; with no source 109,090 / 108,935 and 110,610 / 110,263); the guard's estimate is 7 to 9% low. Tokenizer ÷ (characters ÷ 4): 0.79 to 1.03, mean 0.90. **Cost grid: worst guarded cell 1.99× by the estimate, 2.79× by the tokenizer; 208 of 360 cells over 2×** (every 120-token and most 300-token cells). Live, the worst cell's request was reported at 1.30 × its estimate. Recorded, not fixed: a calibrated estimator is proposed, not applied. Applied the same day: see "The guard's estimate, refitted" |
 
 ### The candidate source: a lexical index (2026-11-12)
 
@@ -322,6 +322,24 @@ The user: "build a real candidate source … Start with lexical index. Recall th
 **Time.** 10,000 sections (35 MB of text) are indexed in 1.9 s, once per conversation per backend start; after that a routing costs 3 to 4 ms to bring the index up to date and about 2 ms for a query.
 
 Not done: the e2e flows were not rerun. The Settings control and the inspector row were looked at in the fixture gallery in a browser, not in a live conversation. Limits (words only, English stop list, a threshold set on 62 examples, a plausible wrong candidate displacing a root) are in the document.
+
+### The guard's estimate, refitted (2026-11-12)
+
+The main session's decision: apply the calibrated estimate proposed under "Measuring tokens". [dependency-decisioning.md](dependency-decisioning.md) · "The estimate, refitted".
+
+- **`estimateRequestTokens` / `estimateDecisionTokens`**: 300 + 0.35 per character of state + 7 per question + 0.32 per character of question text (before 265 + 0.2 + 7 + 0.24). Never below the count the decision model reported on 70 live requests (`providers/src/openrouter/test-support/estimate-fixture.data.ts`, re-sent by `decision-estimate.smoke.test.ts`, held by `decision-estimate.test.ts`); 1.01 to 1.30 times it.
+- **The 2× bound now holds by tokenizer counts** on all 360 guarded grid cells, asserted in `decision-tokens.test.ts`: worst 1.80× (8,000 × 120, bushy, tree walk with runs listed), 2.00× by the estimate (1.997, 50 × 300, nested forks). Before: 2.79× and 208 cells over.
+- **`SHORTEST_ANSWER_TOKENS` is unchanged (100), and open**: at 100 no cell is over 2×; a floor of 135 or 155 would let every 120-token cell cost up to 2.39× or 2.72× its own answer (recorded).
+- **Corpus**: no score or request count changed with decisions as labelled; four long-run examples are searched in smaller parts. Live, with the lexical source: one pass 58/62, tree walk 61/62, rules 61/62, as before.
+- **Two deterministic tests resized, none loosened against the bound**: the relative-budget search test (`referents.test.ts`) uses 2,500-token answers where it used 1,700, and the selector's request bound (`selection.test.ts`) is 1,100 estimated tokens where it was 900. The spec needed no change: its sentence that the bound holds down to answers of about 100 tokens (11 · "Decision budget") is now true as the decision model counts tokens, where before it held only by the estimate.
+
+| Command | Result |
+|---|---|
+| `pnpm typecheck` | 5 packages, no errors |
+| `pnpm test` | 63 files, 1,363 tests, all passed |
+| `pnpm --filter @committee/web lint` | Exit 0, warnings only |
+| `pnpm build` | Succeeds |
+| `pnpm smoke` (`decision-estimate.smoke.test.ts`; `referents.smoke.test.ts`, the three lexical-source corpus configurations) | Passed. Estimate not below any of 42 reported counts; corpus scores 58, 61, 61 |
 
 ## How to run
 

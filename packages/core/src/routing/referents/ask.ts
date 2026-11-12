@@ -5,29 +5,42 @@ import { Batch, ask as askBatch, type Answers } from '../batch'
 /**
  * The input tokens a decision request is counted as. An estimate from its
  * size, so the guard is deterministic and decided before anything is sent.
- * Fitted to the live usage of `typesafe/jev-1.13` on 2026-11-11 (nine
- * requests, 303 to 4,508 input tokens, every estimate within 3% and none
- * below the measured count): 262 tokens per request, 0.193 per character of
- * state, 7 per question and 0.233 per character of its ID and
- * instructions. The constants here are rounded up.
+ *
+ * Fitted on 2026-11-12 to the input tokens `typesafe/jev-1.13` reported for
+ * 70 live requests (the CLAUDE.md sample, corpus requests and cost-grid
+ * requests of every size: 333 to 16,139 tokens; recorded in
+ * `packages/providers/src/openrouter/test-support/estimate-fixture.data.ts`,
+ * re-sent by `decision-estimate.smoke.test.ts`) so that it is never below
+ * the reported count: 300 per request, 0.35 per character of state, 7 per
+ * question and 0.32 per character of its text. It counts 1.01 to 1.30
+ * times what was reported, about 1.23 times on corpus requests. Before, it
+ * was 265 + 0.2 per character of state + 7 + 0.24 per character of
+ * question text, fitted to nine requests on 2026-11-11; on the same 70 it
+ * counted 0.63 to 1.04 times what was reported.
  */
 export function estimateDecisionTokens(stateText: string, questions: ReferentQuestions): number {
-  let tokens = 265 + Math.ceil(stateText.length * STATE_TOKENS_PER_CHARACTER)
-  for (const [id, question] of Object.entries(questions)) tokens += 7 + Math.ceil((id.length + question.instructions.length) * 0.24)
+  let tokens = REQUEST_TOKENS + Math.ceil(stateText.length * STATE_TOKENS_PER_CHARACTER)
+  for (const [id, question] of Object.entries(questions)) tokens += QUESTION_TOKENS + Math.ceil((id.length + question.instructions.length) * QUESTION_TOKENS_PER_CHARACTER)
   return tokens
 }
 
+/** Tokens a decision request is counted as before its state and questions. */
+export const REQUEST_TOKENS = 300
 /** Tokens a decision request is counted as per character of its state text. */
-export const STATE_TOKENS_PER_CHARACTER = 0.2
+export const STATE_TOKENS_PER_CHARACTER = 0.35
+/** Tokens counted per question, before its text. */
+export const QUESTION_TOKENS = 7
+/** Tokens counted per character of a question's ID, instructions, options and criteria. */
+export const QUESTION_TOKENS_PER_CHARACTER = 0.32
 
 /** The same estimate for any decision request: a choice's options and a score's criteria count as question text. */
 export function estimateRequestTokens(stateText: string, questions: DecisionQuestions): number {
-  let tokens = 265 + Math.ceil(stateText.length * STATE_TOKENS_PER_CHARACTER)
+  let tokens = REQUEST_TOKENS + Math.ceil(stateText.length * STATE_TOKENS_PER_CHARACTER)
   for (const [id, question] of Object.entries(questions)) {
     let characters = id.length + question.instructions.length
     if (question.type === 'choice') for (const [option, text] of Object.entries(question.options)) characters += option.length + String(text).length
     if (question.type === 'score') for (const criterion of question.criteria) characters += criterion.length
-    tokens += 7 + Math.ceil(characters * 0.24)
+    tokens += QUESTION_TOKENS + Math.ceil(characters * QUESTION_TOKENS_PER_CHARACTER)
   }
   return tokens
 }

@@ -324,7 +324,8 @@ describe('strategy selection in the pipeline', () => {
     expect(asked?.state).not.toContain(text)
     expect(Object.entries(asked?.questions ?? {}).map(([id, q]) => [id, q.type])).toEqual([['sel_strategy', 'choice'], ['sel_trunk', 'noul'], ['sel_hops', 'noul'], ['sel_search', 'noul']])
     expect(Object.keys((asked?.questions['sel_strategy'] as { options: object }).options)).toEqual(['one-pass', 'tree-walk'])
-    expect(estimateRequestTokens(asked?.state ?? '', asked?.questions ?? {})).toBeLessThan(900)
+    // Small: 806 to 849 input tokens reported live (2026-11-11); the guard's estimate, fitted never to count below the reported figure, is about 1.3 times that.
+    expect(estimateRequestTokens(asked?.state ?? '', asked?.questions ?? {})).toBeLessThan(1_100)
     expect(selectionOf(selected)).toEqual({
       selector: 'decision-model',
       choice: { strategy: 'tree-walk', startAtTrunkBase: true, hopBetweenBranchPoints: false, searchLongRuns: true },

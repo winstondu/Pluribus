@@ -1295,14 +1295,17 @@ describe('token budget', () => {
   })
 
   test('budget · relative to the log, a search reaches an old section of a long conversation that a fixed budget of the same floor does not', async () => {
-    const sc = chain(700, 1_700)
+    // Answers of 2,500 tokens: the search round over 700 sections is about 21,900 tokens by the guard's estimate (fitted
+    // 2026-11-12 never to count below the decision model's reported figure), so the log must be large enough for 2% of it
+    // to hold the routing request and the round. With 1,700-token answers (24,080) it held only under the earlier estimate.
+    const sc = chain(700, 2_500)
     const text = 'Make the answer to point 40 shorter'
-    // 700 exchanges of 1,720 tokens: 2% of the log is 24,080 tokens.
-    expect(resolveTokenBudget(DEFAULT_SETTINGS.routing.tokenBudget, logOf(sc, text))).toBe(24_080)
+    // 700 exchanges of 2,520 tokens: 2% of the log is 35,280 tokens.
+    expect(resolveTokenBudget(DEFAULT_SETTINGS.routing.tokenBudget, logOf(sc, text))).toBe(35_280)
     const relative = await route(sc, text, { own: { T40: 0.9 } })
     expect(unit(relative).targets).toEqual(sections(['T40']))
     expect(planOf(relative).decision.explanation).not.toContain('budget was reached')
-    expect(allTokens(relative)).toBeLessThanOrEqual(24_080)
+    expect(allTokens(relative)).toBeLessThanOrEqual(35_280)
     // The same floor as a fixed budget: the chunks of the search do not fit, the walk falls back and the section is not reached.
     const fixed = await route(sc, text, { own: { T40: 0.9 } }, { tokenBudget: { mode: 'absolute', inputTokens: 16_000 } })
     expect(planOf(fixed).decision.explanation).toContain('its input-token budget was reached')

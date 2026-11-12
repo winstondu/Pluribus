@@ -32,6 +32,7 @@ export {
   estimateRequestTokens,
   routingTokenBudget,
   ANSWERS_TO_GO_BY,
+  SHORTEST_ANSWER_TOKENS,
   type ReferentSpend,
   type RoutedWork,
   type RoutingLimit,
