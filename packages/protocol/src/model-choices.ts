@@ -1,4 +1,5 @@
 import type { ModelProviderName, ModelRole } from './model'
+import { compatibleModels, isListedModelRole } from './models'
 import { DEFAULT_SETTINGS, type Settings } from './settings'
 
 /**
@@ -17,11 +18,19 @@ export interface ModelChoiceOption {
   /** The model ID as the provider names it. */
   readonly id: string
   readonly name: string
+  /** False for a listed model whose live smoke run is still outstanding (Q107). */
+  readonly tested: boolean
 }
 
 /** One provider a role may be set to. */
 export interface ProviderChoice {
   readonly provider: ModelProviderName
+  /**
+   * True when only `models` may be chosen (the tested compatibility list).
+   * False when any model ID of the provider is accepted and `models` are
+   * suggestions; an empty list then means the provider's whole catalog.
+   */
+  readonly restricted: boolean
   readonly models: readonly ModelChoiceOption[]
 }
 
@@ -47,12 +56,14 @@ export const SERVER_MODELS_NOTE = 'Set by the server.'
 const ROLE_ORDER: readonly ModelRole[] = ['answer', 'synthesis', 'decomposition', 'decision']
 
 function providerChoice(role: ModelRole, provider: ModelProviderName): ProviderChoice {
-  const models: readonly ModelChoiceOption[] =
-    role === 'decision'
+  const listed = isListedModelRole(role)
+  const models: readonly ModelChoiceOption[] = listed
+    ? compatibleModels(role).map((model) => ({ id: model.id, name: model.name, tested: model.testedOn !== null }))
+    : role === 'decision'
       ? // The pinned decision model (Q74). Another decision model's ID can be typed in.
-        [{ id: DEFAULT_SETTINGS.models.decision, name: 'Jev 1.13' }]
+        [{ id: DEFAULT_SETTINGS.models.decision, name: 'Jev 1.13', tested: true }]
       : []
-  return { provider, models }
+  return { provider, restricted: listed, models }
 }
 
 /** The description the backend reports. Pure: a function of the settings, the key status and the deployment. */

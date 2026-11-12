@@ -107,7 +107,7 @@ describe('routing status', () => {
 
   test('routing a failed message again is an event, so the log alone says which messages still wait for an outcome', () => {
     expect(CONVERSATION_EVENT_TYPES).toContain('routing-retried')
-    expect(CONVERSATION_EVENT_TYPES).toHaveLength(48)
+    expect(CONVERSATION_EVENT_TYPES).toHaveLength(50)
   })
 })
 

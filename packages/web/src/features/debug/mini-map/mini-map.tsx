@@ -230,6 +230,7 @@ function labelWidth(text: string, perCharacter: number): number {
 const STATE_WORD: Record<NodeState, string> = {
   pending: 'not started',
   running: 'running',
+  paused: 'paused for your answer',
   completed: 'completed',
   failed: 'failed',
   stopped: 'stopped',

@@ -19,8 +19,10 @@ import { BUILT_IN_MODELS, PROVIDER_LABELS, formatContextLength, optionsFor, type
 /**
  * The model for one role on its provider: a button showing the current
  * model, opening the AI Elements model selector over the models the backend
- * reports for that provider (`choice`). A model ID that is not listed can
- * be typed and used as it is.
+ * reports for that provider (`choice`). Where the backend restricts the
+ * role to a list (answers and decomposition, Q107), only that list is
+ * offered; otherwise a model ID that is not listed can be typed and used as
+ * it is.
  */
 export function ModelPicker(props: { label: string; value: string; choice: ProviderChoice; disabled?: boolean; onChange(model: string): void }) {
   const { loadModels } = useAppEnvironment()
@@ -51,9 +53,10 @@ export function ModelPicker(props: { label: string; value: string; choice: Provi
     )
   }, [models, props.choice, props.value])
 
+  const listed = props.choice.restricted
   const typed = query.trim()
   const typedIsId = typed !== '' && !/\s/.test(typed) && typed.includes('/')
-  const typedIsNew = typedIsId && !optionsFor(props.choice, models).some((model) => model.id === typed)
+  const typedIsNew = !listed && typedIsId && !optionsFor(props.choice, models).some((model) => model.id === typed)
 
   function choose(model: string): void {
     setOpen(false)
@@ -83,9 +86,17 @@ export function ModelPicker(props: { label: string; value: string; choice: Provi
       <ModelSelectorContent title={`Model for ${props.label.toLowerCase()}`} className="sm:max-w-md"
         overlayClassName="bg-black/10 supports-backdrop-filter:backdrop-blur-none dark:bg-black/20"
       >
-        <ModelSelectorInput placeholder="Search models, or type an OpenRouter model ID…" value={query} onValueChange={setQuery} />
+        <ModelSelectorInput
+          placeholder={listed ? 'Search the tested models…' : 'Search models, or type an OpenRouter model ID…'}
+          value={query}
+          onValueChange={setQuery}
+        />
         <ModelSelectorList className="scroll-quiet max-h-80 p-1">
-          <ModelSelectorEmpty>No model matches. Type a full ID such as provider/model to use it.</ModelSelectorEmpty>
+          <ModelSelectorEmpty>
+            {listed
+              ? 'No tested model matches. Only tested models can be used for this role.'
+              : 'No model matches. Type a full ID such as provider/model to use it.'}
+          </ModelSelectorEmpty>
           {typedIsNew ? (
             <ModelSelectorGroup heading="Use this ID">
               <ModelSelectorItem value={`use ${typed}`} onSelect={() => choose(typed)}>
@@ -94,7 +105,7 @@ export function ModelPicker(props: { label: string; value: string; choice: Provi
             </ModelSelectorGroup>
           ) : null}
           {groups.map(([provider, options]) => (
-            <ModelSelectorGroup key={provider} heading={provider}>
+            <ModelSelectorGroup key={provider} heading={listed && options.every((model) => model.tested !== false) ? `${provider} · tested` : provider}>
               {options.map((model) => (
                 <ModelSelectorItem
                   key={model.id}
@@ -103,7 +114,10 @@ export function ModelPicker(props: { label: string; value: string; choice: Provi
                   onSelect={() => choose(model.id)}
                 >
                   <span className="flex min-w-0 flex-1 flex-col">
-                    <ModelSelectorName>{model.name}</ModelSelectorName>
+                    <ModelSelectorName>
+                      {model.name}
+                      {model.tested === false ? <span className="ml-1.5 text-2xs font-normal text-warning">live test pending</span> : null}
+                    </ModelSelectorName>
                     <span className="truncate font-mono text-2xs text-muted-foreground">{model.id}</span>
                   </span>
                   {model.contextLength !== null ? (
@@ -116,6 +130,12 @@ export function ModelPicker(props: { label: string; value: string; choice: Provi
             </ModelSelectorGroup>
           ))}
         </ModelSelectorList>
+        {listed ? (
+          <p data-slot="model-list-note" className="border-t px-3 py-2 text-2xs leading-relaxed text-muted-foreground">
+            Only models tested with Pluribus are offered here: they can prepare an answer in a structured step and signal, while
+            streaming, that they need to ask you something.
+          </p>
+        ) : null}
       </ModelSelectorContent>
     </ModelSelector>
   )

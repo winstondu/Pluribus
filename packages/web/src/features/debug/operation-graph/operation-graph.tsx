@@ -169,9 +169,14 @@ const STATUS: Record<OperationStatus, { icon: LucideIcon | 'live'; tone: string 
 }
 
 function StatusLine({ operation }: { operation: OperationView }) {
-  const { icon: Icon, tone } = STATUS[operation.status]
+  // One paused status, two reasons: waiting for the user's answer reads as a question, a recovery choice as a pause.
+  const { icon: Icon, tone } = operation.pauseReason === 'awaiting-input' ? STATUS['awaiting-answer'] : STATUS[operation.status]
   return (
-    <span className={cn('flex min-w-0 items-center gap-1.5 text-2xs', tone)} data-status={operation.status}>
+    <span
+      className={cn('flex min-w-0 items-center gap-1.5 text-2xs', tone)}
+      data-status={operation.status}
+      data-pause-reason={operation.pauseReason ?? undefined}
+    >
       {Icon === 'live' ? (
         <span aria-hidden className="mx-0.5 size-1.5 shrink-0 animate-pending rounded-full bg-current" />
       ) : (

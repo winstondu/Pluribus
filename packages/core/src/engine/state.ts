@@ -4,6 +4,7 @@ import type {
   AttemptState,
   ChainId,
   ChainKind,
+  ClarificationReason,
   ConsumedContext,
   ConversationId,
   DirectiveId,
@@ -27,6 +28,7 @@ import type {
   PrerequisiteRef,
   ProviderError,
   QueueItemId,
+  ReadinessRecord,
   ReplyRelation,
   Requirement,
   RequirementId,
@@ -104,7 +106,7 @@ export interface ConversationState {
   readonly operationOrder: readonly OperationId[]
 }
 
-export const STATE_VERSION = 3
+export const STATE_VERSION = 4
 
 export type Table<T> = { readonly [id: string]: T }
 
@@ -228,7 +230,10 @@ export interface DirectiveRow {
   readonly waitingFor: readonly PrerequisiteRef[]
   readonly heldByBarrier: boolean
   readonly revised: boolean
-  readonly pause: { readonly cause: PauseCause; readonly elicitationId: ElicitationId } | null
+  /** Set while `paused`, by its reason (glossary · "Paused"). An `awaiting-input` pause has no queue item: its question is in the transcript. */
+  readonly pause: DirectivePause | null
+  /** The typed readiness result as last established (Q103); null until one is. */
+  readonly readiness: ReadinessRecord | null
   readonly heldBy: { readonly elicitationId: ElicitationId; readonly reason: 'clarification' | 'choice-with-default' } | null
   /** Prerequisites waived by "Continue without", by the directive whose result is no longer waited for. */
   readonly waived: readonly DirectiveId[]
@@ -245,6 +250,10 @@ export interface DirectiveRow {
    */
   readonly slotHeld: boolean
 }
+
+export type DirectivePause =
+  | { readonly reason: 'dependency-recovery'; readonly cause: PauseCause; readonly elicitationId: ElicitationId }
+  | { readonly reason: 'awaiting-input'; readonly elicitationId: ElicitationId }
 
 export interface AttemptRow {
   readonly id: AttemptId
@@ -269,6 +278,8 @@ export interface AttemptRow {
   readonly chunks: number
   readonly finishReason: 'stop' | 'length' | null
   readonly usage: TokenUsage | null
+  /** For a run that stopped to ask (`paused`): the question it asked (Q106). */
+  readonly pausedFor: { readonly reason: ClarificationReason; readonly question: string } | null
 }
 
 export interface ChainRow {

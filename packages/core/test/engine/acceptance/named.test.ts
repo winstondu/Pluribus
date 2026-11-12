@@ -796,7 +796,7 @@ describe('engine lifecycle', () => {
 })
 
 function s0() {
-  return { modelProvider: {}, decisionProvider: {}, decomposer: {}, eventStore: {}, projectionCache: {}, secretsStore: {}, clock: {}, timers: {}, ids: {} }
+  return { modelProvider: {}, preparer: {}, decisionProvider: {}, decomposer: {}, eventStore: {}, projectionCache: {}, secretsStore: {}, clock: {}, timers: {}, ids: {} }
 }
 
 function done(afterMs: number) {

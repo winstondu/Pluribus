@@ -48,6 +48,7 @@ import {
   type JsonValue,
   type ModelRequest,
   type ModelStreamEvent,
+  type PreparationResult,
   type Router,
   type RoutingInput,
   type RoutingOutcome,
@@ -70,6 +71,7 @@ import {
   type StepContext,
 } from './module'
 import { checkPlan, nearestSettledAncestor } from './plan'
+import { askKnownClarification, inputDigest, readinessStands } from './readiness'
 import { Projector, projectSnapshot, runInspection } from './projections'
 import { messageVisible, nodeInFlight, resolvePlannedParents, unsatisfiedPrerequisites } from './queries'
 import { fold, reduce } from './reducers'
@@ -217,6 +219,8 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
   const runtimes = new Map<ConversationId, Runtime>()
   const live = new Map<AttemptId, LiveRun>()
   const starting = new Map<string, Prepared | null>()
+  /** Directives whose preparation step is in flight, with the digest of the input being checked. It takes no slot. */
+  const preparing = new Map<string, string>()
   /** Ready directives whose `directive-slot-held` step is queued but has not run yet. */
   const slotHeldPending = new Set<string>()
   const timers = new Map<string, CancelTimer>()
@@ -435,6 +439,7 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
   function conversationIdle(conversationId: ConversationId): boolean {
     for (const run of live.values()) if (run.conversationId === conversationId) return false
     for (const key of starting.keys()) if (key.startsWith(`${conversationId}|`)) return false
+    for (const key of preparing.keys()) if (key.startsWith(`${conversationId}|`)) return false
     return true
   }
 
@@ -684,7 +689,14 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
   /**
    * Starts ready work while slots are free (Q60): one pool for every answer
    * and synthesis run of every conversation, in submission order, then
-   * split-message position. Routing, labels and join-backs take no slot.
+   * split-message position. Routing, labels, join-backs and the preparation
+   * step take no slot.
+   *
+   * An answer directive starts only once its typed readiness stands (Q103).
+   * One whose readiness does not, because results it waited for have
+   * arrived since, its request was revised, or nothing was recorded, gets
+   * the preparation step first (Q105) and is scheduled again when that
+   * settles.
    */
   function schedule(): void {
     if (disposed || !started) return
@@ -699,6 +711,14 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
         const d = state.directives[id]
         if (!d || d.state !== 'ready' || starting.has(startKey(runtime.id, id))) continue
         if ([...live.values()].some((r) => r.conversationId === runtime.id && r.directiveId === id)) continue
+        if (preparing.has(startKey(runtime.id, id))) continue
+        if (d.kind === 'answer') {
+          const pending = pendingPreparation(runtime, id)
+          if (pending) {
+            startPreparation(runtime, pending)
+            continue
+          }
+        }
         const original = state.messages[d.originalMessageId]
         ready.push({
           runtime,
@@ -762,8 +782,131 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
     const request: ModelRequest = {
       model: settings.models[modelRole],
       messages: context.messages.map((message) => ({ role: message.role, content: message.content })),
+      // An answer may stop to ask the user (Q106); a clarification question is itself the asking.
+      ...(d.kind === 'answer' ? { clarificationSignal: true } : {}),
     }
     return { conversationId: runtime.id, directiveId, nodeId: d.nodeId, parents, context, request, modelRole }
+  }
+
+  // ── readiness ──
+  /** The preparation a ready answer directive still needs before it may start, or null when its readiness stands. */
+  function pendingPreparation(runtime: Runtime, directiveId: DirectiveId): { readonly prepared: Prepared; readonly basis: string } | null {
+    const d = runtime.state.directives[directiveId]
+    if (!d || d.kind !== 'answer') return null
+    let prepared: Prepared | null | undefined
+    const digest = (): string => {
+      prepared = prepared === undefined ? prepare(runtime, directiveId) : prepared
+      return prepared ? inputDigest(prepared.request.messages) : ''
+    }
+    if (readinessStands(d, digest)) return null
+    const basis = digest()
+    return prepared ? { prepared, basis } : null
+  }
+
+  /**
+   * The preparation step (Q103): one structured call on the decomposition
+   * model over the exact input the answer run would read. Nothing is
+   * recorded until it answers, so an interruption loses nothing: the
+   * directive is still ready and is prepared again on start.
+   */
+  function startPreparation(runtime: Runtime, pending: { readonly prepared: Prepared; readonly basis: string }): void {
+    const { prepared, basis } = pending
+    const key = startKey(runtime.id, prepared.directiveId)
+    preparing.set(key, basis)
+    const source = createCancelSource()
+    const failed = (error: unknown): PreparationResult => ({
+      ok: false,
+      error: providerError('network', error instanceof Error ? error.message : 'The preparation step failed'),
+    })
+    void track(
+      deps.preparer
+        .prepare({ model: settings.models.decomposition, messages: prepared.request.messages }, source.signal)
+        .catch(failed)
+        .then((result) =>
+          enqueue(async () => {
+            if (preparing.get(key) !== basis) return
+            preparing.delete(key)
+            const current = runtimes.get(runtime.id)
+            if (!current || disposed) return
+            try {
+              await step(current, (ctx) => applyPreparation(ctx, current, prepared, basis, result))
+            } catch {
+              // Not committed: the directive is still ready and is prepared again.
+            }
+            schedule()
+          }),
+        ),
+    )
+  }
+
+  function applyPreparation(ctx: StepContext, runtime: Runtime, prepared: Prepared, basis: string, result: PreparationResult): void {
+    const d = ctx.state.directives[prepared.directiveId]
+    if (!d || d.state !== 'ready' || d.kind !== 'answer') return
+    // The input changed while it was being checked: this check says nothing about the new one.
+    const again = prepare(runtime, prepared.directiveId)
+    if (!again || inputDigest(again.request.messages) !== basis) return
+    const section = d.sectionId ? ctx.state.sections[d.sectionId] : undefined
+    const malformed = result.ok && result.readiness.kind === 'clarification-needed' && result.readiness.question.trim() === ''
+    if (!result.ok || malformed) {
+      // Readiness is not established, so no answer is generated (Q103). The directive's attempt fails
+      // before it reads anything and the retry setting applies, as for any execution error (08).
+      if (!section) return
+      const error = result.ok ? providerError('malformed-response', 'The preparation step asked an empty question') : result.error
+      const attemptId = ctx.ids.next('attempt')
+      ctx.emit({
+        type: 'attempt-started',
+        attemptId,
+        directiveId: d.id,
+        sectionId: section.id,
+        nodeId: d.nodeId,
+        chainId: d.chainId,
+        operationId: section.operationId,
+        number: d.attemptIds.length + 1,
+        origin: d.nextOrigin,
+        modelRole: prepared.modelRole,
+        model: prepared.request.model,
+        parents: prepared.parents,
+        context: { ...prepared.context, inputTokens: 0, tokenLimit: null },
+      })
+      ctx.emit({ type: 'attempt-failed', attemptId, error, retry: ctx.retryPlan(d.id, { kind: 'failed', error }) })
+      return
+    }
+    const readiness = result.readiness
+    if (readiness.kind === 'ready') {
+      ctx.emit({
+        type: 'directive-readiness-established',
+        directiveId: d.id,
+        readiness: { kind: 'ready' },
+        source: 'preparation',
+        awaitingResults: false,
+        basis,
+        model: result.model,
+      })
+      return
+    }
+    const question = readiness.question.trim()
+    ctx.emit({
+      type: 'directive-readiness-established',
+      directiveId: d.id,
+      readiness: { kind: 'clarification-needed', reason: readiness.reason, question, about: null },
+      source: 'preparation',
+      awaitingResults: false,
+      basis,
+      model: result.model,
+    })
+    askKnownClarification(ctx, {
+      directiveId: d.id,
+      reason: readiness.reason,
+      question,
+      source: 'preparation',
+      pausedAttemptId: null,
+      writer: {
+        model: result.model,
+        modelRole: 'answer',
+        parents: prepared.parents,
+        context: { ...prepared.context, inputTokens: result.usage?.inputTokens ?? 0, tokenLimit: null },
+      },
+    })
   }
 
   function prepareStart(runtime: Runtime, directiveId: DirectiveId): void {
@@ -822,6 +965,10 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
       return
     }
     starting.delete(key)
+    // Visible answer generation starts only after typed readiness is established (Q103, E5): a
+    // directive whose readiness does not stand for this input goes back to the scheduler, which
+    // runs the preparation step first.
+    if (!readinessStands(d, () => inputDigest(again.request.messages))) return
     const section = d.sectionId ? ctx.state.sections[d.sectionId] : undefined
     if (!section) return
     const attemptId = ctx.ids.next('attempt')
@@ -919,6 +1066,39 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
         live.delete(attemptId)
         const retry = ctx.retryPlan(attempt.directiveId, { kind: 'failed', error: event.error })
         ctx.emit({ type: 'attempt-failed', attemptId, error: event.error, retry })
+        return
+      }
+      case 'clarification-needed': {
+        // The run discovered consequential missing information and stopped to ask (Q106). Its text stays
+        // as partial; the directive is paused for the user's input, neither completed nor failed, so
+        // nothing that depends on it is released.
+        ctx.flushOutput(attemptId)
+        live.delete(attemptId)
+        const question = event.question.trim()
+        const d = ctx.state.directives[attempt.directiveId]
+        if (question === '' || !d || d.kind !== 'answer') {
+          const error = providerError('malformed-response', 'The run asked for clarification without a question')
+          ctx.emit({ type: 'attempt-failed', attemptId, error, retry: ctx.retryPlan(attempt.directiveId, { kind: 'failed', error }) })
+          return
+        }
+        ctx.emit({ type: 'attempt-paused', attemptId, reason: event.reason, question, usage: event.usage })
+        ctx.emit({
+          type: 'directive-readiness-established',
+          directiveId: d.id,
+          readiness: { kind: 'clarification-needed', reason: event.reason, question, about: null },
+          source: 'generation',
+          awaitingResults: false,
+          basis: null,
+          model: attempt.model,
+        })
+        askKnownClarification(ctx, {
+          directiveId: d.id,
+          reason: event.reason,
+          question,
+          source: 'generation',
+          pausedAttemptId: attemptId,
+          writer: { model: attempt.model, modelRole: attempt.modelRole, parents: attempt.parents, context: attempt.context },
+        })
         return
       }
       case 'cancelled': {
@@ -1029,6 +1209,7 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
           }
         }
         for (const key of [...starting.keys()]) if (key.startsWith(`${id}|`)) starting.delete(key)
+        for (const key of [...preparing.keys()]) if (key.startsWith(`${id}|`)) preparing.delete(key)
         runtimes.delete(id)
         await deps.eventStore.deleteLog(id)
         await deps.projectionCache.delete(id).catch(() => undefined)
@@ -1112,6 +1293,7 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
       for (const cancel of timers.values()) cancel()
       timers.clear()
       starting.clear()
+      preparing.clear()
       await tail
       for (const runtime of runtimes.values()) if (runtime.dirty) await saveCache(runtime)
     },

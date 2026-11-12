@@ -34,13 +34,13 @@ export function createOpenRouterDecomposer(options: OpenRouterOptions): Decompos
 
 // ───────────────────────────── schema ─────────────────────────────
 
-const BARRIER_REASONS = ['explicit-order', 'combined-limit', 'integrated-presentation'] as const
+const BARRIER_REASONS = ['explicit-order', 'integrated-presentation'] as const
 
 /** The JSON schema sent as `response_format`. Strict: every property required, no extras. */
 export const DECOMPOSITION_JSON_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['fragments', 'barrier', 'outputOrder'],
+  required: ['fragments', 'barrier', 'outputOrder', 'combinedLimit'],
   properties: {
     fragments: {
       type: 'array',
@@ -90,6 +90,7 @@ export const DECOMPOSITION_JSON_SCHEMA = {
       ],
     },
     outputOrder: { anyOf: [{ type: 'array', items: { type: 'string' } }, { type: 'null' }] },
+    combinedLimit: { type: ['string', 'null'] },
   },
 } as const
 
@@ -113,6 +114,7 @@ export const proposalSchema = z.object({
   ),
   barrier: z.object({ reason: z.enum(BARRIER_REASONS), qualifier: z.string() }).nullable(),
   outputOrder: z.array(z.string()).nullable(),
+  combinedLimit: z.string().nullable(),
 })
 
 type Proposal = z.infer<typeof proposalSchema>
@@ -135,7 +137,9 @@ For each fragment:
 - "dependsOnFragments": keys of other fragments whose RESULT this one needs as input (for example "then summarise that"). Empty when the fragment can be answered without them.
 - "dependsOnCandidates": ids of supplied existing work whose result this fragment needs. Use only ids from the supplied list.
 
-"barrier": set it only when the message relates its outputs to one another: an explicit order of presentation ("put the translation first"), a combined limit ("under 100 words total"), or one integrated presentation. "qualifier" is that phrase in the user's words. A requirement that applies to each part separately ("each answer under 100 words") is NOT a barrier. Otherwise null.
+"barrier": set it only when the message relates its outputs to one another: an explicit order of presentation ("put the translation first") or one integrated presentation. "qualifier" is that phrase in the user's words. A requirement that applies to each part separately ("each answer under 100 words") is NOT a barrier. Otherwise null.
+
+"combinedLimit": when the message sets one limit on all its outputs together ("under 100 words total", "200 words altogether"), that phrase in the user's words; otherwise null. A limit for each part ("each answer under 100 words") is not a combined limit: it is a requirement of each fragment.
 
 "outputOrder": fragment keys in the order the user asked the outputs to be presented, only when the barrier is an explicit order; otherwise null.
 
@@ -250,6 +254,7 @@ export function checkProposal(proposal: Proposal, request: DecomposeRequest): Pr
   const barrier =
     proposal.barrier === null ? null : { reason: proposal.barrier.reason, qualifier: proposal.barrier.qualifier.trim() }
   if (barrier !== null && barrier.qualifier === '') problems.push('The barrier has an empty qualifier.')
+  const combinedLimit = proposal.combinedLimit === null || proposal.combinedLimit.trim() === '' ? null : proposal.combinedLimit.trim()
 
   if (problems.length > 0) return { ok: false, problems }
   const ordered = fragments
@@ -263,6 +268,7 @@ export function checkProposal(proposal: Proposal, request: DecomposeRequest): Pr
       barrier,
       // Only an explicit order has an output order (Q18).
       outputOrder: barrier?.reason === 'explicit-order' ? outputOrder : null,
+      combinedLimit,
     },
   }
 }

@@ -613,7 +613,7 @@ describe('chains, dependencies and context: the review cases', () => {
     s.t.model.script('Book a hotel', answer('Booked.', 100, 5_000))
     const messageId = await s.t.submit(s.c, text)
     expect(s.d('dinner').sectionId).toBeNull()
-    expect(s.d('dinner').state).toBe('awaiting-elicitation')
+    expect(s.d('dinner').state).toBe('paused')
     await s.t.send({ type: 'stop', conversationId: s.c, target: { kind: 'request', messageId } })
     expect(s.d('hotel').state).toBe('stopped')
     expect(s.d('dinner').state).toBe('cancelled')

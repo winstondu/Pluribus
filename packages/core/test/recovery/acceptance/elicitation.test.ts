@@ -182,3 +182,89 @@ describe('choice with default', () => {
     expect(next.state(s.c).directives[itinerary.id]?.sectionId).not.toBe(itinerary.sectionId)
   })
 })
+
+/**
+ * Q101 (07 · "Choice with default"): the deadline is an absolute time in the
+ * log (`elicitation-raised.deadlineAt`), so it survives the tab closing. If it
+ * has elapsed when the app restarts, the default is carried out once after
+ * recovery without asking again; if not, the wait resumes with what is left.
+ */
+describe('choice with default across a restart (Q101)', () => {
+  const defaultedIn = async (t: Scenario['t'], c: Scenario['c']) => {
+    const result = await t.backend.snapshot({ kind: 'events', conversationId: c, afterSeq: 0 })
+    if (!result.ok) throw new Error(result.error.message)
+    return result.value.events.filter((e) => e.type === 'elicitation-defaulted')
+  }
+
+  test('E3 (Q101) · closed before the deadline and reopened after it: the default is carried out once after recovery, without asking again', async () => {
+    const s = await briefAndConsumers([say(10, 'Day 1'), say(60_000, ' …')])
+    const itinerary = s.d('itinerary')
+    await revise(s, FOUR_DAYS, SHARED)
+    const deadlineAt = choiceOf((await s.snap()).queue.elicitations).deadlineAt
+    // The tab closes 10 s into the wait and opens again 45 s after the choice was raised.
+    await s.t.advance(10_000)
+    expect(await defaultedIn(s.t, s.c)).toEqual([])
+    await s.t.backend.dispose()
+    s.t.clock.set(deadlineAt + 15_000)
+    s.t.model.script('Make a five-day itinerary', answer('Day 1 … Day 4.', 10, 20))
+    const next = await s.t.restart()
+    // Carried out on start: nothing is asked again, and the held work is redone.
+    expect(await defaultedIn(next, s.c)).toMatchObject([{ trigger: 'wait-elapsed', redo: [] }])
+    const snap = await next.snapshot(s.c)
+    expect(snap.queue.elicitations).toEqual([])
+    await next.advance(100)
+    const redone = next.state(s.c).directives[itinerary.id]
+    expect(redone?.state).toBe('completed')
+    expect(redone?.sectionIds).toHaveLength(2)
+    const view = (await next.snapshot(s.c)).transcript.sections[redone?.sectionId ?? '']
+    expect(view?.notes).toEqual([{ kind: 'redone-by-default', text: 'Redid itinerary by default', elicitationId: expect.any(String) }])
+  })
+
+  test('E3 (Q101) · reopened before the deadline: the choice is still open and the default runs at the recorded deadline, not a fresh wait', async () => {
+    const s = await briefAndConsumers()
+    const itinerary = s.d('itinerary')
+    await revise(s, FOUR_DAYS, SHARED)
+    const raised = choiceOf((await s.snap()).queue.elicitations)
+    await s.t.backend.dispose()
+    s.t.clock.set(raised.deadlineAt - 20_000)
+    // A longer wait chosen while the tab was closed does not move a deadline already recorded.
+    const next = await s.t.restart({ settings: { defaultChoiceWaitMs: 120_000 } })
+    const reopened = choiceOf((await next.snapshot(s.c)).queue.elicitations)
+    expect(reopened.id).toBe(raised.id)
+    expect(reopened.deadlineAt).toBe(raised.deadlineAt)
+    s.t.model.script('Make a five-day itinerary', answer('Day 1 … Day 4.', 10, 20))
+    await next.advance(19_900)
+    expect(await defaultedIn(next, s.c)).toEqual([])
+    expect(next.state(s.c).directives[itinerary.id]?.sectionId).toBe(itinerary.sectionId)
+    await next.advance(200)
+    expect(await defaultedIn(next, s.c)).toMatchObject([{ trigger: 'wait-elapsed', redo: [itinerary.id] }])
+    await next.advance(100)
+    expect(next.state(s.c).directives[itinerary.id]?.state).toBe('completed')
+    expect(next.state(s.c).directives[itinerary.id]?.sectionId).not.toBe(itinerary.sectionId)
+  })
+
+  test('E3 (Q101) · replayed twice after the default ran on recovery: the log holds one default and the work is redone once', async () => {
+    const s = await briefAndConsumers()
+    const itinerary = s.d('itinerary')
+    await revise(s, FOUR_DAYS, SHARED)
+    const deadlineAt = choiceOf((await s.snap()).queue.elicitations).deadlineAt
+    await s.t.backend.dispose()
+    s.t.clock.set(deadlineAt + 1)
+    s.t.model.script('Make a five-day itinerary', answer('Day 1 … Day 4.', 10, 20))
+    const first = await s.t.restart()
+    await first.advance(100)
+    const after = first.state(s.c).directives[itinerary.id]
+    expect(after?.state).toBe('completed')
+    expect(after?.sectionIds).toHaveLength(2)
+    // Two more restarts, one with time passing: nothing is carried out again.
+    s.t.clock.set(s.t.clock.now() + 60_000)
+    const second = await first.restart()
+    const third = await second.restart()
+    await third.advance(31_000)
+    expect(await defaultedIn(third, s.c)).toHaveLength(1)
+    const final = third.state(s.c).directives[itinerary.id]
+    expect(final?.sectionIds).toEqual(after?.sectionIds)
+    expect(final?.attemptIds).toEqual(after?.attemptIds)
+    expect((await third.snapshot(s.c)).queue.elicitations).toEqual([])
+  })
+})

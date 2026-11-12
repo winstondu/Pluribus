@@ -103,7 +103,7 @@ export async function applyCheapModels(page) {
     const trigger = page.getByRole('button', { name: new RegExp(`^${label} model: `) })
     if ((await trigger.getAttribute('aria-label'))?.endsWith(CHEAP_MODEL)) continue
     await trigger.click()
-    const input = page.getByPlaceholder(/Search models, or type an OpenRouter model ID/)
+    const input = page.getByPlaceholder(/Search the tested models|Search models, or type an OpenRouter model ID/)
     await input.fill(CHEAP_MODEL)
     await page.getByRole('option', { name: new RegExp(CHEAP_MODEL.replace(/[.\/]/g, '\\$&')) }).first().click()
     await page.getByRole('button', { name: `${label} model: ${CHEAP_MODEL}` }).waitFor({ timeout: 10_000 })

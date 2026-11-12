@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { PROVIDER_ERROR_CLASS, WORDING } from '@pluribus/protocol'
 import { NEVER_CANCELLED, createCancelSource, type ModelStreamEvent } from '@pluribus/core/ports'
-import { createOpenRouterModelProvider } from '../../src/openrouter/model-provider'
+import { CLARIFICATION_TOOL, CLARIFICATION_TOOL_NAME, carriesClarificationSignal, createOpenRouterModelProvider } from '../../src/openrouter/model-provider'
 import { estimateTokens } from '../../src/openrouter/models'
 import {
   DONE,
@@ -453,5 +453,100 @@ describe('OpenRouter model provider · countTokens', () => {
     const tokens = estimateTokens([{ role: 'user', content: russian }])
     expect(tokens).toBeLessThan(russian.length / 2)
     expect(tokens).toBeGreaterThan(russian.length / 5)
+  })
+})
+
+/** One SSE `data:` event carrying a piece of a tool call. */
+function toolDelta(piece: { name?: string; arguments?: string }, finishReason: string | null = null, index = 0): string {
+  const fn = { ...(piece.name !== undefined ? { name: piece.name } : {}), ...(piece.arguments !== undefined ? { arguments: piece.arguments } : {}) }
+  return `data: ${JSON.stringify({ id: 'gen-1', choices: [{ index: 0, delta: { tool_calls: [{ index, id: 'call_1', type: 'function', function: fn }] }, finish_reason: finishReason }] })}\n\n`
+}
+
+describe('OpenRouter model provider · the streamed clarification signal', () => {
+  const SIGNALLED = { ...REQUEST, clarificationSignal: true }
+
+  it('carries the signal as one function tool, only when core asks for it and the model is tested for it', async () => {
+    const asked = provider(() => sseResponse([delta('Hi'), delta('', 'stop'), DONE]))
+    await collect(asked.provider.stream(SIGNALLED, NEVER_CANCELLED))
+    expect(asked.mock.requests[0]?.body).toMatchObject({ tools: [CLARIFICATION_TOOL], tool_choice: 'auto', parallel_tool_calls: false })
+    expect(carriesClarificationSignal(SIGNALLED)).toBe(true)
+    // A clarification question's own run does not carry it, and neither does a model off the compatibility list.
+    expect(carriesClarificationSignal(REQUEST)).toBe(false)
+    const unlisted = provider(() => sseResponse([delta('Hi'), delta('', 'stop'), DONE]))
+    await collect(unlisted.provider.stream({ ...SIGNALLED, model: 'example/untested-model' }, NEVER_CANCELLED))
+    expect(unlisted.mock.requests[0]?.body).not.toHaveProperty('tools')
+  })
+
+  it('reports a tool call as the typed terminal event; text before it stands as partial output and the question is never text', async () => {
+    const { provider: p } = provider(() =>
+      sseResponse([
+        delta('Gion is'),
+        toolDelta({ name: CLARIFICATION_TOOL_NAME, arguments: '' }),
+        toolDelta({ arguments: '{"question":"Should the summary ' }),
+        toolDelta({ arguments: 'include prices?","reason":"missing-information"}' }),
+        delta('', 'tool_calls'),
+        usageChunk(40, 22),
+        DONE,
+      ]),
+    )
+    const events = await collect(p.stream(SIGNALLED, NEVER_CANCELLED))
+    expect(events).toEqual([
+      { type: 'text', text: 'Gion is' },
+      {
+        type: 'clarification-needed',
+        reason: 'missing-information',
+        question: 'Should the summary include prices?',
+        usage: { inputTokens: 40, outputTokens: 22 },
+      },
+    ])
+  })
+
+  it('a run that asks before writing anything is a clarification, not an empty response', async () => {
+    const { provider: p } = provider(() =>
+      sseResponse([
+        toolDelta({ name: CLARIFICATION_TOOL_NAME, arguments: '{"question":"Which city?","reason":"incompatible-requirements"}' }, 'tool_calls'),
+        DONE,
+      ]),
+    )
+    expect(await collect(p.stream(SIGNALLED, NEVER_CANCELLED))).toEqual([
+      { type: 'clarification-needed', reason: 'incompatible-requirements', question: 'Which city?', usage: null },
+    ])
+  })
+
+  it('a call that cannot be read as a question fails the run as malformed-response', async () => {
+    const pieces = [
+      { name: CLARIFICATION_TOOL_NAME, arguments: '{"question":' },
+      { name: CLARIFICATION_TOOL_NAME, arguments: '{"question":"  "}' },
+      { name: 'something_else', arguments: '{}' },
+    ]
+    for (const piece of pieces) {
+      const { provider: p } = provider(() => sseResponse([delta('Text'), toolDelta(piece, 'tool_calls'), DONE]))
+      const events = await collect(p.stream(SIGNALLED, NEVER_CANCELLED))
+      expect(terminal(events)).toMatchObject({ type: 'failed', error: { code: 'malformed-response' } })
+    }
+  })
+
+  it('reads the signal from a non-streamed JSON body too', async () => {
+    const { provider: p } = provider(() =>
+      jsonResponse({
+        choices: [
+          {
+            message: {
+              role: 'assistant',
+              content: 'Gion is',
+              tool_calls: [
+                { id: 'call_1', type: 'function', function: { name: CLARIFICATION_TOOL_NAME, arguments: '{"question":"Which season?","reason":"missing-information"}' } },
+              ],
+            },
+            finish_reason: 'tool_calls',
+          },
+        ],
+        usage: { prompt_tokens: 5, completion_tokens: 7 },
+      }),
+    )
+    expect(await collect(p.stream(SIGNALLED, NEVER_CANCELLED))).toEqual([
+      { type: 'text', text: 'Gion is' },
+      { type: 'clarification-needed', reason: 'missing-information', question: 'Which season?', usage: { inputTokens: 5, outputTokens: 7 } },
+    ])
   })
 })

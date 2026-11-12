@@ -1,4 +1,5 @@
 import type { ModelRole } from './model'
+import { LISTED_MODEL_ROLES, compatibleModels, isCompatibleModel, isListedModelRole } from './models'
 
 /**
  * User settings (10 · "User settings"). App-wide: retry policy, models and
@@ -204,10 +205,25 @@ export type CandidateSourceName = 'none' | 'lexical'
 
 export const CANDIDATE_SOURCE_NAMES: readonly CandidateSourceName[] = ['none', 'lexical']
 
+/**
+ * Ordered-message decomposition (02 · "Messages and decomposition", Q104): a
+ * decomposer option for a message that asks for its outputs in an explicit
+ * order ("…, but put the translation first").
+ * - `decompose` (the default): it is decomposed like any composite, and the
+ *   output order and the whole-request barrier apply (D3).
+ * - `atomic`: it is one request, answered by one directive; no barrier.
+ * A combined total output limit keeps a message atomic whatever this says (Q102).
+ */
+export type OrderedMessageHandling = 'decompose' | 'atomic'
+
+export const ORDERED_MESSAGE_HANDLINGS: readonly OrderedMessageHandling[] = ['decompose', 'atomic']
+
 export interface RoutingSettings {
   readonly referentStrategy: ReferentStrategyName
   readonly strategySelection: StrategySelectionMode
   readonly candidateSource: CandidateSourceName
+  /** Whether a message with an explicit output order is decomposed or kept atomic (Q104). */
+  readonly orderedMessages: OrderedMessageHandling
   readonly referentBudget: DecisionCaps
   readonly tokenBudget: DecisionTokenBudget
   readonly treeWalk: TreeWalkSettings
@@ -252,7 +268,7 @@ export interface Settings {
   readonly retryPolicy: RetryPolicy
   /** Wait before a choice with default is carried out, in milliseconds (Q45). */
   readonly defaultChoiceWaitMs: number
-  /** Answer and synthesis runs in flight at once, per provider (Q60). Integer ≥ 1. */
+  /** Answer and synthesis runs in flight at once, app-wide: one pool for every conversation (Q60, Q100). Integer ≥ 1. */
   readonly concurrencyLimit: number
   readonly models: ModelSettings
   readonly thresholds: DecisionThresholds
@@ -293,6 +309,8 @@ export const DEFAULT_SETTINGS: Settings = {
     // walk routes two more examples with it and the default, by rules, the same number, for fewer decision tokens.
     // `none` starts the walk at the roots alone.
     candidateSource: 'lexical',
+    // Today's behaviour: an ordered message is split, and the barrier keeps its outputs in the order asked for (D3).
+    orderedMessages: 'decompose',
     referentBudget: { requests: 4, questions: 96 },
     // 2% of the conversation's log, at least what the pipeline's request and a search of a long run cost (16,000) and
     // at most what twice a 1,700-token answer on the cheapest answer model buys (40,000): the budget grows with what
@@ -327,6 +345,7 @@ export interface SettingsPatch {
     readonly referentStrategy?: ReferentStrategyName
     readonly strategySelection?: StrategySelectionMode
     readonly candidateSource?: CandidateSourceName
+    readonly orderedMessages?: OrderedMessageHandling
     readonly referentBudget?: Partial<DecisionCaps>
     /** Replaced as a whole: the two modes share no field. */
     readonly tokenBudget?: DecisionTokenBudget
@@ -350,6 +369,7 @@ export function applySettingsPatch(settings: Settings, patch: SettingsPatch): Se
       referentStrategy: patch.routing?.referentStrategy ?? settings.routing.referentStrategy,
       strategySelection: patch.routing?.strategySelection ?? settings.routing.strategySelection,
       candidateSource: patch.routing?.candidateSource ?? settings.routing.candidateSource,
+      orderedMessages: patch.routing?.orderedMessages ?? settings.routing.orderedMessages,
       referentBudget: { ...settings.routing.referentBudget, ...definedOnly(patch.routing?.referentBudget) },
       tokenBudget: patch.routing?.tokenBudget ?? settings.routing.tokenBudget,
       treeWalk: { ...settings.routing.treeWalk, ...definedOnly(patch.routing?.treeWalk) },
@@ -388,6 +408,9 @@ export function validateSettingsPatch(patch: SettingsPatch): string | null {
   if (patch.routing?.candidateSource !== undefined && !CANDIDATE_SOURCE_NAMES.includes(patch.routing.candidateSource)) {
     return `Unknown candidate source "${String(patch.routing.candidateSource)}"`
   }
+  if (patch.routing?.orderedMessages !== undefined && !ORDERED_MESSAGE_HANDLINGS.includes(patch.routing.orderedMessages)) {
+    return `Unknown ordered-message handling "${String(patch.routing.orderedMessages)}"`
+  }
   for (const [name, value] of Object.entries(patch.routing?.referentBudget ?? {})) {
     if (typeof value === 'number' && (!Number.isInteger(value) || value < 0)) {
       return `Decision budget "${name}" must be a whole number of at least 0`
@@ -420,6 +443,10 @@ export function validateSettingsPatch(patch: SettingsPatch): string | null {
   }
   for (const [role, model] of Object.entries(patch.models ?? {})) {
     if (typeof model === 'string' && model.trim() === '') return `Model for "${role}" cannot be empty`
+    // MVP answer, decomposition and synthesis choices come from the tested compatibility list (Q107).
+    if (typeof model === 'string' && isListedModelRole(role) && !isCompatibleModel(role, model)) {
+      return `Model for "${role}" must be one of the tested models: ${compatibleModels(role).map((m) => m.id).join(', ')}`
+    }
   }
   return null
 }
@@ -433,12 +460,13 @@ export function normalizeSettings(stored: Partial<Settings>): Settings {
   return {
     ...DEFAULT_SETTINGS,
     ...stored,
-    models: { ...DEFAULT_SETTINGS.models, ...stored.models },
+    models: normalizeModels({ ...DEFAULT_SETTINGS.models, ...stored.models }),
     thresholds: { ...DEFAULT_SETTINGS.thresholds, ...stored.thresholds },
     routing: {
       referentStrategy: stored.routing?.referentStrategy ?? DEFAULT_SETTINGS.routing.referentStrategy,
       strategySelection: STRATEGY_SELECTION_MODES.find((mode) => mode === stored.routing?.strategySelection) ?? DEFAULT_SETTINGS.routing.strategySelection,
       candidateSource: CANDIDATE_SOURCE_NAMES.find((name) => name === stored.routing?.candidateSource) ?? DEFAULT_SETTINGS.routing.candidateSource,
+      orderedMessages: ORDERED_MESSAGE_HANDLINGS.find((handling) => handling === stored.routing?.orderedMessages) ?? DEFAULT_SETTINGS.routing.orderedMessages,
       referentBudget: {
         requests: caps?.requests ?? DEFAULT_SETTINGS.routing.referentBudget.requests,
         questions: caps?.questions ?? DEFAULT_SETTINGS.routing.referentBudget.questions,
@@ -455,6 +483,19 @@ export function normalizeSettings(stored: Partial<Settings>): Settings {
       comparePlacement: COMPARE_PLACEMENTS.find((placement) => placement === stored.debug?.comparePlacement) ?? DEFAULT_SETTINGS.debug.comparePlacement,
     },
   }
+}
+
+/**
+ * Stored models, with an answer, decomposition or synthesis model that is
+ * not on the tested compatibility list replaced by that role's default
+ * (Q107). The decision model is kept as stored.
+ */
+export function normalizeModels(models: ModelSettings): ModelSettings {
+  let next = models
+  for (const role of LISTED_MODEL_ROLES) {
+    if (!isCompatibleModel(role, next[role])) next = { ...next, [role]: DEFAULT_SETTINGS.models[role] }
+  }
+  return next
 }
 
 /** What `referentBudget.inputTokens` was before the token budget became a setting of its own. */

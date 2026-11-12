@@ -142,7 +142,7 @@ describe('validation', () => {
     for (const fragments of cases) {
       const router = createRouter({
         decisionProvider: oracle,
-        decomposer: { decompose: async () => ({ ok: true, decomposition: { fragments: fragments as never, barrier: null, outputOrder: null } }) },
+        decomposer: { decompose: async () => ({ ok: true, decomposition: { fragments: fragments as never, barrier: null, outputOrder: null, combinedLimit: null } }) },
       })
       const outcome = await router.route(i, NEVER_CANCELLED)
       expect(outcome.kind === 'failed' && outcome.error.code).toBe('malformed-response')
@@ -168,7 +168,7 @@ describe('validation', () => {
       decisionProvider: { decide: (r, s) => (asked.push(...Object.keys(r.questions)), oracle.decide(r, s)) },
       decomposer: referenceDecomposer(e),
     }).route(i, NEVER_CANCELLED)
-    expect(asked.sort()).toEqual(['composite', 'm_clarify', 'm_why', 'sessionwide'])
+    expect(asked.sort()).toEqual(['combinedlimit', 'composite', 'm_clarify', 'm_why', 'sessionwide'])
   })
 
   test('gate · after Undo split the message is routed as one request: no composite question, no decomposition', async () => {

@@ -502,3 +502,38 @@ test('F3 (web) · no Failed mark while an automatic retry or a rate-limit wait i
     expect(within(bubble).getByRole('status').textContent).toBe(status)
   }
 })
+
+test('E5 (web) · a section paused awaiting user input keeps its partial text, labeled; its question is an additional response with Answer; the answer is another response', async () => {
+  const view = await open('paused-awaiting-input')
+  const paused = section(view.container, 'day')
+  // Paused is its own state: not completed, not failed, and none of the controls of work that ended.
+  expect(paused.dataset.state).toBe('paused')
+  expect(within(paused).getByRole('status').textContent).toBe(WORDING.pausedAwaitingInput)
+  expect(paused.querySelector('[data-status]')?.getAttribute('data-status')).toBe('paused')
+  expect(within(paused).getByText(/Start with the 9:00 tea ceremony/)).toBeVisible()
+  expect(within(paused).getByText(WORDING.pausedPartial)).toBeVisible()
+  expect(paused.querySelector('[data-mark="paused"]')).not.toBeNull()
+  expect(within(paused).queryByRole('alert')).toBeNull()
+  for (const name of ['Retry', 'Stop', 'Regenerate', 'Continue without last day', 'Cancel last day']) {
+    expect(within(paused).queryByRole('button', { name })).toBeNull()
+  }
+  // The question is a response of its own, after the paused one, and is answered through its reply affordance.
+  expect(drawnOrder(view.container).slice(0, 3)).toEqual([m('day'), r('day'), r('question')])
+  expect(within(paused).getByRole('button', { name: /See the question/ })).toBeVisible()
+  expect(within(section(view.container, 'question')).getByRole('button', { name: 'Answer' })).toBeVisible()
+  // Its dependent only waits; unrelated work is complete.
+  expect(within(section(view.container, 'pack')).getByRole('status').textContent).toBe('Waiting for last day')
+  expect(section(view.container, 'sky').dataset.state).toBe('completed')
+
+  await play(view)
+  // The earlier response is not reopened: the answer is a later one, and the partial text stays where it was, labeled.
+  expect(section(view.container, 'day').dataset.state).toBe('superseded')
+  expect(within(section(view.container, 'day')).getByText(WORDING.clarifiedPartial)).toBeVisible()
+  expect(within(section(view.container, 'day')).getByRole('button', { name: new RegExp(WORDING.seeAnswer) })).toBeVisible()
+  expect(response(view.container, 'plan').contains(section(view.container, 'plan'))).toBe(true)
+  const order = drawnOrder(view.container)
+  expect(order.indexOf(r('day'))).toBeLessThan(order.indexOf(r('question')))
+  await play(view)
+  expect(section(view.container, 'plan').dataset.state).toBe('completed')
+  expect(within(section(view.container, 'plan')).getByText(/leave Kyoto Station on the 6:15 Haruka/)).toBeVisible()
+})

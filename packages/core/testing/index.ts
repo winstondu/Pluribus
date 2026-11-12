@@ -9,6 +9,7 @@ export { FakeClock } from './fake-clock'
 export {
   ScriptedModelProvider,
   answer,
+  askUser,
   done,
   fail,
   requestTextOf,
@@ -17,6 +18,7 @@ export {
   type ScriptStep,
 } from './scripted-model-provider'
 export { ScriptedDecisionProvider, ScriptedDecomposer } from './scripted-providers'
+export { ScriptedPreparer, needsClarification, readyToAnswer } from './scripted-preparer'
 export {
   ScriptedRouter,
   atomic,

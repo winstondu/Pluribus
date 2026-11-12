@@ -5,6 +5,7 @@
  * APIs are used, so all three run in a browser Web Worker and in Node.
  */
 export { createOpenRouterModelProvider } from './openrouter/model-provider'
+export { createOpenRouterPreparer } from './openrouter/preparer'
 export { createOpenRouterDecisionProvider } from './openrouter/decision-provider'
 export { createOpenRouterDecomposer } from './openrouter/decomposer'
 export { OPENROUTER_BASE_URL } from './openrouter/http'
