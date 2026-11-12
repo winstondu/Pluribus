@@ -1,4 +1,5 @@
 import type {
+  AttemptId,
   ChainId,
   ChainKind,
   ConversationId,
@@ -102,8 +103,9 @@ export interface RoutingInput {
   readonly decisionContext?: (nodeId: NodeId) => DecisionContext | null
   /**
    * The whole answer text of a supplied section so far, for the candidate
-   * source: `CandidateSection.excerpt` is only its opening. Left out, the
-   * excerpt stands for the answer.
+   * source and for what a question about the section by itself shows
+   * (`routing/shown.ts`): `CandidateSection.excerpt` is only its opening.
+   * Left out, the excerpt stands for the answer.
    */
   readonly answerText?: (sectionId: SectionId) => string
   /**
@@ -144,11 +146,26 @@ export interface CandidateSection {
   readonly excerpt: string
   /** Characters of the whole answer text so far: what the decision cost guard reads an answer's size from. */
   readonly answerLength: number
+  /**
+   * The attempt whose text the answer is: what a decision record names when
+   * it records the answer text a question showed (`ShownPiece`). Left out or
+   * null when there is none or the caller does not know it; the record then
+   * copies the text.
+   */
+  readonly attemptId?: AttemptId | null
   readonly state: SectionState
   readonly chainId: ChainId
   readonly nodeId: NodeId
   /** Set when the section is a clarification question still awaiting its answer (Q98). */
   readonly asksElicitationId: ElicitationId | null
+}
+
+/** A section's answer text as routing may show it, and the attempt it is the text of. */
+export interface AnswerSource {
+  /** Null when not known: a record of what was shown then copies the text. */
+  readonly attemptId: AttemptId | null
+  /** The whole answer so far, or only its opening when that is all the caller has. */
+  readonly text: string
 }
 
 export interface CandidateChain {

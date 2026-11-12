@@ -21,6 +21,58 @@ const twoAnswers = scene()
   .add('M', { chain: 'menu', on: null, label: 'menu translation', request: 'Translate this menu into French: soup, bread, cheese', answer: 'Soupe, pain, fromage.' })
   .build()
 
+/**
+ * Three answers about one city, each on its own line. Only the history's
+ * answer has a part about the city today, under a heading far below its
+ * opening: a message about that part is identifiable only from later in the
+ * answer.
+ */
+const kyotoTopics = scene()
+  .chain('city', 'root', 'kyoto city')
+  .add('C', {
+    chain: 'city',
+    on: null,
+    label: 'kyoto city',
+    request: 'Tell me about Kyoto the city',
+    answerText:
+      'Kyoto is a city in the Kansai region of Japan, known for its temples, gardens and wooden machiya houses. The centre sits between the Kamo and Katsura rivers, and most visitors stay near Shijo or Kyoto Station, where the trains and buses meet.',
+  })
+  .chain('food', 'root', 'kyoto food')
+  .add('F', {
+    chain: 'food',
+    on: null,
+    label: 'kyoto food',
+    request: 'What is the food like in Kyoto?',
+    answerText: 'Kyoto cooking is known for kaiseki, tofu, yuba and pickles. Nishiki Market is the place to taste them, and the tea houses of Uji are a short train ride away.',
+  })
+  .chain('history', 'root', 'kyoto history')
+  .add('H', {
+    chain: 'history',
+    on: null,
+    label: 'kyoto history',
+    request: 'Give me the history of Kyoto',
+    answerText: [
+      'Kyoto was the imperial capital for more than a thousand years, from 794 until 1869, and the grid of its streets still follows the plan laid out for the Heian court. The city was spared the worst of the bombing in the Second World War, which is why so many wooden buildings survive.',
+      '',
+      '## The Heian court',
+      '',
+      'The court gave the city its calendar of festivals: the Aoi Matsuri in May, the Gion Matsuri in July, the Jidai Matsuri in October. Each procession is run by the same neighbourhood associations that have run it for centuries.',
+      '',
+      '## Warlords and temples',
+      '',
+      'Oda Nobunaga and Toyotomi Hideyoshi rebuilt the city after the Onin War, walled it, and moved the temples into the long street of Teramachi.',
+      '',
+      '## The move to Tokyo',
+      '',
+      'In 1869 the emperor moved to Tokyo. The city lost a third of its people within a decade and answered by building the first elementary schools in Japan, a canal from Lake Biwa and the first electric tram in the country.',
+      '',
+      '## Modern Kyoto',
+      '',
+      'Modern Kyoto is a university city of 1.4 million with a busy technology industry: Nintendo, Kyocera and Omron have their headquarters here. Housing is the sore point: short-term rentals and tourist crowds have pushed residents out of the centre, and the city now limits both.',
+    ].join('\n'),
+  })
+  .build()
+
 const compositeAnswer = scene()
   .chain('sky', 'root', 'sky')
   .add('S', { chain: 'sky', on: null, label: 'sky', message: 'X', request: 'Explain why the sky is blue', answer: 'Sunlight scatters off air molecules; blue scatters most.' })
@@ -556,6 +608,14 @@ export const ROUTING_CORPUS: readonly CorpusExample[] = [
     scene: questionOpen,
     text: 'I meant the fire drill at the office',
     expect: { composition: 'atomic', answers: 'Q', parts: [] },
+  },
+  {
+    id: 'target-later-in-answer',
+    covers: ['targets', 'placement'],
+    note: 'The referent is identifiable only from a part of its answer far below the opening: three answers about Kyoto, and only the history has a section on the city today. Shown only openings, the question about the history answer cannot see it.',
+    scene: kyotoTopics,
+    text: 'What are the problems of modern Kyoto you mentioned, and how is the city dealing with them?',
+    expect: { composition: 'atomic', parts: [{ kind: 'unit', relation: 'addition', targets: ['H'], placement: { continue: 'H' } }] },
   },
   // ── placement ──
   {

@@ -61,3 +61,12 @@ export {
 export { askKnownClarification, inputDigest, readinessStands, type KnownClarification } from './readiness'
 export { routingCandidates, resolveTargets, sessionLogTokens } from './candidates'
 export { Projector, projectSnapshot, rebuildSnapshot, runInspection, undoSplitAvailable } from './projections'
+export {
+  buildLogExport,
+  canonicalJson,
+  routingDecisionIndex,
+  appEventsFor,
+  LogExportLeakError,
+  MIN_GUARDED_SECRET_LENGTH,
+  type LogExportInput,
+} from './log-export'

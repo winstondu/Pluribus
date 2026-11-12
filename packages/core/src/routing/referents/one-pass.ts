@@ -25,4 +25,5 @@ export function onePassProbes(input: Pick<SearchInput, 'tree' | 'units'>, ops: P
   return out
 }
 
-export const onePassStrategy = strategyFromPolicy(onePassPolicy)
+/** It sends no further request, so the routing request may show answers with the whole of the routing's budget. */
+export const onePassStrategy = { ...strategyFromPolicy(onePassPolicy), furtherRequests: false }

@@ -106,7 +106,13 @@ export interface ConversationState {
   readonly operationOrder: readonly OperationId[]
 }
 
-export const STATE_VERSION = 4
+/**
+ * Bumped when a stored shape changes, so a cached projection of an older
+ * shape is rebuilt from the log. 4: typed readiness and the pause for input.
+ * 5: routing decisions record what each question showed of its sections
+ * (`DecisionQuestionRecord.shown`).
+ */
+export const STATE_VERSION = 5
 
 export type Table<T> = { readonly [id: string]: T }
 
