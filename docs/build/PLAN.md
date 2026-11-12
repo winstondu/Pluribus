@@ -535,8 +535,11 @@ Canonical test per ID. Core tests run on `createTestBackend()` with the scripted
 | F1–F9 | core-recovery | `packages/core/src/recovery/acceptance/failure.test.ts` |
 | P10, P11, P12, P13 | core-recovery | `packages/core/src/recovery/acceptance/placement.test.ts` |
 | P5, P7 | ui-transcript | `packages/web/src/features/transcript/acceptance.test.tsx` |
+| DA1, DA2 | core-routing (added 2026-11-12) | `packages/core/src/routing/selection/selection.test.ts` |
+| DA3, DA4 | core-routing (added 2026-11-12) | `packages/core/src/routing/referents/referents.test.ts` |
+| DA5 | core-routing (added 2026-11-12) | `packages/core/src/routing/acceptance/summaries.test.ts` |
 
-That is 20 + 6 + 4 + 1 + 2 + 1 + 2 + 8 + 2 + 9 + 4 + 2 = 61. T2 and T3 sit with core-recovery because they need a superseded section to exist; core-routing unit-tests the corrective-wording classification without the ID in the title. P8 and C14 need a reply group, which core-engine builds from a scripted `independent-composite` plan.
+That is 20 + 6 + 4 + 1 + 2 + 1 + 2 + 8 + 2 + 9 + 4 + 2 = 61, and with DA1–DA5 (11 · "Dependency attachment") 66. T2 and T3 sit with core-recovery because they need a superseded section to exist; core-routing unit-tests the corrective-wording classification without the ID in the title. P8 and C14 need a reply group, which core-engine builds from a scripted `independent-composite` plan.
 
 | Invariant (11 · "Invariants") | Agent | Test file and title prefix |
 |---|---|---|
@@ -546,6 +549,8 @@ That is 20 + 6 + 4 + 1 + 2 + 1 + 2 + 8 + 2 + 9 + 4 + 2 = 61. T2 and T3 sit with 
 | 6 Placement | core-engine | same · `I6` |
 | 10 Scope: text and read-only; no LangChain or LangGraph | core-engine | same · `I10` (no forbidden dependency in any `package.json`; core's ports expose no tool call) |
 | 9 The decision model is bounded | core-routing | `packages/core/src/routing/acceptance/invariants.test.ts` · `I9` |
+| 11 Routing cost is bounded (added 2026-11-12) | core-routing | same · `I11` |
+| 12 Summaries are not context (added 2026-11-12) | core-routing | same · `I12` |
 | 3 Append-only history | core-recovery | `packages/core/src/recovery/acceptance/invariants.test.ts` · `I3` |
 | 5 Local failure | core-recovery | same · `I5` |
 | 7 Rewound replacement context | core-recovery | same · `I7` |

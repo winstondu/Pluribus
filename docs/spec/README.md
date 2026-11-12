@@ -90,7 +90,7 @@ The first version is text and read-only (no tools, no edits to outside resources
 
 ## Documents
 
-Read in order the first time. Each behavior document ends with its acceptance conditions, and every acceptance condition becomes an automated test.
+Read in order the first time. Each behavior document ends with its acceptance conditions, the architecture's section on dependency attachment ends with its own (DA1–DA5), and every acceptance condition becomes an automated test.
 
 | # | Document | What it covers |
 |---|---|---|

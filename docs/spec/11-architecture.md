@@ -12,7 +12,7 @@ No production implementation exists.
 
 ## Invariants
 
-Every part of the design must preserve these. They come from the accepted scenarios.
+Every part of the design must preserve these. Invariants 1 to 10 come from the accepted scenarios; 11 and 12 come from the decisions on [dependency attachment](#dependency-attachment).
 
 1. **Three separate relationships.** Context ancestry (chains, forks, join-backs, join chains), result dependencies (a DAG over attempts and join-backs), and display placement are kept separately. None is derived from another.
 2. **Exact consumed context.** Every attempt records the context it actually received. Later join-backs, revisions, or retries never rewrite it (Q29, Q31, Q39).
@@ -24,6 +24,8 @@ Every part of the design must preserve these. They come from the accepted scenar
 8. **No server assumed.** Whatever executes runs can be interrupted; recovery follows the retry setting (Q52, Q54).
 9. **The decision model is bounded.** The decision model (a Jev model, reached through OpenRouter Decisions) selects among supplied candidates (targets, relations, affected work). It never generates rewritten fragments (Q20, Q44).
 10. **Scope.** Text and read-only work only, initially. No LangChain or LangGraph.
+11. **Routing cost is bounded.** The decision budget is a hard stop. Apart from the routing request, which is always sent, and the two requests a plan cannot be made without, no decision request is sent that would take a routing past its decision budget, and whether a request fits is decided before it is sent. When the budget is reached, routing uses the best node found so far and does not ask the user ([Decision budget](#decision-budget)).
+12. **Summaries are not context.** No run's input, and no record of one, contains a context summary. Summaries are used only for search and decisions ([Context summaries for decisions](#context-summaries-for-decisions)).
 
 ## System structure
 
@@ -150,7 +152,7 @@ Both the original text and any generated rewrite are recorded (Q59). Whether tri
 ### Decision thresholds
 
 - The decision model is pinned to a versioned model, not a moving alias (Q74).
-- Below the target-choice confidence threshold, Committee elicits the target (Q20, Q74).
+- Below the target-choice confidence threshold, Committee elicits the target (Q20, Q74). The one exception is a routing whose [decision budget](#decision-budget) was reached.
 - Below the "clearly corrective" threshold, a reply is treated as additional work rather than a revision (Q37, Q74).
 - Thresholds are tuned on the labelled routing corpus and are a frontend setting sent to the backend (Q74).
 
@@ -158,7 +160,7 @@ Both the original text and any generated rewrite are recorded (Q59). Whether tri
 
 The part of routing that decides which earlier work a message or fragment attaches to: its **referents**, and from them its reply targets, its place in the genealogy, and the results it waits for. It answers the decision gate's questions about target sections and dependencies ([Pipeline](#pipeline)).
 
-This section was settled after Q98, by the user's instructions of 2026-11-11. They are quoted, with the measurements behind each choice, in the build records: [dependency decisioning](../build/dependency-decisioning.md) and [context summaries](../build/context-summaries.md). They have no question numbers yet.
+This section was settled after Q98, by the user's instructions of 2026-11-11 and 2026-11-12. They are quoted, with the measurements behind each choice, in the build records: [dependency decisioning](../build/dependency-decisioning.md) and [context summaries](../build/context-summaries.md). They have no question numbers yet.
 
 **Scope.** The architecture is part of the first version: the interfaces, the settings, the guard, and what is recorded. Optimizing it is not. [Scope in the first version](#scope-in-the-first-version) says which is which.
 
@@ -167,7 +169,7 @@ This section was settled after Q98, by the user's instructions of 2026-11-11. Th
 - **Input.** One unit (the message, or one fragment of a composite) and the genealogy as supplied candidates: the current answer sections, the work behind them, the chains, and the sibling groups with their join-backs. Nothing else is read (invariant 9).
 - **Output.** The unit's referents: the answer sections it may refer to, each with a confidence, and the probability that it refers to several at once. A section that is not returned is not a referent.
 - **A strategy scores; it places nothing.** Everything after it is the same whichever strategy was used, and is binding:
-  - A referent at or above the target-choice threshold is a reply target. Below it, Committee elicits the target; it never guesses ([05](05-reply-targets-and-routing.md), [07](07-elicitation.md); Q20, Q74).
+  - A referent at or above the target-choice threshold is a reply target. Below it, Committee elicits the target; it never guesses ([05](05-reply-targets-and-routing.md), [07](07-elicitation.md); Q20, Q74). The one exception is a routing whose decision budget was reached: it uses the best node found so far and does not ask ([Decision budget](#decision-budget)).
   - Two or more members of one sibling group are the whole group: the unit depends on the full join-back, never on a subset (invariant 4; Q30; C9, C19).
   - Placement is a new chain, a continuation, or a new join chain whose parents are leaves ([Placement in the genealogy](#placement-in-the-genealogy); Q76, Q86; C20).
   - Dependencies are acyclic, and a plan that breaks a rule is repaired where it has one correct reading and refused otherwise ([Pipeline](#pipeline), stage 3).
@@ -175,11 +177,19 @@ This section was settled after Q98, by the user's instructions of 2026-11-11. Th
 
 ### Referent strategies
 
-How referents are found is a **referent strategy** behind one interface. The pipeline is handed a strategy and never asks which one it has, so a strategy can be replaced without touching the rules above. Two exist.
+How referents are found is a **referent strategy** behind one interface. The pipeline is handed a strategy and never asks which one it has, so a strategy can be replaced without touching the rules above. Two exist. Both start from the same first pass.
+
+**First pass**
+
+- Every routing, with either strategy and however the strategy was chosen, first asks about the **first-pass sections**, each by itself, in the routing request. They are found by walking back from the most recent answer section and taking each section that is not an ancestor of one already taken, until there are five.
+- An ancestor is skipped because the context of the section taken already holds it. In a conversation that only ever continued one chain, the first pass is therefore the latest answer alone; after a split it is the ends of the most recent lines.
+- A sibling group that one of them belongs to is also asked about as a whole, as below.
+- The first-pass sections are always listed in the routing request, however few sections it lists.
+- So every routing has scored a bounded set of sections by themselves before a strategy asks anything further, and a routing whose [decision budget](#decision-budget) is reached has candidates for the best node found so far. The strategy continues from there as described next; a question the first pass has already asked is not asked again.
 
 | | One pass | Tree walk |
 |---|---|---|
-| Asks about | Every answer section the routing request lists (the most recent ones), and each sibling group among them as a whole | The genealogy level by level from every root, only along lines that are relevant |
+| Asks about, after the first pass | Every answer section the routing request lists (the most recent ones), and each sibling group among them as a whole | The genealogy level by level from every root, only along lines that are relevant |
 | Requests | The routing request that is sent anyway. No further request | That request, and one more for each branching level it descends and each step of a search, within the [decision budget](#decision-budget) |
 | Reach | The listed sections. An older section is never asked about | Any section, however old |
 
@@ -192,7 +202,7 @@ Terms the tree walk uses. A **branch point** is a place where a line of work spl
 **Tree walk**
 
 - The trunks are asked about first, in the routing request as far as it lists them. Each further level is one further request that shows only that level's sections.
-- It descends below an unbranched run only when one of its sections, or the question "does the unit refer to anything built on this?", is at least plausible. Nothing below an irrelevant line is asked about.
+- It descends below an unbranched run only when one of its sections, or the question "does the unit refer to anything built on this?", is at least plausible. Nothing below an irrelevant line is asked about, apart from the first-pass sections.
 - **Search of long unbranched runs.** An unbranched run too long to ask about section by section is searched: its sections are put in chunks, each chunk is one question that names its sections by the requests they answered, and only the sections of a relevant chunk are then asked about one by one. The requests it needs grow with the logarithm of its length. Old single answers that nothing was built on count as one unbranched run.
 - **Start at the trunk base** (optional, off by default). Of each trunk only the base is asked about by itself; the answers before it are searched, however few.
 - **Hop between branch points** (optional, off by default). Below a branch point, of each unbranched run only its last answer is asked about by itself; the answers skipped are searched.
@@ -201,7 +211,7 @@ Terms the tree walk uses. A **branch point** is a place where a line of work spl
 
 - A sibling group is asked about as a whole, as the join-back it is or will be, beside its members. A group judged relevant resolves to every member (Q30).
 - An ancestor of a relevant node is dropped: the descendant's context already holds it. The exception is a correction, which may name work its descendants only consumed ([06](06-revisions.md#revising-a-shared-requirement)); for a unit with clearly corrective wording the ancestor is kept.
-- **Nothing is placed silently on a section that was not asked about by itself.** A question about several sections (a chunk, or "anything built on this") only decides where to look next. When a search cannot be finished, the sections of the relevant chunk are returned below the target-choice threshold, so the user is asked which one is meant.
+- **A unit is placed on a section only if that section was asked about by itself.** A yes to a question about several sections (a chunk, or "anything built on this") only says where to look next. It makes none of those sections a referent, and a unit is never placed on a neighboring section because of it. When a search cannot be finished, the sections it did not get to ask about by themselves are not referents.
 
 What a strategy cannot reach it does not guess at: the unit is routed as if it referred to nothing there.
 
@@ -219,9 +229,18 @@ A guard on what routing one message may cost in decision-model work. It applies 
 - **The conversation's log**, for a relative budget, is the text of every user message and of every attempt. Superseded, failed, stopped, and interrupted attempts count, with the partial text they recorded: they are part of the append-only history (invariant 3), and counting them means a revision never shrinks the budget. It is computed from the backend's records alone.
 - **The answer's cost** is estimated before it is written: its least input, the message itself, and its expected length, taken from the conversation's completed answers, or a set figure while there are too few.
 - **Decided before sending.** Every request is sized by an estimate and compared with what is left. A request that would pass a limit is not sent. The guard therefore never depends on a provider's reply, and routing stays deterministic.
-- **The routing request draws from the budget first.** When it would not fit with every section it normally lists, it lists fewer, the most recent, down to a small minimum. One request is always sent, because a message has to be routed.
+- **The routing request draws from the budget first.** When it would not fit with every section it normally lists, it lists fewer, the most recent, down to the first-pass sections alone. One request is always sent, because a message has to be routed: when even the smallest does not fit, it is sent and nothing follows it.
 - **Two requests are counted but never refused**, because no plan can be made without them: the confirmation that a requirement was made session-wide (Q17), and the question which consumers a shared-requirement revision affects (Q44).
-- **When a limit is reached** the strategy falls back deterministically: it asks about the listed sections it has not yet asked about in one request if that still fits, and otherwise keeps what it has scored. It never completes a search by guessing: unfinished candidates are put to the user, as above. The routing decision records which limit was reached and what was done instead.
+- **The budget is a hard stop.** When a limit is reached, the strategy sends nothing that does not fit. It asks about the listed sections it has not yet asked about in one request if that still fits, and otherwise keeps what it has scored. Nothing further is asked, of the decision model or of the user.
+- **Best node found so far.** A routing whose budget was reached does not elicit the target. Referents at or above the target-choice threshold are reply targets as always. Where the rules of the stage would otherwise ask the user which section is meant, the unit is placed on the best node found so far, although its score is below the target-choice threshold. The candidates are the sections that were asked about by themselves and the sibling groups that were asked about as a whole, as far as they are at least plausible (the threshold the tree walk descends on). Among them:
+  1. a node with a plausible descendant is passed over for the descendant, whose context already holds it. A correction is the exception, as for [both strategies](#referent-strategies);
+  2. of the rest, the highest score is taken;
+  3. on equal scores, the most recent.
+
+  A sibling group resolves to every member (Q30). A section that was only named in a question about several sections is never a candidate.
+- **The floor.** The first pass guarantees that there are candidates once the conversation has answers. It does not guarantee that one is plausible. When nothing that was asked about by itself is plausible, the unit is routed as referring to nothing there, as for sections a strategy cannot reach.
+- **Why the user is not asked.** A question to the user is for an ambiguity that is real. In the user's words: "asks are only made when clear-eyed, rather than because we couldn't calculate the referents." A routing that finished within its budget and still finds the target ambiguous elicits it, as before (Q20, Q74).
+- **Deterministic.** The same conversation and message give the same requests and the same routing every time.
 
 The bound against the answer holds for conversations of up to a million tokens across the shapes the build tests (one chain, an early split, many small sibling groups, nested forks, many unrelated answers), down to answers of about 100 tokens. Below that the smallest request that routes a message costs more than twice the answer, and routing costs at most what twice a 100-token answer buys.
 
@@ -229,7 +248,7 @@ The bound against the answer holds for conversations of up to a million tokens a
 
 Deep lines of work can be shown to the decision model in compact form. This is optional and concerns **decisions only**.
 
-- **A run's context is never a summary.** "Context is assembled mechanically from the genealogy. There is no per-node relevance scoring" ([04](04-chains-dependencies-context.md#context-for-a-run); Q76), and every attempt records the context it actually received (invariant 2). A summary appears in no run's input and in no record of one. Compacting what a run reads stays out of scope ([Context growth](#context-growth); Q67).
+- **A run's context is never a summary** (invariant 12). A run receives the recorded exchanges; summaries are used only for search and decisions. "Context is assembled mechanically from the genealogy. There is no per-node relevance scoring" ([04](04-chains-dependencies-context.md#context-for-a-run); Q76), and every attempt records the context it actually received (invariant 2). A summary appears in no run's input and in no record of one. Compacting what a run reads stays out of scope ([Context growth](#context-growth); Q67).
 - **Linking.** A summary stands for the context of one node, its **anchor**: everything a run continuing from the anchor would read. For the anchor the decision model is shown the summary. For a descendant it is shown the same summary followed by the content specific to the descendant: the exchanges after the anchor, its own last. One summary therefore serves the whole line below its anchor. Deeper in a line, a second anchor's summary is written from the first summary and the exchanges between the two.
 - **Join-backs and join chains.** A summary anchored at a join-back covers every member; a summary anchored at one member never stands for the group (invariant 4). A node on a join chain is shown one summary per parent line.
 - **Two ports.**
@@ -247,14 +266,15 @@ An optional layer in front of the referent strategy chooses, for each routing, w
 
 - **Input: the shape of the genealogy only.** Counts and structure: answer sections and how many are older than the routing request lists; roots; branch points; depth; sibling groups, open and closed; the number and the longest of the trunks and of the unbranched runs below a branch point, with their sizes; total tokens. And what the routing may spend. No request, answer, or title.
 - **Output: a typed choice.** One pass; or the tree walk with each of its switches on or off and long unbranched runs searched or not. Never free text.
-- **Modes**, a user setting, off by default:
+- **Modes**, a user setting. Rules is the default:
 
 | Mode | How it chooses | Cost |
 |---|---|---|
 | Off | The configured strategy and switches, as they are | None |
-| Rules | Deterministic rules over the shape: one pass while every section is listed or the budget has no room for a further request; the tree walk otherwise; each switch by the length of the trunk or unbranched run it would skip | None |
+| Rules (default) | Deterministic rules over the shape: one pass while every section is listed or the budget has no room for a further request; the tree walk otherwise; each switch by the length of the trunk or unbranched run it would skip | None |
 | Decision model | One small request about the shape: a `choice` question for the strategy and a `noul` question for each switch ([Decision provider](#decision-provider)) | One request, inside the [decision budget](#decision-budget) |
 
+- **A selector only chooses.** A routing whose strategy and switches were chosen by a selector is identical, request for request and in its plan, to the routing obtained when the same strategy and switches are configured directly. The selector's own request, in the decision-model mode, is the only difference.
 - **Fallback.** The decision-model mode uses the rules when its request fails, when its confidence is below the target-choice threshold, and when the decision budget does not allow the request. Routing does not fail because selection did.
 - **Reuse.** A choice made from the shape alone holds for every routing of the same shape. The shape is reduced to a signature that changes only when the shape changes materially; the choice recorded with the most recent routing decision of the conversation is reused while the signature is the same, and nothing is asked. The record is the cache: nothing is kept outside the event log.
 - **The pipeline and the strategies are unaware of it.** They are handed a strategy and its settings, as they would be from the settings alone.
@@ -264,6 +284,7 @@ An optional layer in front of the referent strategy chooses, for each routing, w
 With the routing decision of each message ([Inspection](#inspection)), in addition to the questions and answers:
 
 - the limit of the decision budget that was reached, if one was, and what the strategy did instead;
+- that the best node found so far was used in place of a question to the user, for which unit, which node, and its score;
 - that the routing request listed fewer sections than usual, and why;
 - whether the decision model was shown summaries, and for how many sections;
 - how the strategy was chosen, when strategy selection is on: whose choice was used, the choice, the shape's signature, the reason, the decision model's confidences, why the rules stood in, and whether the choice was reused.
@@ -272,33 +293,24 @@ With the routing decision of each message ([Inspection](#inspection)), in additi
 
 | Part | In the first version |
 |---|---|
-| Referent strategy interface; one pass; tree walk with search of long unbranched runs, trunk base, and hops | Implemented. Tree walk with long unbranched runs searched is the default; the two switches are off |
-| Rules after the strategy: thresholds, elicitation, no subset bypass, acyclicity, leaf repair | Implemented, unchanged |
-| Decision budget: token budget (absolute or relative), bound against the answer, backstops, the routing request drawing from it | Implemented |
+| Referent strategy interface; the first pass; one pass; tree walk with search of long unbranched runs, trunk base, and hops | Implemented. The configured strategy, used when strategy selection is off, is the tree walk with long unbranched runs searched; the two switches are off |
+| Rules after the strategy: thresholds, elicitation, no subset bypass, acyclicity, leaf repair | Implemented. Unchanged, except that a routing whose decision budget was reached does not elicit the target |
+| Decision budget: token budget (absolute or relative), bound against the answer, backstops, the routing request drawing from it, the hard stop and the best node found so far | Implemented |
 | Summary provider | Interface, with a pass-through that returns the real context chain |
 | Background summarizer | Interface, with an implementation that produces nothing |
 | Summary policy, recording, staleness, and invalidation | Design only |
-| Strategy selection: the interface, the rules, the decision-model mode, reuse, recording | Implemented, off by default |
+| Strategy selection: the interface, the rules, the decision-model mode, reuse, recording | Implemented. Rules is the default; off and the decision model are available |
 | Optimization: tuning the thresholds and the budget's figures, the size of unbranched run that is searched, the selector's rules, summary policies, and the quality of a learned or model-based selector | Beyond the first version |
 
 What the build measured, and where it falls short of this, is in [the build status](../build/STATUS.md).
 
-### Proposed additions, not adopted
-
-These are proposals. They are **not** among the ten invariants or the 61 acceptance conditions, nothing is renumbered, and no test is required by them until the user accepts them.
-
-Proposed invariants:
-
-- **Routing cost is bounded.** Apart from the requests a plan cannot be made without, no decision request is sent that would take a routing past its decision budget, and whether a request fits is decided before it is sent.
-- **Summaries are not context.** No run's input, and no record of one, contains a context summary.
-
-Proposed acceptance conditions:
+### Acceptance conditions
 
 - **DA1.** With either referent strategy, and with strategy selection off, by rules, or by the decision model, a continuation requiring multiple siblings depends on their full join-back (C9) and J continues on the chain A and B forked from (C19).
-- **DA2.** A routing whose strategy was chosen by a selector is the routing that strategy gives when it is configured directly.
-- **DA3.** A reply to a section inside a long unbranched run is placed on that section or put to the user; it is never placed on a neighboring section because a question about several sections was answered yes.
-- **DA4.** With the decision budget in force, a referent strategy and a strategy selector send no decision request beyond it, and reaching it produces the same routing every time.
-- **DA5.** With context summaries in use, a run started meanwhile receives the recorded exchanges and no summary.
+- **DA2.** A strategy selector only chooses. A routing whose strategy and switches were chosen by a selector is identical, request for request and in its plan, to the routing obtained when the same strategy and switches are configured directly.
+- **DA3.** A yes to a question about several sections only says where to look next. A message is placed on a section only if that section was asked about by itself; it is never placed on a neighboring section because a question about several sections was answered yes.
+- **DA4.** The decision budget is a hard stop. Apart from the routing request, which is always sent, and the two requests a plan cannot be made without, no decision request is sent beyond it. When it is reached, routing uses the best node found so far and does not ask the user, and the same conversation and message give the same routing every time.
+- **DA5.** With context summaries in use, a run receives the recorded exchanges and never a summary; summaries are used only for search and decisions.
 
 ## Scheduling and errors
 

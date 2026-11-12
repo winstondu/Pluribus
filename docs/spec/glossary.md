@@ -127,7 +127,7 @@ The elicitation shown for a paused request: retry the prerequisite, continue wit
 ### Routing
 
 **Referent**:
-An existing answer section that a message or fragment may refer to, together with how confident routing is that it does. Referents that are confident enough become reply targets; a weaker one is put to the user, never assumed.
+An existing answer section that a message or fragment may refer to, together with how confident routing is that it does. Referents that are confident enough become reply targets; a weaker one is put to the user, never assumed, unless the decision budget was reached.
 _Avoid_: Reply target (for a section routing has not yet accepted)
 
 **Dependency attachment**:
@@ -147,9 +147,16 @@ _Avoid_: Run (which is one model call: "a run's context"), segment
 **Trunk**:
 The first unbranched run of a line of work that starts from nothing: from its first answer to its first branch point, or to its latest answer when it never splits. Its last answer is the trunk base.
 
+**First-pass sections**:
+The few most recent answer sections that no later one of them builds on. Every routing asks about each of them by itself before anything else.
+
 **Decision budget**:
-The limit on the decision-model work that routing one message may use: a number of tokens, fixed or a share of what the conversation has recorded, and never more than a set multiple of the cost of the answer being routed.
+The limit on the decision-model work that routing one message may use: a number of tokens, fixed or a share of what the conversation has recorded, and never more than a set multiple of the cost of the answer being routed. It is a hard stop: when it is reached nothing more is asked, of the decision model or of the user.
 _Avoid_: Rate limit, concurrency limit
+
+**Best node found so far**:
+The section, or the sibling group as a whole, that a message is placed on when its routing reached the decision budget before its target was clear: the best of those that were asked about by themselves and are at least plausible. The user is not asked.
+_Avoid_: Best leaf, guess
 
 **Context summary**:
 A stored summary of the context of one point in the genealogy, shown to the decision model in place of that context when routing. It is never part of the context a run reads.

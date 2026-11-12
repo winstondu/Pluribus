@@ -2,6 +2,8 @@
 
 Specified in [11 · Architecture, "Dependency attachment"](../spec/11-architecture.md#dependency-attachment): the stage's contract, the two referent strategies, the decision budget and strategy selection. This document is the build record behind it: the measurements, the departures and what is open. Where the two disagree the spec wins. The spec calls a run of only children an "unbranched run", because in the spec a run is one model call; this document and the code say "run".
 
+**Changed on 2026-11-12** by the user's decisions recorded under ["The hard stop, the best node found so far, the first pass, and rules by default"](#the-hard-stop-the-best-node-found-so-far-the-first-pass-and-rules-by-default): the budget is a hard stop and never a reason to ask the user; every routing starts with a first pass; strategy selection defaults to the rules. Statements below that predate it are marked where they no longer hold. The cost and score tables before that section were measured before the change.
+
 Build-time record for the routing change of 2026-11-11. It closes the round-3 blocker "the spec's own J request is silently placed on one sibling" and the related "follow-up naming two sections raises the target-ambiguity prompt".
 
 Sources: `docs/spec/01-mental-model.md`, `04-chains-dependencies-context.md`, `05-reply-targets-and-routing.md` and `11-architecture.md`. The slides on the join-back "under the hood" (`docs/presentation/`) are gitignored and were not in the checkout; the join-back is taken from the spec text quoted below.
@@ -105,7 +107,7 @@ A **run** is a segment's only children: the answers of one line of work between 
 - a run with more than 24 chunks (`SEARCH_FANOUT`) is first asked about in 24 groups of chunks, and a relevant group is split again. Requests grow with log₂₄ of the run's length: one round of chunks up to about 290 sections, two up to about 7,000;
 - a request with chunk questions also shows the most recent answer and asks about it (`m_recent`, not read). Without that alternative the model has nothing to prefer;
 - a relevant chunk counts for its segment like a relevant node: the walk descends below the run's end;
-- a section is **never taken as a referent from a chunk's score**. It is asked about by itself first. When the budget ends a search between the chunk and its sections, every section of the relevant chunk is reported at just under the target-choice threshold, so the pipeline's own rule asks the user which one is meant (05: "It never guesses silently"; 11: "Below the target-choice confidence threshold, Committee elicits the target").
+- a section is **never taken as a referent from a chunk's score**. It is asked about by itself first. When the budget ends a search between the chunk and its sections, the sections of the relevant chunk are not candidates at all: they were never asked about by themselves (DA3). Until 2026-11-12 they were reported at just under the target-choice threshold, so that the user was asked which one is meant; the budget is now a hard stop and never a reason to ask.
 
 Which sections are searched:
 
@@ -133,7 +135,7 @@ The two switches are independent. Neither changes what happens below the end of 
 - *Start at the trunk base*: inside the window it replaces up to 23 questions by two chunk questions (709 fewer tokens on a 200-section chain), and a reply to any trunk section but the base then needs a further request (about 1,900 tokens, 0.15 s) that the listed walk does not. A correction of the brief is found through its chunk and kept as before. On the corpus it changed no result.
 - *Hop between branch points*: saves the lines and questions of the skipped sections (639 tokens, 18%, when nothing in the run is referred to) and costs a further request when a skipped section is (277 tokens more than without hops, and 0.15 s). The end of a run is first judged without its neighbours, which is what the re-ask corrects.
 
-**Mis-placement is prevented in three ways**: a chunk's score never becomes a section's score; the end of a hop is asked about again beside the sections it was built on; and an unfinished search elicits. The remaining silent failure is the one named under *Search*: a chunk below the floor.
+**Mis-placement is prevented in three ways**: a chunk's score never becomes a section's score; the end of a hop is asked about again beside the sections it was built on; and the sections of an unfinished search are not candidates (until 2026-11-12: an unfinished search elicited). The remaining silent failures are the one named under *Search*, a chunk below the floor, and a search the budget ended: the message is then placed on the best node found so far, or on nothing there.
 
 **Departures from the request as worded.**
 
@@ -154,7 +156,7 @@ The two switches are independent. Neither changes what happens below the end of 
 | One step per node ("bfs check its children") | One step per branch point; runs of only children are one segment | A conversation that only ever continues one chain is a path. Walking it node by node is one request per turn; as a segment it is one request, the pipeline's own |
 | Remove every ancestor of a relevant node | The same, except for a correction | See above: a correction may name the brief its descendants only consumed |
 | Several surviving siblings resolve to the full join-back | The same. It is work continuing from the join-back on the base chain, not a join chain | 01: "Work that needs several siblings of the same group never uses a join chain" |
-| The result is the set of referents | The result is a score per kept section; the pipeline's thresholds still decide | 05: "It never guesses silently"; a referent below the target-choice threshold is asked about, not taken |
+| The result is the set of referents | The result is a score per kept section; the pipeline's thresholds still decide | 05: "It never guesses silently"; a referent below the target-choice threshold is asked about, not taken, unless the budget was reached (2026-11-12) |
 
 ## Cost
 
@@ -269,9 +271,9 @@ Three limits bound the decision work of one routing. All are estimated from a re
 | Price guard | `settings.routing.costGuard` | **twice the answer, priced on the cheapest answer model** | The same requests. A routing may use the **smaller** of the two (`routingTokenBudget` in `routing/referents/ask.ts`) |
 | Backstops | `settings.routing.referentBudget` | **4 requests, 96 questions** | The strategy's further requests, whatever the tokens and prices are |
 
-- The pipeline's own request comes first. When it would not fit with its full window of 24 answer sections it lists fewer, the most recent, down to 4 (`fitWindow` in `routing/pipeline.ts`; see "The pipeline's request draws from the budget").
+- The pipeline's own request comes first. When it would not fit with its full window of 24 answer sections it lists fewer, the most recent, down to the first-pass sections alone (`fitWindow` in `routing/pipeline.ts`; see "The pipeline's request draws from the budget").
 - Every further request goes through `createReferentAsk` (`routing/referents/ask.ts`). It counts requests, questions and estimated tokens, and **refuses** a request that would pass a limit: nothing is sent. This holds for any strategy, an injected one included; the pipeline, not the strategy, owns the counter. Its token limit is what the routing's budget has left after the pipeline's requests.
-- The tree walk checks before each level that the level **and its fallback** both fit. When a level does not fit, it stops walking and asks the one-pass questions it has not asked yet in one request over the pipeline's state text (bounded by the window). When the fallback is what does not fit and the level does, the walk goes on without the reserve (this arises under the price guard below, where what is left is less than one request over the pipeline's state text). When neither fits, the referents are the relevant nodes it has reached, and the sections of a relevant chunk whose search was cut short are reported below the target-choice threshold, so the user is asked about them. The routing decision's explanation says which happened and which limit was reached.
+- The tree walk checks before each level that the level **and its fallback** both fit. When a level does not fit, it stops walking and asks the one-pass questions it has not asked yet in one request over the pipeline's state text (bounded by the window). When the fallback is what does not fit and the level does, the walk goes on without the reserve (this arises under the price guard below, where what is left is less than one request over the pipeline's state text). When neither fits, the referents are what it has asked about by itself: the first pass and the nodes it reached. Either way the budget is a hard stop: the user is not asked, and where the pipeline's rules would ask, the best node found so far is the target (below). The routing decision records which happened, which limit was reached, and the node that was used.
 - One pass adds no request, and at most one question per listed section and per group.
 
 Ceiling with the defaults: 16,000 tokens ($0.00067, **3.5% of the cheapest measured answer**, 70% of it on Haiku) up to a conversation of 800,000 tokens, rising to 20,000 at a million and never above 40,000 ($0.00168, 8.8%). The budget that would allow 10% is 45,700 tokens. Before this change the ceiling was the pipeline's request (≤ 5,400) plus a fixed 12,000: 17,400.
@@ -325,7 +327,7 @@ Before this change the pipeline's own request was outside the guard: with a full
 - The request is built with the full window (24 answer sections, 24 lines of work). If its estimate fits what the routing's budget has left, it is sent as before: **with answers of ordinary length nothing changes**.
 - Otherwise the widest window that fits is found by halving between 4 and 23 (a request only grows with its window; at most five more builds) and the request lists that many sections and lines of work, **the most recent**. The sections it leaves out are still candidates, numbered after the listed ones: the tree walk reaches them in a further request when the budget allows, one pass does not, exactly as for sections older than the window before.
 - An open clarification question stays listed however old it is, so its answer is still recognised; explicit reply targets are always listed.
-- **The floor is 4** (`MIN_SECTIONS`): the latest answer, and room for a small sibling group and what it was requested from. A message has to be routed, so a request is always sent: when even 4 do not fit, the request with 4 is sent, the strategy gets nothing further, and the explanation says by how much the limit was missed.
+- **The smallest request lists the first-pass sections alone** (`MIN_SECTIONS` = `FIRST_PASS_SECTIONS` = 5; until 2026-11-12 the 4 most recent sections): the most recent answer sections that no later one of them builds on, at most five, and as many lines of work. On one chain that is the latest answer; in a conversation of unrelated answers, the five most recent. A message has to be routed, so a request is always sent: when even that does not fit, it is sent, the strategy gets nothing further, and the explanation says by how much the limit was missed.
 - A composite's second request (the questions per part) is cut the same way, against the budget of as many answers as it has parts.
 - Two rare requests of the pipeline are counted when they come before the strategy runs but are never cut or refused, because the plan cannot be made without them: the confirmation of a conversation-wide requirement, and the question which consumers a shared-requirement revision affects.
 - The decision's explanation records it: "The routing request listed the 9 most recent answer sections and lines of work, not 24, to stay within the price guard on decision cost."
@@ -385,9 +387,9 @@ Guarded, the worst cell of the whole grid is **1.99×** (one pass in a bushy con
 
 - *Short answers.* In a conversation whose answers are about 100 tokens the allowance (about 2,450 tokens) is used up by the pipeline's request, which lists only its most recent sections (9 to 23 questions in the grid's cells, 33 to 41 with the full window); nothing further is sent, with either strategy. In a conversation whose answers are about 250 tokens the allowance (about 6,100 tokens) is mostly used by the pipeline's request. What is left (1,000 to 2,800 tokens) is less than the walk's fallback request costs, so the walk does not keep room for it: it goes on level by level for as long as each fits (three levels of a branching tree in the grid's worst case; a level with one relevant branch point is about 600 tokens) and then keeps what it has scored. A search of a long run does not fit: its first request alone is 2,800 tokens for 176 sections. Old referents beyond the window are then out of reach, as with one pass: the message is placed as if it referred to nothing old. This is the price of the bound and it is not a guess about a section: nothing is placed on a section that was not asked about.
 - *Below 100 tokens an answer* the bound cannot hold: the smallest request that routes a message costs about 2,400 tokens. Routing then costs at most twice a 100-token answer. See "The pipeline's request draws from the budget".
-- *Long runs.* With answers of normal length the token budget binds before the price does. A search's first request names every section of the run: about 21 tokens a section (12 to 27 with the length of the requests). With the default budget a referent is found up to about 1,200 to 2,000 older sections (the table under "The token budget"); just beyond, the chunks are asked but the relevant chunk can no longer be listed, so **its sections are put to the user**; beyond that the chunk request itself does not fit and the walk falls back to the one-pass questions, so the old section is not reached. With a fixed budget of 16,000 a referent is found up to about 300 to 700 older sections and put to the user up to about 500 to 900.
+- *Long runs.* With answers of normal length the token budget binds before the price does. A search's first request names every section of the run: about 21 tokens a section (12 to 27 with the length of the requests). With the default budget a referent is found up to about 1,200 to 2,000 older sections (the table under "The token budget"); just beyond, the chunks are asked but the relevant chunk can no longer be listed, so its sections are not candidates and the message goes to the best node found so far, or to nothing there (the rows that read "asks the user" in that table are from before 2026-11-12); beyond that the chunk request itself does not fit and the walk falls back to the one-pass questions, so the old section is not reached. With a fixed budget of 16,000 a referent is found up to about 300 to 700 older sections.
 - *Bushy and nested trees.* The request cap (4) ends a walk at the fourth branching level below the roots, and the walk then asks the one-pass questions, which cover the window. A referent deeper than that and older than the window is not reached.
-- *What it never does:* exceed a cap, send a request it has not counted, or take a section as a referent without having asked about it.
+- *What it never does:* exceed a cap, send a request it has not counted, take a section as a referent without having asked about it by itself, or ask the user because the budget ran out.
 
 The pipeline's later request (the question which dependents a revision affects) is not reserved for; a revision also re-runs its dependents, whose answers are not in the allowance either.
 
@@ -412,7 +414,7 @@ interface StrategySelector {
 }
 ```
 
-- **Setting.** `settings.routing.strategySelection`: `off` (the default: the configured strategy and switches, exactly as before) | `rules` | `decision-model`. Settings → Routing → "Choosing the strategy". `CoreDependencies.strategySelector` injects another.
+- **Setting.** `settings.routing.strategySelection`: `off` (the configured strategy and switches, exactly as before) | `rules` (the default since 2026-11-12) | `decision-model`. Settings → Routing → "Choosing the strategy". `CoreDependencies.strategySelector` injects another.
 - **Input: the shape only** (`GenealogyShape`, `routing/selection/shape.ts`), read from the same context tree the strategies build, so trunk, run and branch point mean the same thing: answer sections and how many are older than the window; roots and old single-answer roots; branch points; depth in branching levels; sibling groups open and closed; total tokens; the number of trunks and of branch runs, and for the longest of each its sections, the listed ones before its end, the unlisted ones, its tokens and whether it ends in a split. And one number that is not shape: the decision tokens this routing may use (the token budget or the price allowance, whichever is smaller), because with no room for a further request a walk cannot descend. No request, answer or title is in it; a test asserts that.
 - **Output: a typed choice** (`StrategyChoice` in protocol): `{ strategy: 'one-pass' }`, or `{ strategy: 'tree-walk', startAtTrunkBase, hopBetweenBranchPoints, searchLongRuns }`. `searchLongRuns: false` hands the walk a run size nothing reaches, which is the walk as it was before long runs were searched; the size that is searched stays the configured `searchRunsOverTokens`.
 - **The pipeline and the strategies do not know how the choice was made.** `chooseStrategy` in `routing/pipeline.ts` returns a strategy and tree-walk settings, as the settings alone would; the strategies read `ReferentRequest.treeWalk` as before. Explicit and chosen reply targets, an empty conversation and an injected referent strategy select nothing.
@@ -425,7 +427,7 @@ From what was measured above, when each setting pays:
 | Rule | Evidence |
 |---|---|
 | **One pass** when every answer is listed in the pipeline's request | Inside the window the two strategies routed every corpus example the same (58/62 and 61/62 differ only by the three examples beyond the window); one pass needs no further request |
-| **One pass** when the routing may use fewer than 6,000 decision tokens | The pipeline's request takes up to 5,400 with its full window and a level of the walk about 600. With less, the walk asks about the roots in the pipeline's request and cannot descend, so answers below a root go unasked **even when they are listed**; one pass asks about every listed answer in that same request. Test: with 3,000 tokens the configured tree walk places J on nothing, the rules' one pass on both siblings |
+| **One pass** when the routing may use fewer than 6,000 decision tokens | The pipeline's request takes up to 5,400 with its full window and a level of the walk about 600. With less, the walk asks about the roots in the pipeline's request and cannot descend, so answers below a root go unasked **even when they are listed**, except the first-pass sections; one pass asks about every listed answer in that same request. Until 2026-11-12 the test was: with 3,000 tokens the configured tree walk places J on nothing, the rules' one pass on both siblings. With the first pass the siblings, being the most recent answers, are asked about either way and both place J on them; the rule still matters for listed answers that are neither roots nor in the first pass |
 | **Tree walk** otherwise, **long runs searched** | Only the walk reaches answers older than the window; the search is the only setting that found a referent the walk could not (59/62 → 61/62) and changes nothing inside the window |
 | **Start at the trunk base** when the longest trunk has 12 or more listed answers before its last and ends in a split | −23 tokens per skipped answer, +1,900 and a request when one of them is referred to. A trunk that has split is history more often than subject; a trunk that never splits is the conversation itself and replies to its earlier answers are the normal case, so there it stays off |
 | **Hop between branch points** when a run below a split has 6 or more answers | −108 tokens per skipped answer, +280 and a request when a reply is inside the run |
@@ -472,7 +474,7 @@ Three runs of the corpus for the default and the selectors, two for the other ro
 - **Shown the message**: the same score, five or six fallbacks for low confidence instead of one, about 41 more tokens a request.
 - The J request on both siblings, five runs of five cases, and the follow-up naming two sections, five runs of two: **25/25 and 10/10 with each of the three selectors.**
 
-**Default: `off`.** The layer is optional and the user asked for it as a setting. On this evidence `rules` would be the better default than a fixed strategy (the same results for fewer requests, and the walk exactly where it is needed), and `decision-model` should stay off until it has something the rules do not. Changing the default is the user's call; see "Left open".
+**Default: `rules`** (2026-11-12; `off` before). On this evidence the rules are the better default than a fixed strategy: the same results for fewer requests, and the walk exactly where it is needed. The user: "Keep rules the default for strategy selection". `off` and `decision-model` stay available; `decision-model` has nothing the rules do not.
 
 ## Evidence and the default
 
@@ -497,22 +499,119 @@ Live, `typesafe/jev-1.13`, reference decompositions, 2026-11-11. The corpus grew
 - `hopBetweenBranchPoints`: **off**. Same score, 0.2% fewer tokens, 2% more requests on the corpus. It pays when replies go to the ends of runs (−18% on that example) and costs a request when they go inside one (+4% to +8%). It also needs the end of a hop asked twice to be right. Turn it on for trees with long branch runs where follow-ups address the latest state of each branch.
 - No size trigger was added to the switches: the size trigger is the third setting, which the user asked for in its own right ("some threshold of amount of node context").
 
-**Default: tree walk.** Within the window the two are equal on every example. The difference is the conversation longer than the window, where one pass loses the referent without asking, which is the kind of silent wrong placement this change exists to remove. The price is 12% more decision tokens on the corpus (0.32% of an answer instead of 0.28%) and one more request of about 0.15 s when a message refers into a branched line of work; an unrelated message, or one in a conversation that does not branch, costs the same or less. The guard bounds the worst case at 3.7%. One pass stays selectable (Settings → Routing → Referents) for anyone who prefers a single request.
+**Configured strategy: tree walk** (what runs when strategy selection is `off`; with the default, `rules`, the rules choose one pass inside the window and the tree walk beyond it). Within the window the two are equal on every example. The difference is the conversation longer than the window, where one pass loses the referent without asking, which is the kind of silent wrong placement this change exists to remove. The price is 12% more decision tokens on the corpus (0.32% of an answer instead of 0.28%) and one more request of about 0.15 s when a message refers into a branched line of work; an unrelated message, or one in a conversation that does not branch, costs the same or less. The guard bounds the worst case at 3.7%. One pass stays selectable (Settings → Routing → Referents) for anyone who prefers a single request.
+
+## The hard stop, the best node found so far, the first pass, and rules by default
+
+Added 2026-11-12 on the user's decisions:
+
+> Keep rules the default for strategy selection
+
+> For routing cost, just default with the best leaf if its too expensive to keep checking.
+
+> DA4 -- budget is a hard stop. No asking the user. Just best node found so far.
+
+> DA3 -- agreed -- A yes to that question only says where to look next.
+
+> On best node found so far -- we can just as a first pass always check the last 5 non-ancestor nodes in the conversation, so we keep a bound of candidates.
+
+> asks are only made when clear-eyed, rather than because we couldn't calculate the referents.
+
+> Stored settings keep strategy selection value. Only default is rules.
+
+> Yes, agreed with proposed invariants. Update spec.
+
+> Run receives recorded exchanges, not summary. The summary is more used for search and decision.
+
+Specified in 11 · "Referent strategies" (first pass), "Decision budget" (hard stop, best node found so far), invariants 11 and 12, and DA1–DA5.
+
+### Rules by default
+
+`DEFAULT_SETTINGS.routing.strategySelection` is `'rules'`. `normalizeSettings` keeps any stored mode, `off` included; settings stored before the mode existed, or with a value that is not a mode, get the default. Settings are stored whole, so a conversation list that was opened between 2026-11-11 and this change has `off` stored and keeps it: only the default changed. Settings → Routing shows "By rules" selected and says so.
+
+### The first pass
+
+Every routing, with either strategy and any selector mode, asks in the routing request about the **first-pass sections**, each by itself (`routing/referents/first-pass.ts`; the pipeline adds the questions for every strategy in `addReferentQuestions`):
+
+- Walk back from the most recent answer section; take a section unless it is an ancestor of one already taken; stop at five (`FIRST_PASS_SECTIONS`). "Ancestor" is the context tree's: a group's members are ancestors of what continues from its join-back.
+- A sibling group one of them belongs to gets its whole-group question too, when the request lists every member.
+- They are listed in the routing request whatever its window, and the smallest window lists them alone (`MIN_SECTIONS` = `FIRST_PASS_SECTIONS`).
+- The questions carry the IDs both strategies use (`m_s<n>`, `m_j<i>`). One pass asks them anyway. The tree walk reads the answers like any other score: it does not ask again when it reaches the node, and a first-pass section on a line the walk pruned is still a referent when it scored at the threshold.
+
+| Conversation | First-pass sections |
+|---|---|
+| One chain of any length | The latest answer |
+| Unrelated answers | The five most recent |
+| The trip: brief → A, B → join-back → J; B → B2; S | J, B2, S |
+| Brief → A, B, nothing built on them | A, B, and the group as a whole |
+| A trunk of ten that split into X and Y | X, Y |
+
+What it changes for the tree walk, measured in the tests: in a tree three branch points deep a reply to a leaf takes two further requests where it took three (the leaves' level is already asked about); with no further request allowed, a reply to a leaf is found where the root was taken before. It costs the walk at most five questions (about 200 tokens) in the routing request.
+
+### The hard stop and the best node found so far
+
+When any limit stops a referent strategy (the token budget, the bound against the answer, the request or question backstops), nothing more is asked of the decision model, and **the user is not asked which section is meant**.
+
+- The strategy still takes its cheaper fallback when it fits: the listed sections it has not asked about, in one request.
+- It reports, per unit, the **best node found so far** (`bestNodeFound` in `routing/referents/shared.ts`). Candidates: every node that was asked about by itself (a section through its own question, a sibling group through the question about the group as a whole) and scored at or above the plausibility floor.
+- **Order (the tie-break).** (1) A node with a plausible descendant is passed over for the descendant, whose context already holds it; not for a correction. (2) Of the rest, the highest score. (3) On equal scores, the most recent in conversation order; a group counts as just after its last member.
+- **The floor is 0.25** (`AMBIGUITY_FLOOR`): the threshold the walk descends on, and the same one below which the pipeline never asked the user about a section. Nothing plausible means no best node: the unit is routed as referring to nothing there.
+- A group resolves to every member, so the unit continues from the full join-back, never a subset.
+- The pipeline (`resolveUnitTargets` in `routing/derive.ts`) uses it **only where its rules would have asked the user**. Referents at or above the target-choice threshold are targets as always. A unit judged to be new work, or one placed with confidence without a target, is not a reply and gets no target, as before.
+- The guard itself also reports a stop: a strategy whose request `createReferentAsk` refused is treated as stopped even when it does not say so, and one that names no best node has its highest-scoring plausible section taken (the most recent on equal scores).
+- **Recorded**: `RoutingDecision.budgetStop` (`limit`: `token-budget`, `price-guard`, `requests` or `questions`; `fallback`: `one-pass` or `partial`; `bestFound`: unit, sections and score for each unit placed that way). The explanation carries it as a sentence, and the run inspector shows a "Decision budget" row.
+- **Deterministic**: every input is a recorded score or the candidates; the tests route twice and compare requests and outcome.
+
+**How the first pass and the floor interact.** The first pass makes the candidate set non-empty and bounded once the conversation has answers; it does not make a candidate plausible. So three outcomes remain when the budget is reached and no referent is clear: a plausible node asked about by itself exists and is taken; none is plausible and the unit refers to nothing there; or the unit is not a reply at all and the question never arose. The floor was kept because without it a reply would be placed on a section the decision model scored at 0.05. It does not conflict with existing behaviour: below 0.25 the pipeline never raised a question either.
+
+**What is given up.** A reply to an old section whose search the budget ended is placed on the best of what was asked about, usually a recent leaf, or starts where its handling chain says, without the user being asked. Before, the user was shown the sections of the relevant chunk. The descendant-first rule can take a node scored 0.30 over its ancestor scored 0.65; the ancestor is in the descendant's context, so the work still reads it.
+
+**Interpretations made** (reported to the user):
+
+- "Best node found so far" replaces the question to the user; it does not make every message a reply. With clear targets they stand; with none and no question due, there is no target.
+- A sibling group asked about as a whole competes as a node also below the target-choice threshold, and wins over its members when plausible (it is their descendant).
+- The routing request is always sent, also when it alone exceeds the budget, as before; DA4 and invariant 11 name it beside the two requests a plan cannot be made without.
+
+### Measured (live, `typesafe/jev-1.13`, 2026-11-12, reference decompositions, 62 examples)
+
+One run of the whole `pnpm smoke` after the change. "Before" is the 2026-11-11 table under "Strategy selection · Measured".
+
+| Configuration | Score | Requests | Tokens reported | Per routing | Before: score, requests, tokens |
+|---|---|---|---|---|---|
+| One pass | 58/62 | 74 | 92,592 | 1.19 requests, 1,493 tokens | 58/62, 74, 92,592 |
+| Tree walk, runs listed | 59/62 | 83 | 99,798 | 1.34, 1,610 | 59/62, 94, 104,582 |
+| Tree walk, long runs searched (the configured strategy) | 61/62 | 89 | 115,461 | 1.44, 1,862 | 60–61/62, 100, 120,245 |
+| + trunk base | 61/62 | 89 | 113,431 | 1.44, 1,830 | 61/62, 100, 118,215 |
+| + hops | 61/62 | 92 | 116,419 | 1.48, 1,878 | 61/62, 102, 120,018 |
+| + both | 61/62 | 92 | 114,389 | 1.48, 1,845 | 61/62, 102, 117,988 |
+| **Selected by rules (the default)** | **61/62** | **83** | **110,364** | **1.34, 1,780** | 61/62, 83, 110,364 |
+| Selected by the decision model | 61/62 | 126 | 145,539 | 2.03, 2,347 | 60–61/62, 126, 145,539 |
+| Selected by the decision model, shown the message | 61/62 | 126 | 147,233 | 2.03, 2,375 | 61/62, 126, 147,233 |
+
+- **No score changed.** With the default budget no routing of the corpus reaches a limit in any configuration but one, so no question to the user became a placement. The exception is the tree walk with runs always listed, whose question backstop is reached on the four 200-section examples; none of them needed the best node (the target was clear, or nothing asked about by itself was plausible), and the two it misses are the two it missed before.
+- The user is still asked which section is meant in two or three examples per configuration: the two labelled as ambiguous (`target-ambiguous-shorter`, `target-ambiguous-use-that-one`), and under one pass `split-correction-and-new-work`, which every configuration misses. These are ambiguities with budget to spare.
+- **The first pass saves the tree walk requests**: 11 fewer on the corpus (100 → 89 for the configured walk, 94 → 83 with runs listed) and 4% fewer tokens, because the level of the most recent leaves is already asked about in the routing request. One pass and the rules' choice (one pass inside the window) are unchanged to the token.
+- The J request on both siblings, five runs of five cases, and the follow-up naming two sections, five runs of two: **25/25 and 10/10 with each of the nine configurations.** Through the whole backend with the default settings (`j-request.smoke.test.ts`): 4/4.
+- **Cost grid** (`pnpm smoke`, 360 cells): the worst guarded cell is still **1.99×** (one pass, bushy, 120-token exchanges). The tree walk in nested forks with 120-token exchanges is now 1.97× to 1.98× (1.93× to 1.94× before): its smallest request lists five leaves and asks 14 questions where it listed four sections and asked 9. With 300-token exchanges the tree walk's worst is 1.93× in nested forks. The rows of the grid table above are from before the change.
+- Not measured live: a routing where the best node found so far is actually used. The corpus has no example that reaches the budget with a plausible candidate below the threshold; the behaviour is covered by the deterministic tests only.
 
 ## Tests
 
 - `routing/referents/referents.test.ts`: the tree; for both strategies C19, C9, C20, ancestor removal and its exception; one pass asks everything once; the walk's levels, state text, pruning, descent below an irrelevant branch point, linear runs; the guard (request, question and token budgets, the partial fallback, a strategy that keeps asking, one pass bounded); the strategy swap and a strategy that names an unsupplied section.
 - `routing/acceptance/referents.test.ts`: the J request end to end on a backend with each strategy: C19 (continues from the join-back on the base chain and reads both), C9 twice (two of three running siblings wait for the third; a weak second sibling with a relevant group), C20 (join chain over leaves).
-- `routing/referents/referents.test.ts`, long runs: a section of a 200-section chain and of 200 unrelated roots found within the budget where listing falls back; a referent at the start, middle and end of a run; two referents in different chunks; no relevant chunk; the most recent answer beside chunk questions; a run split in two rounds; the budget ending a search (the chunk's sections are put to the user) and the guard under five budgets; the trunk base (what is asked, a mid-trunk reply resolved exactly, elicited with no budget, a correction keeping its ancestor, a trunk that never splits); hops (what is asked, a mid-run reply resolved exactly, the end of a hop asked again, the fallback, descent through a relevant chunk); and for each of the four combinations of the two switches C19, C9, C19 after a long trunk and among long branches, a mid-run reply in trunk and branch, a correction keeping its ancestor, and the guard with a deterministic fallback.
+- `routing/referents/referents.test.ts`, long runs: a section of a 200-section chain and of 200 unrelated roots found within the budget where listing falls back; a referent at the start, middle and end of a run; two referents in different chunks; no relevant chunk; the most recent answer beside chunk questions; a run split in two rounds; the budget ending a search (`DA3`: the chunk's sections are not candidates, nothing is placed on a neighbour, the user is not asked) and the guard under five budgets; the trunk base (what is asked, a mid-trunk reply resolved exactly, not placed and not elicited with no budget, a correction keeping its ancestor, a trunk that never splits); hops (what is asked, a mid-run reply resolved exactly, the end of a hop asked again, the fallback, descent through a relevant chunk); and for each of the four combinations of the two switches C19, C9, C19 after a long trunk and among long branches, a mid-run reply in trunk and branch, a correction keeping its ancestor, and the guard with a deterministic fallback.
+- `routing/referents/referents.test.ts`, first pass and hard stop: the first-pass sections of six conversations; with each strategy they are asked about in the routing request, a sibling group among them as a whole, and they are what the smallest request lists; `bestNodeFound` (descendant before ancestor, score, recency, the floor, a group as a node, a correction); `DA4` (each limit: one request, a plan and no elicitation, the best node, the record, the explanation, the same routing twice; the fallback request inside the budget; nothing plausible; and the same scores with budget to spare elicit); a strategy that reports a limit without a best node, and one the guard refused.
+- `routing/acceptance/invariants.test.ts`: `I11` (a 6,000-token budget on the 200-answer chain with each strategy and each selector mode: the requests stay within it, a plan and no elicitation, the same routing twice) and `I12` (a scripted summary provider in use: no attempt's input and no event holds the summary).
+- `routing/acceptance/summaries.test.ts`: `DA5` (a scripted summary provider: the decision model is shown the summary, every run receives the recorded exchanges, the event log holds no summary).
 - `routing/referents/cost-grid.test.ts`: the price guard and the token budget on 360 cells of conversations up to a million tokens, answers down to 102 tokens, with each fixed strategy and with each strategy selector in front.
 - `routing/referents/referents.test.ts`, token budget: the smaller of budget and allowance in either mode; every request of a routing counted; a relative budget reaching a section of a 700-exchange chain that a fixed 16,000 does not, and the two the same routing in a short conversation; for each strategy, the pipeline's request cut to its most recent sections under short answers and under a fixed budget, uncut with answers of ordinary length, and sent with its smallest window when nothing fits; a composite cut to the budget of its parts.
 - `routing/acceptance/budget.test.ts`: on a backend, the log is every user message and every attempt's text, a failed attempt's partial text included, and only grows; a request that cannot be made smaller is sent and the decision says so.
 - `protocol/src/contracts.test.ts`: the three tree-walk settings and the price guard merge key by key, validate, and are defaulted for stored settings that lack them; the token budget resolves by mode, is replaced as a whole, validates by mode, and normalises from what earlier versions stored.
 - `web/src/app/app.test.tsx`: the two switches in Settings → Routing, independent, shown only for the tree walk; the decision budget's mode and value.
 - `routing/corpus/corpus.test.ts`: every example with decisions as labelled, once per strategy and once per combination of the two switches.
-- `routing/selection/selection.test.ts`: the shape of the trip tree, a long chain, old single roots, a trunk that splits and long branch runs; the description is counts only; the signature by powers of two; each rule; each mode through the pipeline (off: nothing asked or recorded; rules: no request, the record; decision model: one request about the shape alone with typed questions, then the chosen strategy's routing); the fallback on failure, on low confidence and on no budget; the search turned off only on a confident no; reuse of a recorded choice for the same signature and a new request when the shape changed; explicit targets select nothing; an injected selector; **the routing with a selector is, request for request, the routing of the chosen strategy configured directly** (four shapes); C19 and C9 with each selector and each strategy chosen; the token budget with a selector on.
+- `routing/selection/selection.test.ts`: the shape of the trip tree, a long chain, old single roots, a trunk that splits and long branch runs; the description is counts only; the signature by powers of two; each rule; each mode through the pipeline (off: nothing asked or recorded; rules: no request, the record; decision model: one request about the shape alone with typed questions, then the chosen strategy's routing); the fallback on failure, on low confidence and on no budget; the search turned off only on a confident no; reuse of a recorded choice for the same signature and a new request when the shape changed; explicit targets select nothing; an injected selector; `DA2` (the routing with a selector, by rules and by the decision model, is request for request and in its plan the routing of the chosen strategy configured directly; four shapes); `DA1` (C19 and C9 with each strategy, configured, chosen by the rules and chosen by the decision model); the token budget with a selector on.
 - `routing/acceptance/selection.test.ts`: on a backend with each selector, C19 (J continues from the join-back and reads both) and C9 (J waits for the whole group); the selection is in the `routing-decided` event and in state; the decision model is asked once per shape and the next message reuses the choice from the log.
-- `routing/corpus/corpus.test.ts`: every example with decisions as labelled, with the strategy the rules select (configured the other way round).
+- `routing/corpus/corpus.test.ts`: every example with decisions as labelled, with the strategy the rules select, which is the default (configured the other way round). The per-strategy runs set strategy selection `off`.
 - `protocol/src/contracts.test.ts`, `web/src/app/app.test.tsx`, `web/src/features/debug/debug.test.tsx`: the mode as a setting, its control in Settings → Routing, and the run inspector's "Strategy" row.
 - `providers/src/referents.smoke.test.ts` (`pnpm smoke`): the corpus for nine configurations (one pass, runs always listed, the default, each switch, both, and the three selectors) with its decision cost, the cost of every long example and a tally of the selections; the J and two-section cases five times per configuration; and the cost grid, printed.
 - `providers/src/j-request.smoke.test.ts` (`pnpm smoke`): the brief, A, B and J through a real backend with the live providers, J sent during and after the siblings' runs.
@@ -524,7 +623,7 @@ Live, `typesafe/jev-1.13`, reference decompositions, 2026-11-11. The corpus grew
 - Beyond about 1,200 to 2,000 older sections (by request length) the first chunk request exceeds the budget's ceiling and old referents are again out of reach. Asking the newest chunks that fit would extend it.
 - The fraction (2%) fits exchanges of about 1,400 tokens and more; for shorter ones the floor is the reach. A per-section term (so many tokens per recorded exchange) would fit both and is not built: the user asked for a share of the log's tokens.
 - The reach table is measured with decisions as labelled (the oracle) and the guard's token estimates, not live.
-- Strategy selection: whether `rules` should be the default; the two switch rules rest on formulae, not on a corpus that exercises them; the rule "one pass under 6,000 tokens" is a fixed figure where the pipeline's own request could be estimated; the selector is not shown which sibling groups are open beyond their count; and whether a decision model given more than counts (for example which lines are active) would choose better than the rules is not explored.
+- Strategy selection: the two switch rules rest on formulae, not on a corpus that exercises them; the rule "one pass under 6,000 tokens" is a fixed figure where the pipeline's own request could be estimated; the selector is not shown which sibling groups are open beyond their count; and whether a decision model given more than counts (for example which lines are active) would choose better than the rules is not explored.
 - The two rare pipeline requests that follow the strategy's are not reserved for: see "The pipeline's request draws from the budget".
 - Context summaries for decisioning are designed in `docs/build/context-summaries.md`.
 
