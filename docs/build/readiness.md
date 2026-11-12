@@ -63,7 +63,7 @@ Stored logs stay readable: the two new events are additions, `EVENT_SCHEMA_VERSI
 | `anthropic/claude-sonnet-5.5` | yes | yes | 2026-11-12 |
 | `anthropic/claude-haiku-5.5` | yes | yes | 2026-11-12 |
 
-A model is added only with a live run that covers it: `packages/providers/src/readiness.smoke.test.ts` runs both checks against every listed model. The model selector offers only the list for those two roles, with no free-text ID; `validateSettingsPatch` refuses anything else; and stored settings that name an unlisted answer or decomposition model are normalised to that role's default when they are read (`normalizeModels`), silently. Synthesis is not restricted (the specification names answer and decomposition only); a synthesis model that is not on the list runs without the signal. The decision model stays pinned.
+A model is added only with a live run that covers it: `packages/providers/test/smoke/readiness.smoke.test.ts` runs both checks against every listed model. The model selector offers only the list for those two roles, with no free-text ID; `validateSettingsPatch` refuses anything else; and stored settings that name an unlisted answer or decomposition model are normalised to that role's default when they are read (`normalizeModels`), silently. Synthesis is not restricted (the specification names answer and decomposition only); a synthesis model that is not on the list runs without the signal. The decision model stays pinned.
 
 ## How the specification was read
 

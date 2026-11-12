@@ -6,9 +6,10 @@ The deterministic core: event log, reducers, projections, context assembly, plac
 |---|---|---|
 | `src/ports/` | architect | The port interfaces (`@committee/core/ports`) |
 | `src/engine/` | core-engine | State, a reducer for every event, the four projections and the run inspection, context assembly, plan application and placement, the lifecycle reactions, the coordinator (`createBackend`) |
-| `src/testing/` | core-engine | Fakes for every port and `createTestBackend` (`@committee/core/testing`) |
-| `src/routing/` | core-routing | The routing pipeline, validation, clarification and target elicitation, Undo split, the routing corpus |
+| `src/routing/` | core-routing | The routing pipeline, validation, clarification and target elicitation, Undo split |
 | `src/recovery/` | core-recovery | Retry policies, paused dependents and the recovery choice, revisions, the choice with default, Regenerate, join-back re-formation, superseded-input notes |
+| `test/` | By source area | Test suites, including acceptance and projection rebuild tests |
+| `testing/` | By source area | Shared scenarios, port fakes, and routing evaluation helpers. Other packages can use the fakes and evaluation helpers from `@committee/core/testing`. |
 
 ## Using it (the web integration)
 
@@ -81,11 +82,11 @@ and appends its line to `src/index.ts` (`export * from './recovery'`). `createBa
 
 `routingModule` (registered by `src/routing/index.ts`) supplies the default router (`createRouter`, used when `deps.router` is absent): the decision gate over `DecisionProvider`, generative decomposition over `Decomposer`, deterministic validation (`validatePlan`). It carries out the `clarifications` and `answersElicitationId` parts of a plan, raises the target-ambiguity elicitation and handles its `answer-elicitation`, and handles `undo-split`. Its decisions are in `docs/build/PLAN.md` §7, "Decisions made by core-routing".
 
-The routing corpus is `src/routing/corpus/`: labelled examples over hand-written scenes (`scene()`), `evaluateCorpus({ decisionProvider, decomposer?, settings? })` and `formatCorpusReport`. A live smoke test runs it with the OpenRouter decision provider.
+The routing corpus lives in `testing/routing/corpus/`. Its labelled examples use hand-written scenes (`scene()`). `evaluateCorpus({ decisionProvider, decomposer?, settings? })` runs those examples and `formatCorpusReport` formats the results. A provider smoke suite runs the corpus with the live OpenRouter decision provider. The referent cost grid and oracle live in `testing/routing/referents/`.
 
-Routing tests: `src/routing/acceptance/` (D1–D4, T1, E1, E2, P9, I9, the named routing cases of PLAN §6, T2 and T3 on the routing side), `src/routing/validation.test.ts`, and the corpus under a provider that answers as labelled (`src/routing/corpus/corpus.test.ts`). `routingScenario()` in `src/routing/acceptance/helpers.ts` runs the real router over scripted decisions stated by name.
+Routing suites live in `test/routing/`, including the acceptance suites (D1–D4, T1, E1, E2, P9, I9, the named routing cases of PLAN §6, T2 and T3 on the routing side), the referent suites in `test/routing/referents/`, and `test/routing/validation.test.ts`. The corpus suite in `test/routing/corpus/corpus.test.ts` uses a provider that answers as labelled. `routingScenario()` in `testing/acceptance/routing.ts` runs the real router over scripted decisions stated by name.
 
-Engine acceptance tests are in `src/engine/acceptance/` (C1–C20, P1–P4, P6, P8, I1, I2, I4, I6, I10, the named cases of PLAN §6, and reducers folded from hand-written logs); the rebuild property tests are in `src/engine/projections/rebuild.test.ts`.
+Engine acceptance tests live in `test/engine/acceptance/` (C1–C20, P1–P4, P6, P8, I1, I2, I4, I6, I10, the named cases of PLAN §6, and reducers folded from hand-written logs). The rebuild property tests live in `test/engine/projections/rebuild.test.ts`.
 
 ## The recovery slice (`src/recovery/`)
 
@@ -101,4 +102,4 @@ Engine acceptance tests are in `src/engine/acceptance/` (C1–C20, P1–P4, P6, 
 
 Build decisions made here: a revision target that was failed, stopped, interrupted or cancelled, or whose retry is pending, is `ended-unfinished` and replaced like running work; a restarted dependent, a regenerated item and redone work wait for any input whose replacement is still running; a replacement of a member whose current node is a late retry goes on the member's own node; a clarification question is never noted; a second revision of a replacement that had not finished rewinds to the last finished answer a revision superseded, and reads it with every correction after it.
 
-Recovery tests: `src/recovery/acceptance/` (R1–R8, E3, E4, F1–F9, P10–P13, T2, T3, I3, I5, I7, I8, and the named recovery cases of PLAN §6), and a randomized rebuild property test with revisions and recovery choices (`src/recovery/rebuild.test.ts`). `recoveryScenario()`, `revise()` and `trip()` in `src/recovery/acceptance/helpers.ts` state the running example of 06 and 08. The review findings on the routing slice are pinned in `src/routing/acceptance/review.test.ts`.
+Recovery acceptance tests live in `test/recovery/acceptance/` (R1–R8, E3, E4, F1–F9, P10–P13, T2, T3, I3, I5, I7, I8, and the named recovery cases of PLAN §6). A randomized rebuild property test with revisions and recovery choices lives in `test/recovery/rebuild.test.ts`. `recoveryScenario()`, `revise()` and `trip()` in `testing/acceptance/recovery.ts` state the running example of 06 and 08. The review findings on the routing slice are pinned in `test/routing/acceptance/review.test.ts`.

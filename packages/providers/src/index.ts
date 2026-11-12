@@ -22,11 +22,3 @@ export { ANTHROPIC_BASE_URL } from './anthropic/client'
 export type { AnthropicOptions } from './anthropic/client'
 
 export { createRoutedDecomposer, createRoutedModelProvider, createRoutedPreparer, type ByProvider } from './routed'
-
-/**
- * The scripted fakes (fake clock, scripted model provider, decision provider,
- * decomposer and router, memory stores), so a consumer of the providers can
- * swap a live provider for a scripted one without a second import. Never
- * used by the app itself.
- */
-export * from '@committee/core/testing'

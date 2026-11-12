@@ -8,14 +8,14 @@ One visible chat that runs many model calls at once. The specification in `docs/
 
 ## Workspace
 
-pnpm workspace, TypeScript everywhere, strict. Packages import each other by name (`@committee/core`), resolved to `src/index.ts`; there is no build step for libraries.
+pnpm workspace, strict TypeScript. Libraries expose their source entry points through `package.json` exports and need no build step.
 
 | Package | Contents | May depend on |
 |---|---|---|
 | `packages/protocol` | Command, event, projection, settings and ID types shared by client and backend. Types and tiny pure helpers only | nothing |
 | `packages/core` | Event log, projections, coordinator, routing pipeline, validation. No I/O: model provider, decision provider, decomposer, stores, clock and timers are injected | `protocol` |
 | `packages/storage` | Event store and projection cache adapters (IndexedDB, in-memory), local secrets store | `protocol`, `core` |
-| `packages/providers` | OpenRouter streaming answers with error mapping, decision provider over OpenRouter Decisions, generative decomposer, scripted fake provider | `protocol`, `core` |
+| `packages/providers` | OpenRouter and Claude streaming answers, decision provider over OpenRouter Decisions, generative decomposer | `protocol`, `core` |
 | `packages/web` | Vite + React 19 + Tailwind v4 client; the backend runs embedded in a Web Worker | all of the above |
 
 ```sh
@@ -25,16 +25,16 @@ pnpm typecheck                             # all packages
 pnpm --filter @committee/core typecheck    # one package
 pnpm test                                  # vitest: "unit" (node) and "web" (jsdom) projects
 pnpm vitest run --project unit packages/core
-pnpm smoke                                 # live OpenRouter calls (*.smoke.test.ts), needs OPENROUTER_KEY
+pnpm smoke                                 # provider smoke suites (*.smoke.test.ts)
 pnpm build
 ```
 
 ## Conventions
 
-- Clean interfaces: a module exports a small typed surface from its `index.ts`; other packages import only from package roots. Prefer discriminated unions and branded ID types over strings and booleans. No `any`; no non-null `!` outside tests.
+- Keep library `src/index.ts` files to re-exports. Import across packages through their declared entry points, including `@committee/core/ports` for adapter interfaces. Prefer discriminated unions and branded ID types over strings and booleans. No `any`; no non-null `!` outside tests.
 - The client never decides placement, ordering, dependencies, or context. It renders the four projections (transcript, queue, genealogy, operation graph) and sends commands.
 - Core is deterministic: no `Date.now()`, timers, randomness, `fetch`, or storage inside it except through injected ports. Tests drive it with the scripted fake provider and a fake clock.
-- Tests sit beside the code as `*.test.ts(x)`. An acceptance test is titled with its ID, for example `test('C9 · a continuation requiring multiple siblings depends on their full join-back', …)`.
+- Put library suites in `test/`, grouped by source area, and shared test helpers in `testing/`. Keep web suites beside the code as `*.test.ts(x)`. Include the acceptance ID in each acceptance test title.
 - No LangChain or LangGraph. No Vercel AI SDK `useChat` or provider-side conversation state; the backend assembles every run's context itself.
 
 ## Web stack

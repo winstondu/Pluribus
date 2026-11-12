@@ -9,7 +9,7 @@ import { Batch, ask as askBatch, type Answers } from '../batch'
  * Fitted on 2026-11-12 to the input tokens `typesafe/jev-1.13` reported for
  * 70 live requests (the CLAUDE.md sample, corpus requests and cost-grid
  * requests of every size: 333 to 16,139 tokens; recorded in
- * `packages/providers/src/openrouter/test-support/estimate-fixture.data.ts`,
+ * `packages/providers/testing/openrouter/estimate-fixture.data.ts`,
  * re-sent by `decision-estimate.smoke.test.ts`) so that it is never below
  * the reported count: 300 per request, 0.35 per character of state, 7 per
  * question and 0.32 per character of its text. It counts 1.01 to 1.30

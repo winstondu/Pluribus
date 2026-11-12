@@ -181,7 +181,7 @@ One frame per coordinator step carries the step's events and the patches from `d
 
 | Agent | Paths | Role |
 |---|---|---|
-| core-engine (milestone 1) | `src/engine/**`, `src/testing/**` | **What events mean, and everything a plan can state.** The state shape, every reducer, the four projections and the run inspection, context assembly, the coordinator and scheduler, `createBackend`, all fakes |
+| core-engine (milestone 1) | `src/engine/**`, `testing/**` | **What events mean, and everything a plan can state.** The state shape, every reducer, the four projections and the run inspection, context assembly, the coordinator and scheduler, `createBackend`, all fakes |
 | core-routing (milestone 4 logic) | `src/routing/**` | **Deciding about a message.** The default `Router` (decision gate, decomposition, validation), target-ambiguity and clarification elicitation, Undo split |
 | core-recovery (milestone 5 logic) | `src/recovery/**` | **Deciding what follows work that did not finish or was corrected.** Retry policies, pause and the recovery choice, revisions, Regenerate, choice with default, superseded-input notes |
 
@@ -247,7 +247,7 @@ Who emits which events, and who handles which commands:
 | core-routing | `split-undone`, `siblings-withdrawn`, `section-superseded` (undo split), `directive-held` (clarification), `elicitation-raised` and `elicitation-answered` (target ambiguity, clarification) | `undo-split`, `answer-elicitation` (target ambiguity; passes otherwise) |
 | core-recovery | `retry-requested`, `directive-paused`, `directive-cancelled` (recovery), `prerequisite-waived`, `prerequisites-changed`, `directive-revised-in-place`, `revision-recorded`, `regenerate-requested`, `section-superseded` (revision, prerequisite revised, regenerate, redo), `superseded-input-noted`, `directive-held` (choice with default), `elicitation-raised` (choice with default, recovery choice), `elicitation-answered` (those two), `elicitation-edited`, `elicitation-defaulted`, `elicitation-withdrawn`, and the node, response and section events of replacements | `retry`, `regenerate`, `continue-without`, `cancel`, `answer-elicitation` (choice with default; passes otherwise) |
 
-**Fakes** live in `packages/core/src/testing/` and are exported as `@committee/core/testing`. core-engine creates `testing/index.ts` in its first commit with these names, which other agents rely on:
+**Fakes** live in `packages/core/testing/` and are exported as `@committee/core/testing`. core-engine creates `testing/index.ts` in its first commit with these names, which other agents rely on:
 
 | Export | Behaviour |
 |---|---|
@@ -268,9 +268,9 @@ A simulated interruption is: dispose the backend, build a new one over the same 
 | `src/openrouter/models.ts` | Context limits from `/api/v1/models`, cached; token estimate for `countTokens` |
 | `src/openrouter/decision-provider.ts` | `createOpenRouterDecisionProvider`: the live Decisions shape in `CLAUDE.md`; `noul` → `probability`; a `choice` outside the supplied options is `malformed-response` |
 | `src/openrouter/decomposer.ts` | `createOpenRouterDecomposer`: `decompose` with a `response_format` JSON schema, validated with `zod`, spans checked against the text; and **`label`**, a short noun phrase for an atomic request, on the same decomposition model |
-| `src/*.test.ts`, `src/*.smoke.test.ts` | Unit tests with an injected `fetch`; smoke tests on `anthropic/claude-haiku-5.5` |
+| `test/**/*.test.ts`, `test/smoke/*.smoke.test.ts` | Unit tests with an injected `fetch`; smoke tests on `anthropic/claude-haiku-5.5` |
 | `tsconfig.json` | Add `"types": ["node"]`: under TypeScript 7 `@types/node` is not included by default, and the smoke tests read `process.env.OPENROUTER_KEY` |
-| `src/index.ts` | Exports the three factories. The re-export of the scripted fakes (`export * from '@committee/core/testing'`) is added by **integration**, once core's testing entry exists |
+| `src/index.ts` | Exports the provider factories. Tests import scripted fakes from `@committee/core/testing` |
 
 `getKey: () => Promise<string | null>` is the only way a provider sees the key. `fetch` is injected so the unit tests never touch the network. Import port types from `@committee/core/ports`.
 
@@ -282,9 +282,9 @@ A simulated interruption is: dispose the backend, build a new one over the same 
 | `src/indexeddb-adapter.ts`, `src/memory-adapter.ts` | The two adapters (`idb`; tests use `fake-indexeddb`) |
 | `src/event-store.ts`, `src/projection-cache.ts` | `createEventStore(adapter)`, `createProjectionCache(adapter)` implementing the ports, including `EventStoreConflictError` on a gap and atomic appends |
 | `src/secrets-store.ts` | `createSecretsStore(adapter)` over a **separate** IndexedDB database |
-| `src/index.ts` | `openIndexedDbStorage()` → `{ eventStore, projectionCache, secretsStore }`, `createMemoryStorage()`. The conformance suites are the sub-entry `@committee/storage/conformance` (`src/conformance.ts`), because they import `vitest` and the root entry is bundled into the Worker |
-| `src/conformance.ts` + tests | `describeEventStore(name, make)`, `describeProjectionCache(name, make)`, `describeSecretsStore(name, make)`: one suite, run against both adapters |
-| `src/core-fakes.test.ts` | Written by **integration**, the one file in this package that is not storage's: runs the same suites against `MemoryEventStore`, `MemoryProjectionCache` and `MemorySecretsStore` from `@committee/core/testing`, so core's tests and the real stores are held to one contract |
+| `src/index.ts` | `openIndexedDbStorage()` → `{ eventStore, projectionCache, secretsStore }`, `createMemoryStorage()`. The conformance suites are the sub-entry `@committee/storage/conformance` (`testing/conformance.ts`), because they import `vitest` and the root entry is bundled into the Worker |
+| `testing/conformance.ts` + tests | `describeEventStore(name, make)`, `describeProjectionCache(name, make)`, `describeSecretsStore(name, make)`: one suite, run against both adapters |
+| `test/core-fakes.test.ts` | Written by **integration**, the one file in this package that is not storage's: runs the same suites against `MemoryEventStore`, `MemoryProjectionCache` and `MemorySecretsStore` from `@committee/core/testing`, so core's tests and the real stores are held to one contract |
 
 Databases: `committee-events` (logs and cache) and `committee-secrets`. Import port types and `EventStoreConflictError` from `@committee/core/ports`.
 
@@ -297,7 +297,7 @@ Ownership is by path and is disjoint. Nobody edits a file outside their row, and
 | ui-foundation | `package.json`, `components.json`, `vite.config.ts`, `tsconfig*.json`, `index.html`, `src/App.tsx`, `src/main.tsx`, `src/index.css`, `src/env.d.ts`, `src/app/**` (shell, sidebar, settings, key prompt, UI state, standby notice), `src/backend/**`, `src/design/**`, `src/components/**`, `src/lib/**`, `src/hooks/**`, `src/test/**`, `src/fixtures/*.ts`, and its own case files (table in section 4) |
 | ui-transcript | `src/features/transcript/**`, `src/features/composer/**`, `src/features/association/**` (rails and Focus), and its own case files |
 | ui-debug | `src/features/debug/**` (mini-map, operation graph, run inspector, Compare), and its own case files |
-| integration | `src/worker/**`, `packages/web/e2e/**`, root `package.json`, `vitest*.config.ts` and other root config, `packages/providers/src/index.ts` (the one re-export line), `packages/storage/src/core-fakes.test.ts`, `docs/build/STATUS.md` |
+| integration | `src/worker/**`, `packages/web/e2e/**`, root `package.json`, `vitest*.config.ts` and other root config, `packages/storage/test/core-fakes.test.ts`, `docs/build/STATUS.md` |
 
 Rules that keep it disjoint:
 
@@ -523,35 +523,35 @@ Canonical test per ID. Core tests run on `createTestBackend()` with the scripted
 
 | IDs | Agent | Test file |
 |---|---|---|
-| C1–C20 | core-engine | `packages/core/src/engine/acceptance/chains.test.ts` |
-| P1, P2, P3, P4, P6, P8 | core-engine | `packages/core/src/engine/acceptance/placement.test.ts` |
-| D1, D2, D3, D4 | core-routing | `packages/core/src/routing/acceptance/decomposition.test.ts` |
-| T1 | core-routing | `packages/core/src/routing/acceptance/targets.test.ts` |
-| E1, E2 | core-routing | `packages/core/src/routing/acceptance/elicitation.test.ts` |
-| P9 | core-routing | `packages/core/src/routing/acceptance/placement.test.ts` |
-| T2, T3 | core-recovery | `packages/core/src/recovery/acceptance/targets.test.ts` |
-| R1–R8 | core-recovery | `packages/core/src/recovery/acceptance/revisions.test.ts` |
-| E3, E4 | core-recovery | `packages/core/src/recovery/acceptance/elicitation.test.ts` |
-| F1–F9 | core-recovery | `packages/core/src/recovery/acceptance/failure.test.ts` |
-| P10, P11, P12, P13 | core-recovery | `packages/core/src/recovery/acceptance/placement.test.ts` |
+| C1–C20 | core-engine | `packages/core/test/engine/acceptance/chains.test.ts` |
+| P1, P2, P3, P4, P6, P8 | core-engine | `packages/core/test/engine/acceptance/placement.test.ts` |
+| D1, D2, D3, D4 | core-routing | `packages/core/test/routing/acceptance/decomposition.test.ts` |
+| T1 | core-routing | `packages/core/test/routing/acceptance/targets.test.ts` |
+| E1, E2 | core-routing | `packages/core/test/routing/acceptance/elicitation.test.ts` |
+| P9 | core-routing | `packages/core/test/routing/acceptance/placement.test.ts` |
+| T2, T3 | core-recovery | `packages/core/test/recovery/acceptance/targets.test.ts` |
+| R1–R8 | core-recovery | `packages/core/test/recovery/acceptance/revisions.test.ts` |
+| E3, E4 | core-recovery | `packages/core/test/recovery/acceptance/elicitation.test.ts` |
+| F1–F9 | core-recovery | `packages/core/test/recovery/acceptance/failure.test.ts` |
+| P10, P11, P12, P13 | core-recovery | `packages/core/test/recovery/acceptance/placement.test.ts` |
 | P5, P7 | ui-transcript | `packages/web/src/features/transcript/acceptance.test.tsx` |
-| DA1, DA2 | core-routing (added 2026-11-12) | `packages/core/src/routing/selection/selection.test.ts` |
-| DA3, DA4 | core-routing (added 2026-11-12) | `packages/core/src/routing/referents/referents.test.ts` |
-| DA5 | core-routing (added 2026-11-12) | `packages/core/src/routing/acceptance/summaries.test.ts` |
+| DA1, DA2 | core-routing (added 2026-11-12) | `packages/core/test/routing/selection/selection.test.ts` |
+| DA3, DA4 | core-routing (added 2026-11-12) | `packages/core/test/routing/referents/referents.test.ts` |
+| DA5 | core-routing (added 2026-11-12) | `packages/core/test/routing/acceptance/summaries.test.ts` |
 
 That is 20 + 6 + 4 + 1 + 2 + 1 + 2 + 8 + 2 + 9 + 4 + 2 = 61, and with DA1–DA5 (11 · "Dependency attachment") 66. T2 and T3 sit with core-recovery because they need a superseded section to exist; core-routing unit-tests the corrective-wording classification without the ID in the title. P8 and C14 need a reply group, which core-engine builds from a scripted `independent-composite` plan.
 
 | Invariant (11 · "Invariants") | Agent | Test file and title prefix |
 |---|---|---|
-| 1 Three separate relationships | core-engine | `packages/core/src/engine/acceptance/invariants.test.ts` · `I1` |
+| 1 Three separate relationships | core-engine | `packages/core/test/engine/acceptance/invariants.test.ts` · `I1` |
 | 2 Exact consumed context | core-engine | same · `I2` |
 | 4 Dependencies release only on success | core-engine | same · `I4` |
 | 6 Placement | core-engine | same · `I6` |
 | 10 Scope: text and read-only; no LangChain or LangGraph | core-engine | same · `I10` (no forbidden dependency in any `package.json`; core's ports expose no tool call) |
-| 9 The decision model is bounded | core-routing | `packages/core/src/routing/acceptance/invariants.test.ts` · `I9` |
+| 9 The decision model is bounded | core-routing | `packages/core/test/routing/acceptance/invariants.test.ts` · `I9` |
 | 11 Routing cost is bounded (added 2026-11-12) | core-routing | same · `I11` |
 | 12 Summaries are not context (added 2026-11-12) | core-routing | same · `I12` |
-| 3 Append-only history | core-recovery | `packages/core/src/recovery/acceptance/invariants.test.ts` · `I3` |
+| 3 Append-only history | core-recovery | `packages/core/test/recovery/acceptance/invariants.test.ts` · `I3` |
 | 5 Local failure | core-recovery | same · `I5` |
 | 7 Rewound replacement context | core-recovery | same · `I7` |
 | 8 No server assumed | core-recovery | same · `I8` |
@@ -645,7 +645,7 @@ Recorded by core-routing when milestone 4 landed. The code is `packages/core/src
 
 **A message routed again keeps its options.** Retry after a routing failure, and a routing lost with the executor, route with the chosen targets of its latest answered target-ambiguity elicitation and with `forcedComposition: 'atomic'` after Undo split (`queries.routeOptionsFor`).
 
-**The routing corpus** is `packages/core/src/routing/corpus/`: 55 labelled examples (44 until 2026-11-11; the later ones have titles as a live run records them, and two sit in a conversation longer than the window) over hand-written scenes, each with the spec reference that justifies its label. `evaluateCorpus({ decisionProvider, decomposer?, settings? })` routes every example and reports mismatches by topic; without a decomposer it uses each example's reference decomposition, so the decision model is evaluated alone. A core test runs it with a provider that answers as the labels say (`oracleDecisionProvider`), which checks the deterministic stages. The live run belongs in a providers smoke test. A first live run against `typesafe/jev-1.13` on 2026-11-11, with `DEFAULT_SETTINGS.thresholds`, matched 42 of 44 labels; the floor, the several-sections question and the shared-brief rule above came from the misses of the run before it (34 of 44).
+**The routing corpus** is `packages/core/testing/routing/corpus/`: 55 labelled examples (44 until 2026-11-11; the later ones have titles as a live run records them, and two sit in a conversation longer than the window) over hand-written scenes, each with the spec reference that justifies its label. `evaluateCorpus({ decisionProvider, decomposer?, settings? })` routes every example and reports mismatches by topic; without a decomposer it uses each example's reference decomposition, so the decision model is evaluated alone. A core test runs it with a provider that answers as the labels say (`oracleDecisionProvider`), which checks the deterministic stages. The live run belongs in a providers smoke test. A first live run against `typesafe/jev-1.13` on 2026-11-11, with `DEFAULT_SETTINGS.thresholds`, matched 42 of 44 labels; the floor, the several-sections question and the shared-brief rule above came from the misses of the run before it (34 of 44).
 
 **Threshold tuning (second review).** Each threshold was swept on the corpus with the pinned `typesafe/jev-1.13` (decision model alone, reference decompositions), one at a time from the defaults, with the live answers cached so every setting saw the same answers. Labels matched out of 44:
 
@@ -678,14 +678,14 @@ Recorded by integration from the slices' reports, so that the plan matches the c
 
 - **One Worker per page.** `src/worker/client.ts` returns one `PortClient` for every call, so React's StrictMode double mount never starts a second Worker that would stand by behind the first. The Worker takes the `committee-backend` lock with `ifAvailable` first; when that fails it posts `standby` and waits for the lock.
 - **The model catalog is read when the Worker starts.** Every run's tokens are counted before it starts, and the first count reads OpenRouter's catalog; reading it at start keeps the first run after a load from showing "Waiting for a free slot" while a slot is free.
-- **End-to-end flows** are `packages/web/e2e/run.mjs` (`pnpm e2e`), live against OpenRouter with the cheap model for every generative role; they are not part of `pnpm test`. The live routing corpus runs in `pnpm smoke` (`packages/providers/src/routing-corpus.smoke.test.ts`).
+- **End-to-end flows** are `packages/web/e2e/run.mjs` (`pnpm e2e`), live against OpenRouter with the cheap model for every generative role; they are not part of `pnpm test`. The live routing corpus runs in `pnpm smoke` (`packages/providers/test/smoke/routing-corpus.smoke.test.ts`).
 
 ## 8. Order of work and reviews
 
 1. **ui-foundation's contract commit** (section 3, "The foundation contract comes first"). Nothing else in `packages/web` starts before it is in the tree.
 2. In parallel: core-engine, providers, storage, the rest of ui-foundation, ui-transcript, ui-debug.
 3. core-routing after core-engine; core-recovery after core-routing.
-4. integration: the Worker entry (take the `committee-backend` lock, post `standby` while waiting, then `servePort(createBackend(…), self)`), `src/worker/client.ts` and `src/worker/system.ts`, the provider fake re-export, `core-fakes.test.ts` in storage, end-to-end and smoke runs, `docs/build/STATUS.md` with what passes.
+4. integration: the Worker entry (take the `committee-backend` lock, post `standby` while waiting, then `servePort(createBackend(…), self)`), `src/worker/client.ts` and `src/worker/system.ts`, `core-fakes.test.ts` in storage, end-to-end and smoke runs, `docs/build/STATUS.md` with what passes.
 5. Reviews, one after another, each starting from the previous one's fixes. The specification has many interacting edge cases, so one pass is not enough. Each review reads the spec chapter's "Edge cases" table row by row, not only the acceptance conditions. Reviewers are read-only: a review reports its findings in its result, and the agent that then applies the fixes appends each finding and what was done about it to `docs/build/STATUS.md` (integration creates the file; later fixers append under a heading for their pass).
 
 | Pass | Checks | Against |

@@ -90,7 +90,7 @@ The prompt presents OpenRouter and Anthropic keys in the same terms: recognized 
 
 ## Not verified
 
-- **No live run.** `ANTHROPIC_API_KEY` is not set in this environment, so `packages/providers/src/anthropic.smoke.test.ts` was skipped. Nothing here has been sent to the Claude API.
+- **No live run.** `ANTHROPIC_API_KEY` is not set in this environment, so `packages/providers/test/smoke/anthropic.smoke.test.ts` was skipped. Nothing here has been sent to the Claude API.
 - **The Claude API entries of the compatibility list are untested** (`testedOn: null`). They are offered and marked "live test pending". Set the date after the smoke suite passes.
 - The exact response to an out-of-credit request is taken from the documentation.
 - Motion has not had the `review-animations` pass; the skill cannot be invoked from an agent session.

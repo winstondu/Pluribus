@@ -1,0 +1,299 @@
+import { describe, expect, test } from 'vitest'
+import { COMMAND_TYPES } from '../src/commands'
+import { APP_EVENT_TYPES, APP_LOG, CONVERSATION_EVENT_TYPES, EVENT_SCHEMA_VERSION, upcastEvent } from '../src/events'
+import { IN_FLIGHT_STATES, NOT_STARTED_STATES, PROVIDER_ERROR_CLASS, providerError, providerErrorCodeForStatus } from '../src/model'
+import { CANDIDATE_SOURCE_NAMES, DEFAULT_ABSOLUTE_TOKEN_BUDGET, DEFAULT_RELATIVE_TOKEN_BUDGET, DEFAULT_SETTINGS, LEGACY_REFERENT_INPUT_TOKENS, ORDERED_MESSAGE_HANDLINGS, RETRY_POLICIES, STRATEGY_SELECTION_MODES, applySettingsPatch, normalizeSettings, resolveTokenBudget, textTokens, validateSettingsPatch } from '../src/settings'
+import { groupCountText, pausedText, provisionalLabel, recoveryLabels, redoneByDefaultText, supersededInputText, waitingText } from '../src/wording'
+
+describe('commands', () => {
+  test('the command set is exactly the one in 10 · Part 2, and revision is not a command', () => {
+    expect([...COMMAND_TYPES].sort()).toEqual(
+      [
+        'submit-message',
+        'stop',
+        'retry',
+        'regenerate',
+        'continue-without',
+        'cancel',
+        'answer-elicitation',
+        'undo-split',
+        'change-settings',
+        'create-conversation',
+        'list-conversations',
+        'delete-conversation',
+      ].sort(),
+    )
+    expect(COMMAND_TYPES.some((type) => type.includes('revis'))).toBe(false)
+  })
+})
+
+describe('events', () => {
+  test('event type names are unique across both logs', () => {
+    const all = [...CONVERSATION_EVENT_TYPES, ...APP_EVENT_TYPES]
+    expect(new Set(all).size).toBe(all.length)
+  })
+
+  test('upcast accepts a current event and refuses unknown versions and types', () => {
+    const stored = { id: '01', log: APP_LOG, seq: 1, v: EVENT_SCHEMA_VERSION, at: 5, type: 'key-status-changed', configured: true }
+    expect(upcastEvent(stored)).toBe(stored)
+    expect(() => upcastEvent({ ...stored, v: EVENT_SCHEMA_VERSION + 1 })).toThrow(/schema version/)
+    expect(() => upcastEvent({ ...stored, type: 'revise' })).toThrow(/unknown type/)
+    expect(() => upcastEvent({ ...stored, seq: 0 })).toThrow(/sequence/)
+  })
+})
+
+describe('provider errors', () => {
+  test('HTTP statuses map per the architecture error table', () => {
+    for (const status of [408, 429, 502, 503, 500]) {
+      expect(PROVIDER_ERROR_CLASS[providerErrorCodeForStatus(status)]).toBe('transient')
+    }
+    for (const status of [400, 401, 402, 403, 404]) {
+      expect(PROVIDER_ERROR_CLASS[providerErrorCodeForStatus(status)]).toBe('non-retryable')
+    }
+    expect(providerErrorCodeForStatus(402)).toBe('out-of-credits')
+    expect(providerErrorCodeForStatus(429)).toBe('rate-limited')
+  })
+
+  test('providerError fills in the class from the code', () => {
+    expect(providerError('rate-limited', 'slow down', { httpStatus: 429, retryAfterMs: 2_000 })).toEqual({
+      code: 'rate-limited',
+      class: 'transient',
+      message: 'slow down',
+      httpStatus: 429,
+      retryAfterMs: 2_000,
+    })
+    expect(providerError('context-length-exceeded', 'too long').class).toBe('non-retryable')
+  })
+})
+
+describe('directive states', () => {
+  test('retrying and paused members keep a sibling group open; settled ones do not', () => {
+    expect(IN_FLIGHT_STATES).toContain('retrying')
+    expect(IN_FLIGHT_STATES).toContain('paused')
+    for (const settled of ['completed', 'failed', 'stopped', 'interrupted', 'cancelled', 'superseded'] as const) {
+      expect(IN_FLIGHT_STATES).not.toContain(settled)
+    }
+    expect(NOT_STARTED_STATES).toContain('paused')
+    expect(NOT_STARTED_STATES).not.toContain('running')
+  })
+})
+
+describe('settings', () => {
+  test('defaults match the specification', () => {
+    expect(DEFAULT_SETTINGS.retryPolicy).toBe('standard')
+    expect(DEFAULT_SETTINGS.defaultChoiceWaitMs).toBe(30_000)
+    expect(DEFAULT_SETTINGS.concurrencyLimit).toBe(4)
+    expect(DEFAULT_SETTINGS.models.decision).toBe('typesafe/jev-1.13')
+    const { comparePlacement, ...debugToggles } = DEFAULT_SETTINGS.debug
+    expect(Object.values(debugToggles)).toEqual([false, false, false, false])
+    expect(comparePlacement).toBe('sidebar')
+    expect(RETRY_POLICIES.standard.maxAutomaticRetries).toBe(3)
+    expect(RETRY_POLICIES.manual.maxAutomaticRetries).toBe(0)
+    expect(RETRY_POLICIES.persistent.maxAutomaticRetries).toBeGreaterThan(RETRY_POLICIES.standard.maxAutomaticRetries)
+  })
+
+  test('a patch merges nested groups and leaves the rest untouched', () => {
+    const next = applySettingsPatch(DEFAULT_SETTINGS, { retryPolicy: 'manual', debug: { miniMap: true } })
+    expect(next.retryPolicy).toBe('manual')
+    expect(next.debug).toEqual({ ...DEFAULT_SETTINGS.debug, miniMap: true })
+    expect(next.models).toEqual(DEFAULT_SETTINGS.models)
+    expect(applySettingsPatch(DEFAULT_SETTINGS, {})).toBe(DEFAULT_SETTINGS)
+  })
+
+  test('invalid values are named', () => {
+    expect(validateSettingsPatch({ concurrencyLimit: 0 })).toMatch(/Concurrency/)
+    expect(validateSettingsPatch({ thresholds: { targetChoice: 1.2 } })).toMatch(/targetChoice/)
+    expect(validateSettingsPatch({ models: { answer: ' ' } })).toMatch(/answer/)
+    expect(validateSettingsPatch({ concurrencyLimit: 2, defaultChoiceWaitMs: 0 })).toBeNull()
+  })
+
+  test('the referent strategy and its decision budget are settings: merged key by key, validated, and filled in for settings stored before they existed', () => {
+    const next = applySettingsPatch(DEFAULT_SETTINGS, { routing: { referentStrategy: 'one-pass', referentBudget: { requests: 2 } } })
+    expect(next.routing).toEqual({ ...DEFAULT_SETTINGS.routing, referentStrategy: 'one-pass', referentBudget: { ...DEFAULT_SETTINGS.routing.referentBudget, requests: 2 } })
+    expect(next.thresholds).toEqual(DEFAULT_SETTINGS.thresholds)
+    expect(applySettingsPatch(DEFAULT_SETTINGS, { routing: {} })).toBe(DEFAULT_SETTINGS)
+    expect(validateSettingsPatch({ routing: { referentStrategy: 'guess' as never } })).toMatch(/referent strategy/)
+    expect(validateSettingsPatch({ routing: { referentBudget: { questions: -1 } } })).toMatch(/questions/)
+    expect(validateSettingsPatch({ routing: { referentBudget: { requests: 1.5 } } })).toMatch(/requests/)
+    expect(validateSettingsPatch({ routing: { referentStrategy: 'tree-walk', referentBudget: { requests: 0 } } })).toBeNull()
+    const { routing: _dropped, ...stored } = { ...DEFAULT_SETTINGS, retryPolicy: 'manual' as const }
+    expect(normalizeSettings(stored)).toEqual({ ...DEFAULT_SETTINGS, retryPolicy: 'manual' })
+  })
+
+  test('the tree walk\'s two switches, its search size and the price guard are settings: independent, validated, and defaulted for settings stored before they existed', () => {
+    expect(DEFAULT_SETTINGS.routing.treeWalk).toEqual({ startAtTrunkBase: false, hopBetweenBranchPoints: false, searchRunsOverTokens: 1_500 })
+    const trunk = applySettingsPatch(DEFAULT_SETTINGS, { routing: { treeWalk: { startAtTrunkBase: true } } })
+    expect(trunk.routing.treeWalk).toEqual({ startAtTrunkBase: true, hopBetweenBranchPoints: false, searchRunsOverTokens: 1_500 })
+    const both = applySettingsPatch(trunk, { routing: { treeWalk: { hopBetweenBranchPoints: true } } })
+    expect(both.routing.treeWalk).toEqual({ startAtTrunkBase: true, hopBetweenBranchPoints: true, searchRunsOverTokens: 1_500 })
+    expect(both.routing.referentStrategy).toBe(DEFAULT_SETTINGS.routing.referentStrategy)
+    expect(validateSettingsPatch({ routing: { treeWalk: { searchRunsOverTokens: 0 } } })).toMatch(/whole number/)
+    expect(validateSettingsPatch({ routing: { treeWalk: { searchRunsOverTokens: 800, hopBetweenBranchPoints: true } } })).toBeNull()
+    expect(validateSettingsPatch({ routing: { costGuard: { maxAnswerCostRatio: -1 } } })).toMatch(/maxAnswerCostRatio/)
+    expect(applySettingsPatch(DEFAULT_SETTINGS, { routing: { costGuard: { maxAnswerCostRatio: 1 } } }).routing.costGuard).toEqual({ ...DEFAULT_SETTINGS.routing.costGuard, maxAnswerCostRatio: 1 })
+    // Stored by the version that had only the strategy and its budget.
+    const old = { ...DEFAULT_SETTINGS, routing: { referentStrategy: 'one-pass', referentBudget: { requests: 1, questions: 10, inputTokens: 500 } } } as unknown as typeof DEFAULT_SETTINGS
+    expect(normalizeSettings(old).routing).toEqual({
+      referentStrategy: 'one-pass',
+      // Stored before strategy selection existed: there is no value to keep, so the default applies.
+      strategySelection: 'rules',
+      // Stored before there was a candidate source: the default applies.
+      candidateSource: DEFAULT_SETTINGS.routing.candidateSource,
+      // Stored before ordered-message decomposition was a setting: the default applies.
+      orderedMessages: 'decompose',
+      referentBudget: { requests: 1, questions: 10 },
+      tokenBudget: { mode: 'absolute', inputTokens: 500 },
+      treeWalk: DEFAULT_SETTINGS.routing.treeWalk,
+      costGuard: DEFAULT_SETTINGS.routing.costGuard,
+      useSummaryIfAvailable: false,
+      backgroundSummaries: false,
+    })
+    // Context summaries: two independent switches, both off until asked for.
+    const summaries = applySettingsPatch(DEFAULT_SETTINGS, { routing: { useSummaryIfAvailable: true } })
+    expect(summaries.routing.useSummaryIfAvailable).toBe(true)
+    expect(summaries.routing.backgroundSummaries).toBe(false)
+    expect(applySettingsPatch(summaries, { routing: { backgroundSummaries: true } }).routing).toMatchObject({ useSummaryIfAvailable: true, backgroundSummaries: true })
+  })
+})
+
+describe('ordered-message decomposition', () => {
+  test('ordered messages · a decomposer setting (Q104): decompose by default, validated, a stored value kept, and defaulted for settings stored before it existed', () => {
+    expect(DEFAULT_SETTINGS.routing.orderedMessages).toBe('decompose')
+    expect(ORDERED_MESSAGE_HANDLINGS).toEqual(['decompose', 'atomic'])
+    const atomic = applySettingsPatch(DEFAULT_SETTINGS, { routing: { orderedMessages: 'atomic' } })
+    expect(atomic.routing).toEqual({ ...DEFAULT_SETTINGS.routing, orderedMessages: 'atomic' })
+    expect(applySettingsPatch(DEFAULT_SETTINGS, { routing: { orderedMessages: 'decompose' } })).toBe(DEFAULT_SETTINGS)
+    expect(validateSettingsPatch({ routing: { orderedMessages: 'atomic' } })).toBeNull()
+    expect(validateSettingsPatch({ routing: { orderedMessages: 'sometimes' as never } })).toMatch(/Unknown ordered-message handling/)
+    const { orderedMessages: _dropped, ...before } = DEFAULT_SETTINGS.routing
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, routing: before as never }).routing.orderedMessages).toBe('decompose')
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, orderedMessages: 'sometimes' as never } }).routing.orderedMessages).toBe('decompose')
+    expect(normalizeSettings(atomic).routing.orderedMessages).toBe('atomic')
+  })
+})
+
+describe('strategy selection', () => {
+  test('selection · the mode is a setting: rules by default, validated, a stored value kept, and defaulted for settings stored before it existed', () => {
+    expect(DEFAULT_SETTINGS.routing.strategySelection).toBe('rules')
+    expect(STRATEGY_SELECTION_MODES).toEqual(['off', 'rules', 'decision-model'])
+    const off = applySettingsPatch(DEFAULT_SETTINGS, { routing: { strategySelection: 'off' } })
+    expect(off.routing).toEqual({ ...DEFAULT_SETTINGS.routing, strategySelection: 'off' })
+    expect(applySettingsPatch(off, { routing: { strategySelection: 'decision-model' } }).routing.strategySelection).toBe('decision-model')
+    expect(applySettingsPatch(DEFAULT_SETTINGS, { routing: { strategySelection: 'rules' } })).toBe(DEFAULT_SETTINGS)
+    expect(validateSettingsPatch({ routing: { strategySelection: 'rules' } })).toBeNull()
+    expect(validateSettingsPatch({ routing: { strategySelection: 'guess' as never } })).toMatch(/Unknown strategy selection/)
+    const { strategySelection: _dropped, ...before } = DEFAULT_SETTINGS.routing
+    // Stored before the mode existed, or with a value that is not a mode: the default.
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, routing: before as never }).routing.strategySelection).toBe('rules')
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, strategySelection: 'guess' as never } }).routing.strategySelection).toBe('rules')
+    // A stored mode is kept, `off` included: only the default changed.
+    for (const mode of STRATEGY_SELECTION_MODES) expect(normalizeSettings({ ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, strategySelection: mode } }).routing.strategySelection).toBe(mode)
+  })
+})
+
+describe('the candidate source', () => {
+  test('candidates · the candidate source is a setting: none or lexical, validated, and defaulted for settings stored before it existed', () => {
+    expect(CANDIDATE_SOURCE_NAMES).toEqual(['none', 'lexical'])
+    expect(CANDIDATE_SOURCE_NAMES).toContain(DEFAULT_SETTINGS.routing.candidateSource)
+    for (const name of CANDIDATE_SOURCE_NAMES) {
+      const next = applySettingsPatch(DEFAULT_SETTINGS, { routing: { candidateSource: name } })
+      expect(next.routing).toEqual({ ...DEFAULT_SETTINGS.routing, candidateSource: name })
+      expect(validateSettingsPatch({ routing: { candidateSource: name } })).toBeNull()
+      // A stored choice is kept, whatever the default is.
+      expect(normalizeSettings(next).routing.candidateSource).toBe(name)
+    }
+    expect(applySettingsPatch(DEFAULT_SETTINGS, { routing: { candidateSource: DEFAULT_SETTINGS.routing.candidateSource } })).toBe(DEFAULT_SETTINGS)
+    expect(validateSettingsPatch({ routing: { candidateSource: 'embeddings' as never } })).toMatch(/Unknown candidate source/)
+    const { candidateSource: _dropped, ...before } = DEFAULT_SETTINGS.routing
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, routing: before as never }).routing.candidateSource).toBe(DEFAULT_SETTINGS.routing.candidateSource)
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, candidateSource: 'embeddings' as never } }).routing.candidateSource).toBe(DEFAULT_SETTINGS.routing.candidateSource)
+  })
+})
+
+describe('the decision token budget', () => {
+  const relative = DEFAULT_RELATIVE_TOKEN_BUDGET
+
+  test('budget · the default is relative to the conversation\'s log: 2% of it, never below 16,000 tokens and never above 40,000', () => {
+    expect(DEFAULT_SETTINGS.routing.tokenBudget).toEqual({ mode: 'relative', fraction: 0.02, floor: 16_000, ceiling: 40_000 })
+    expect(DEFAULT_ABSOLUTE_TOKEN_BUDGET).toEqual({ mode: 'absolute', inputTokens: 16_000 })
+    expect(resolveTokenBudget(relative, 0)).toBe(16_000)
+    expect(resolveTokenBudget(relative, 500_000)).toBe(16_000)
+    expect(resolveTokenBudget(relative, 1_000_000)).toBe(20_000)
+    expect(resolveTokenBudget(relative, 1_234_567)).toBe(24_691)
+    expect(resolveTokenBudget(relative, 5_000_000)).toBe(40_000)
+    // A multiple of the log is a fraction above 1.
+    expect(resolveTokenBudget({ mode: 'relative', fraction: 2, floor: 0, ceiling: 1_000_000 }, 3_000)).toBe(6_000)
+    expect(resolveTokenBudget({ mode: 'absolute', inputTokens: 9_000 }, 5_000_000)).toBe(9_000)
+    // The log is sized at one token per four characters, rounded up.
+    expect([textTokens(0), textTokens(1), textTokens(4), textTokens(5)]).toEqual([0, 1, 1, 2])
+  })
+
+  test('budget · it is one setting, replaced as a whole and validated by mode', () => {
+    const fixed = applySettingsPatch(DEFAULT_SETTINGS, { routing: { tokenBudget: { mode: 'absolute', inputTokens: 9_000 } } })
+    expect(fixed.routing.tokenBudget).toEqual({ mode: 'absolute', inputTokens: 9_000 })
+    expect(fixed.routing.referentBudget).toEqual(DEFAULT_SETTINGS.routing.referentBudget)
+    expect(applySettingsPatch(fixed, { routing: { tokenBudget: relative } }).routing.tokenBudget).toEqual(relative)
+    expect(applySettingsPatch(DEFAULT_SETTINGS, { routing: { tokenBudget: { ...relative } } })).toBe(DEFAULT_SETTINGS)
+    expect(validateSettingsPatch({ routing: { tokenBudget: { mode: 'absolute', inputTokens: 0 } } })).toBeNull()
+    expect(validateSettingsPatch({ routing: { tokenBudget: { mode: 'absolute', inputTokens: -1 } } })).toMatch(/whole number/)
+    expect(validateSettingsPatch({ routing: { tokenBudget: { mode: 'absolute', inputTokens: 1.5 } } })).toMatch(/whole number/)
+    expect(validateSettingsPatch({ routing: { tokenBudget: { ...relative, fraction: 0 } } })).toMatch(/greater than 0/)
+    expect(validateSettingsPatch({ routing: { tokenBudget: { ...relative, floor: 50_000 } } })).toMatch(/ceiling cannot be below/)
+    expect(validateSettingsPatch({ routing: { tokenBudget: { ...relative, floor: 0.5 } } })).toMatch(/whole numbers/)
+    expect(validateSettingsPatch({ routing: { tokenBudget: { ...relative, fraction: 3 } } })).toBeNull()
+    expect(validateSettingsPatch({ routing: { tokenBudget: { mode: 'guess' } as never } })).toMatch(/Unknown decision token budget mode/)
+  })
+
+  test('budget · stored settings normalise: a token cap an earlier version stored under the referent budget becomes an absolute budget, its untouched default the relative one', () => {
+    const stored = (routing: object): typeof DEFAULT_SETTINGS => ({ ...DEFAULT_SETTINGS, routing } as unknown as typeof DEFAULT_SETTINGS)
+    // Chosen by the user under the earlier version.
+    const chosen = normalizeSettings(stored({ referentStrategy: 'tree-walk', referentBudget: { requests: 4, questions: 96, inputTokens: 30_000 } })).routing
+    expect(chosen.tokenBudget).toEqual({ mode: 'absolute', inputTokens: 30_000 })
+    expect(chosen.referentBudget).toEqual({ requests: 4, questions: 96 })
+    // Settings are stored whole: 12,000 was that version's default, not a choice.
+    expect(LEGACY_REFERENT_INPUT_TOKENS).toBe(12_000)
+    expect(normalizeSettings(stored({ referentStrategy: 'tree-walk', referentBudget: { requests: 4, questions: 96, inputTokens: 12_000 } })).routing.tokenBudget).toEqual(relative)
+    // A budget stored by this version is kept, whatever the earlier field says; a broken one is repaired field by field.
+    expect(normalizeSettings(stored({ referentBudget: { requests: 4, questions: 96, inputTokens: 30_000 }, tokenBudget: { mode: 'absolute', inputTokens: 7_000 } })).routing.tokenBudget).toEqual({ mode: 'absolute', inputTokens: 7_000 })
+    expect(normalizeSettings(stored({ tokenBudget: { mode: 'relative', fraction: 0.05, floor: 8_000, ceiling: 4_000 } })).routing.tokenBudget).toEqual({ mode: 'relative', fraction: 0.05, floor: 8_000, ceiling: 40_000 })
+    expect(normalizeSettings(stored({ tokenBudget: { mode: 'relative', fraction: -1, floor: 8_000, ceiling: 9_000 } })).routing.tokenBudget).toEqual({ mode: 'relative', fraction: 0.02, floor: 8_000, ceiling: 9_000 })
+    expect(normalizeSettings(stored({})).routing.tokenBudget).toEqual(relative)
+    // Normalised settings are valid as a patch.
+    expect(validateSettingsPatch({ routing: { tokenBudget: chosen.tokenBudget } })).toBeNull()
+  })
+})
+
+describe('fixed wording', () => {
+  test('queue items', () => {
+    expect(waitingText(['neighborhoods', 'activities'], false)).toBe('Waiting for neighborhoods + activities')
+    expect(waitingText(['neighborhoods', 'activities'], true)).toBe('Revised · waiting for neighborhoods + activities')
+    expect(pausedText({ label: 'activities', outcome: 'failed' })).toBe('Paused — activities failed')
+    expect(pausedText({ label: 'activities', outcome: 'stopped' })).toBe('Paused — activities stopped')
+    expect(recoveryLabels('activities', 'itinerary')).toEqual({
+      retry: 'Retry activities',
+      continueWithout: 'Continue without activities',
+      cancel: 'Cancel itinerary',
+    })
+  })
+
+  test('notes', () => {
+    expect(supersededInputText(['neighborhood recommendations'])).toBe('Based on superseded neighborhood recommendations')
+    expect(redoneByDefaultText('J')).toBe('Redid J by default')
+  })
+
+  test('group header counts appear only while results are mixed and never as an overall label', () => {
+    const none = { done: 0, failed: 0, stopped: 0, interrupted: 0, cancelled: 0, inProgress: 0 }
+    expect(groupCountText({ ...none, done: 2, failed: 1, stopped: 1 })).toBe('2 done · 1 failed · 1 stopped')
+    expect(groupCountText({ ...none, done: 3 })).toBeNull()
+    expect(groupCountText({ ...none, done: 1, inProgress: 2 })).toBeNull()
+    expect(groupCountText({ ...none, failed: 2 })).toBe('2 failed')
+  })
+
+  test('provisional labels are short and deterministic', () => {
+    expect(provisionalLabel('Suggest neighborhoods to stay in.')).toBe('Suggest neighborhoods to stay in')
+    expect(provisionalLabel('Use those recommendations to make a five-day itinerary for the trip')).toBe(
+      'Use those recommendations to make a…',
+    )
+    expect(provisionalLabel('   ')).toBe('request')
+  })
+})

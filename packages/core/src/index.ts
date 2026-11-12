@@ -9,10 +9,9 @@
  *   export * from './routing'    // createRouter, validatePlan
  *   export * from './recovery'   // retry policies, revisions, recovery
  *
- * Fakes for tests are a separate entry, `@committee/core/testing`, so that
- * production bundles never pull them in by accident. The ports alone are a
- * third entry, `@committee/core/ports`: storage and providers import from
- * it, so they compile and test without loading the engine.
+ * Fakes and routing evaluation helpers are available from
+ * `@committee/core/testing`. Storage and providers implement the ports
+ * exposed by `@committee/core/ports`.
  */
 export * from './ports'
 export * from './engine'

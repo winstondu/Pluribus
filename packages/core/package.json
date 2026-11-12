@@ -6,7 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./ports": "./src/ports/index.ts",
-    "./testing": "./src/testing/index.ts"
+    "./testing": "./testing/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p ."

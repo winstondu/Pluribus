@@ -24,7 +24,6 @@ export { onePassPolicy, onePassProbes, onePassStrategy } from './one-pass'
 export { treeWalkPolicy, treeWalkStrategy, startSet, MIN_SKIPPED, SEARCH_FANOUT, type StartSet } from './tree-walk'
 export { probe, strategyFromPolicy, unitReferents, type ReferentPolicy, type SearchInput, type SearchOutcome } from './search'
 export { createDecisionOperations, POINT_ANCESTRY, SEGMENT_LEAD, type DecisionOperations, type OperationsContext, type OperationsFactory } from './operations'
-export { createOracleOperations, type OracleOperations, type OracleOptions } from './oracle'
 export {
   createReferentAsk,
   decisionAllowance,

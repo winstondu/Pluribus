@@ -63,25 +63,25 @@ Every condition has its canonical test, titled with its ID. All 68 pass in the f
 
 | ID | Canonical test file | Further tests under the ID | Result |
 |---|---|---|---|
-| D1–D5 | `core/src/routing/acceptance/decomposition.test.ts` | `D3 (atomic)`, `D5 (decomposer)` in the same file; `D3 (review)`, `D4 (review)` in `core/src/routing/acceptance/review-2.test.ts`; corpus examples `combined-limit-atomic`, `combined-limit-atomic-new`, `split-per-part-limit-no-barrier` | pass |
-| P1–P4, P8 | `core/src/engine/acceptance/placement.test.ts` | `(web)` renderings in `web/src/features/transcript/transcript.test.tsx` | pass |
+| D1–D5 | `core/test/routing/acceptance/decomposition.test.ts` | `D3 (atomic)`, `D5 (decomposer)` in the same file; `D3 (review)`, `D4 (review)` in `core/test/routing/acceptance/review-2.test.ts`; corpus examples `combined-limit-atomic`, `combined-limit-atomic-new`, `split-per-part-limit-no-barrier` | pass |
+| P1–P4, P8 | `core/test/engine/acceptance/placement.test.ts` | `(web)` renderings in `web/src/features/transcript/transcript.test.tsx` | pass |
 | P5, P7 | `web/src/features/transcript/acceptance.test.tsx` | — | pass |
-| P6 | `core/src/engine/acceptance/placement.test.ts` | `core/src/recovery/acceptance/review-3.test.ts` | pass |
-| P9 | `core/src/routing/acceptance/placement.test.ts` | — | pass |
-| P10–P13 | `core/src/recovery/acceptance/placement.test.ts` | — | pass |
-| C1–C20 | `core/src/engine/acceptance/chains.test.ts` | C2 in `core/src/routing/acceptance/review-3.test.ts`; C10 in `core/src/recovery/acceptance/review-4.test.ts`; C19 in `core/src/routing/acceptance/review-4.test.ts`; `C3/C9/C11/C20 (engine)` in `core/src/engine/acceptance/named.test.ts` | pass |
-| T1 | `core/src/routing/acceptance/targets.test.ts` | `core/src/routing/acceptance/review-2.test.ts`, `review-3.test.ts` | pass |
-| T2, T3 | `core/src/recovery/acceptance/targets.test.ts` | T3 in `core/src/recovery/acceptance/review-4.test.ts` and `core/src/routing/acceptance/review-3.test.ts` | pass |
-| R1–R8 | `core/src/recovery/acceptance/revisions.test.ts` | R3, R8 in `core/src/recovery/acceptance/review-3.test.ts` | pass |
-| E1, E2 | `core/src/routing/acceptance/elicitation.test.ts` | `E1 (review)` in `core/src/routing/acceptance/review-2.test.ts` | pass |
-| E3, E4 | `core/src/recovery/acceptance/elicitation.test.ts` | `E3 (Q101) · …` (the default-choice deadline across a restart) in the same file; `E3/E4 (…)` in `core/src/recovery/acceptance/review-2.test.ts` | pass |
-| E5 | `core/src/routing/acceptance/readiness.test.ts` | Each rule by itself in the same file; `E5 (web)` in `web/src/features/transcript/transcript.test.tsx`; live in `providers/src/readiness.smoke.test.ts` | pass |
-| DA1, DA2 | `core/src/routing/selection/selection.test.ts` | On a backend with each selector: `C19 · …`, `C9 · …` in `core/src/routing/acceptance/selection.test.ts`; with each strategy in `core/src/routing/acceptance/referents.test.ts` | pass |
-| DA3, DA4 | `core/src/routing/referents/referents.test.ts` | `I11` in `core/src/routing/acceptance/invariants.test.ts`; the cost grid in `core/src/routing/referents/cost-grid.test.ts`; with no decision provider, `budget · …` in `core/src/routing/referents/search.test.ts` | pass |
-| DA5 | `core/src/routing/acceptance/summaries.test.ts` | `I12` in `core/src/routing/acceptance/invariants.test.ts` | pass |
-| F1–F9 | `core/src/recovery/acceptance/failure.test.ts` | `F2 (engine)` in `named.test.ts`; `F3 (routing)` in `core/src/routing/acceptance/review-2.test.ts`; `F3 (web)` in `web/src/features/transcript/transcript.test.tsx` | pass |
+| P6 | `core/test/engine/acceptance/placement.test.ts` | `core/test/recovery/acceptance/review-3.test.ts` | pass |
+| P9 | `core/test/routing/acceptance/placement.test.ts` | — | pass |
+| P10–P13 | `core/test/recovery/acceptance/placement.test.ts` | — | pass |
+| C1–C20 | `core/test/engine/acceptance/chains.test.ts` | C2 in `core/test/routing/acceptance/review-3.test.ts`; C10 in `core/test/recovery/acceptance/review-4.test.ts`; C19 in `core/test/routing/acceptance/review-4.test.ts`; `C3/C9/C11/C20 (engine)` in `core/test/engine/acceptance/named.test.ts` | pass |
+| T1 | `core/test/routing/acceptance/targets.test.ts` | `core/test/routing/acceptance/review-2.test.ts`, `review-3.test.ts` | pass |
+| T2, T3 | `core/test/recovery/acceptance/targets.test.ts` | T3 in `core/test/recovery/acceptance/review-4.test.ts` and `core/test/routing/acceptance/review-3.test.ts` | pass |
+| R1–R8 | `core/test/recovery/acceptance/revisions.test.ts` | R3, R8 in `core/test/recovery/acceptance/review-3.test.ts` | pass |
+| E1, E2 | `core/test/routing/acceptance/elicitation.test.ts` | `E1 (review)` in `core/test/routing/acceptance/review-2.test.ts` | pass |
+| E3, E4 | `core/test/recovery/acceptance/elicitation.test.ts` | `E3 (Q101) · …` (the default-choice deadline across a restart) in the same file; `E3/E4 (…)` in `core/test/recovery/acceptance/review-2.test.ts` | pass |
+| E5 | `core/test/routing/acceptance/readiness.test.ts` | Each rule by itself in the same file; `E5 (web)` in `web/src/features/transcript/transcript.test.tsx`; live in `providers/test/smoke/readiness.smoke.test.ts` | pass |
+| DA1, DA2 | `core/test/routing/selection/selection.test.ts` | On a backend with each selector: `C19 · …`, `C9 · …` in `core/test/routing/acceptance/selection.test.ts`; with each strategy in `core/test/routing/acceptance/referents.test.ts` | pass |
+| DA3, DA4 | `core/test/routing/referents/referents.test.ts` | `I11` in `core/test/routing/acceptance/invariants.test.ts`; the cost grid in `core/test/routing/referents/cost-grid.test.ts`; with no decision provider, `budget · …` in `core/test/routing/referents/search.test.ts` | pass |
+| DA5 | `core/test/routing/acceptance/summaries.test.ts` | `I12` in `core/test/routing/acceptance/invariants.test.ts` | pass |
+| F1–F9 | `core/test/recovery/acceptance/failure.test.ts` | `F2 (engine)` in `named.test.ts`; `F3 (routing)` in `core/test/routing/acceptance/review-2.test.ts`; `F3 (web)` in `web/src/features/transcript/transcript.test.tsx` | pass |
 
-The architecture invariants I1–I12 also pass (I11 and I12 were adopted 2026-11-12 and are in the routing file). They are in `core/src/{engine,routing,recovery}/acceptance/invariants.test.ts`.
+The architecture invariants I1–I12 also pass (I11 and I12 were adopted 2026-11-12 and are in the routing file). They are in `core/test/{engine,routing,recovery}/acceptance/invariants.test.ts`.
 
 ## Decisions for "Left to the build" (12 · Build plan)
 
@@ -109,7 +109,7 @@ There were three review rounds after the contract and recovery reviews. Each rev
 
 ### Recovery review (before round 1)
 
-All seven findings were confirmed and fixed in `86fb27c`, with tests in `core/src/recovery/acceptance/review.test.ts`:
+All seven findings were confirmed and fixed in `86fb27c`, with tests in `core/test/recovery/acceptance/review.test.ts`:
 
 - Released but unstarted work waits again for a revised prerequisite.
 - A redo chain releases held work only after the chosen redos.
@@ -285,7 +285,7 @@ The user's decisions of 2026-11-12, in [dependency-decisioning.md](dependency-de
 | Command | Result |
 |---|---|
 | `pnpm typecheck` | 5 packages, no errors |
-| `pnpm test` | 60 files, 1,195 tests: 1,194 passed (core 839, web 95). The one failure is not from this change: `protocol/src/contracts.test.ts › defaults match the specification` counts the debug toggles and was not updated when `debug.comparePlacement` was added (`ddd7e5f`) |
+| `pnpm test` | 60 files, 1,195 tests: 1,194 passed (core 839, web 95). The one failure is not from this change: `protocol/test/contracts.test.ts › defaults match the specification` counts the debug toggles and was not updated when `debug.comparePlacement` was added (`ddd7e5f`) |
 | `pnpm --filter @committee/web lint` | Exit 0, warnings only |
 | `pnpm build` | Succeeds |
 | `pnpm smoke` | 4 files, 28 tests passed (run twice; the first run's output was not captured). Corpus, 62 examples, one run: one pass 58 (unchanged to the token), tree walk with long runs searched **59 (61 before)**, selected by rules (the default) **61 (unchanged)**, selected by the decision model 61. J on both siblings 25/25 and a follow-up naming two sections 10/10 with each of nine configurations. The J request through the whole backend with live answers: 4 of 4. Cost grid: worst guarded cell 1.99× |
@@ -300,7 +300,7 @@ Token figures are now also measured with no network: a mock of the Decisions API
 
 | What | Result |
 |---|---|
-| Tokens measured with a tokenizer over a mock Decisions API (`providers/src/decision-tokens.test.ts`, `decision-tokens.smoke.test.ts`) | Corpus, calibrated tokenizer against live: one pass 93,352 / 92,592, tree walk 109,913 / 108,412, rules 108,866 / 107,841 (recorded again with the lexical candidate source as the default; with no source 109,090 / 108,935 and 110,610 / 110,263); the guard's estimate is 7 to 9% low. Tokenizer ÷ (characters ÷ 4): 0.79 to 1.03, mean 0.90. **Cost grid: worst guarded cell 1.99× by the estimate, 2.79× by the tokenizer; 208 of 360 cells over 2×** (every 120-token and most 300-token cells). Live, the worst cell's request was reported at 1.30 × its estimate. Recorded, not fixed: a calibrated estimator is proposed, not applied. Applied the same day: see "The guard's estimate, refitted" |
+| Tokens measured with a tokenizer over a mock Decisions API (`providers/test/decision-tokens.test.ts`, `decision-tokens.smoke.test.ts`) | Corpus, calibrated tokenizer against live: one pass 93,352 / 92,592, tree walk 109,913 / 108,412, rules 108,866 / 107,841 (recorded again with the lexical candidate source as the default; with no source 109,090 / 108,935 and 110,610 / 110,263); the guard's estimate is 7 to 9% low. Tokenizer ÷ (characters ÷ 4): 0.79 to 1.03, mean 0.90. **Cost grid: worst guarded cell 1.99× by the estimate, 2.79× by the tokenizer; 208 of 360 cells over 2×** (every 120-token and most 300-token cells). Live, the worst cell's request was reported at 1.30 × its estimate. Recorded, not fixed: a calibrated estimator is proposed, not applied. Applied the same day: see "The guard's estimate, refitted" |
 
 ### The candidate source: a lexical index (2026-11-12)
 
@@ -314,7 +314,7 @@ The user: "build a real candidate source … Start with lexical index. Recall th
 | Command | Result |
 |---|---|
 | `pnpm typecheck` | 5 packages, no errors |
-| `pnpm test` | 62 files, 1,360 tests, all passed (core 996, web 95). The recorded figures of `providers/src/decision-tokens.test.ts` that depend on the default were updated (the tree walk's and the rules' corpus totals, and the two ratios over all requests); nothing was loosened |
+| `pnpm test` | 62 files, 1,360 tests, all passed (core 996, web 95). The recorded figures of `providers/test/decision-tokens.test.ts` that depend on the default were updated (the tree walk's and the rules' corpus totals, and the two ratios over all requests); nothing was loosened |
 | `pnpm --filter @committee/web lint` | Exit 0, warnings only |
 | `pnpm build` | Succeeds |
 | `pnpm smoke` | Run once in full: 5 files, 36 tests passed; its output was not captured, so `referents.smoke.test.ts` was run a second time for the figures (25 tests passed). Corpus, 62 examples, source off → on: one pass 58 → 58 (74 requests, 92,592 tokens both ways), tree walk with long runs searched **59 → 61** (84 → 85 requests, 108,935 → 108,412 tokens), selected by rules (the default) **61 → 61** (83 → 82 requests, 110,263 → 107,841 tokens). J on both siblings 25/25 and a follow-up naming two sections 10/10 with each of twelve configurations. Cost grid: worst guarded cell 1.99×, unchanged; 2.00× on a message that names answers, with or without the source |
@@ -329,7 +329,7 @@ Not done: the e2e flows were not rerun. The Settings control and the inspector r
 
 The main session's decision: apply the calibrated estimate proposed under "Measuring tokens". [dependency-decisioning.md](dependency-decisioning.md) · "The estimate, refitted".
 
-- **`estimateRequestTokens` / `estimateDecisionTokens`**: 300 + 0.35 per character of state + 7 per question + 0.32 per character of question text (before 265 + 0.2 + 7 + 0.24). Never below the count the decision model reported on 70 live requests (`providers/src/openrouter/test-support/estimate-fixture.data.ts`, re-sent by `decision-estimate.smoke.test.ts`, held by `decision-estimate.test.ts`); 1.01 to 1.30 times it.
+- **`estimateRequestTokens` / `estimateDecisionTokens`**: 300 + 0.35 per character of state + 7 per question + 0.32 per character of question text (before 265 + 0.2 + 7 + 0.24). Never below the count the decision model reported on 70 live requests (`providers/testing/openrouter/estimate-fixture.data.ts`, re-sent by `decision-estimate.smoke.test.ts`, held by `decision-estimate.test.ts`); 1.01 to 1.30 times it.
 - **The 2× bound now holds by tokenizer counts** on all 360 guarded grid cells, asserted in `decision-tokens.test.ts`: worst 1.80× (8,000 × 120, bushy, tree walk with runs listed), 2.00× by the estimate (1.997, 50 × 300, nested forks). Before: 2.79× and 208 cells over.
 - **`SHORTEST_ANSWER_TOKENS` is unchanged (100), and open**: at 100 no cell is over 2×; a floor of 135 or 155 would let every 120-token cell cost up to 2.39× or 2.72× its own answer (recorded).
 - **Corpus**: no score or request count changed with decisions as labelled; four long-run examples are searched in smaller parts. Live, with the lexical source: one pass 58/62, tree walk 61/62, rules 61/62, as before.
@@ -349,8 +349,8 @@ The main session's decision: apply the calibrated estimate proposed under "Measu
 - **Ordered-message decomposition (Q104, D3).** `settings.routing.orderedMessages`: `decompose` (the default, today's behaviour, so D3 holds as worded) or `atomic`; Settings → Models, under the decomposition model. With `atomic`, a message the decomposer gives an explicit output order is routed as one request with no barrier, after one confirming decision question (`ordered`), and only when the order is not just its parts' dependencies ("find X, and then plan around it" stays a split). The gate does not ask about order: live, a gate question scored "…, and then make an itinerary from …" at 0.58 to 0.80. Live with `atomic` and the live decomposer (2 rounds): "but put the translation first" atomic both times; the sequential, independent, ready/blocked and topological-order examples as labelled.
 - **Default-choice deadline across a restart (Q101).** Already built: `elicitation-raised` records `deadlineAt` as an absolute time and the recovery slice's startup reaction carries out an elapsed default once (an open elicitation only) or sets the timer for what is left. Tests added for closed before and reopened after, reopened before (the recorded deadline holds even when the wait setting changed meanwhile), and two further restarts after the default ran (one `elicitation-defaulted`, the work redone once).
 - **Tabs (Q99).** The Web Lock logic moved to `web/src/worker/ownership.ts` (`runAsOwner`) and is tested with a fake lock manager: the first tab serves, later tabs stand by in the already-open state, the next in line takes over when the owner releases the lock. The store test covers standby turning to ready when the Worker's `ready` arrives. The e2e flow `secondTab` covers it in a browser.
-- **Conversations (Q100).** The app has several conversations (sidebar list). The backend loads every conversation at start and schedules every one from one pool (`schedule()` in `core/src/engine/backend.ts`); the client never tells it which one is open. Tests: `conversations (Q100) · …` in `core/src/engine/acceptance/conversations.test.ts` (runs in one conversation go on while the other is used and hold its work at "Waiting for a free slot"; ready work of two conversations starts in submission order) and `Q100 · opening another conversation …` in `web/src/backend/store.test.tsx` (switching sends no command). The settings comment that said "per provider" now says app-wide.
-- **Recorded token figures changed.** The gate's new question adds 48 questions and about 3,000 tokenizer tokens over the corpus in each configuration, no request: `providers/src/decision-tokens.test.ts` re-recorded with the earlier figures in its comments; the cost-grid bound still holds on all 360 cells (worst 1.82× by tokenizer, 1.994× by estimate). The live figures quoted in [dependency-decisioning.md](dependency-decisioning.md) predate the question.
+- **Conversations (Q100).** The app has several conversations (sidebar list). The backend loads every conversation at start and schedules every one from one pool (`schedule()` in `core/src/engine/backend.ts`); the client never tells it which one is open. Tests: `conversations (Q100) · …` in `core/test/engine/acceptance/conversations.test.ts` (runs in one conversation go on while the other is used and hold its work at "Waiting for a free slot"; ready work of two conversations starts in submission order) and `Q100 · opening another conversation …` in `web/src/backend/store.test.tsx` (switching sends no command). The settings comment that said "per provider" now says app-wide.
+- **Recorded token figures changed.** The gate's new question adds 48 questions and about 3,000 tokenizer tokens over the corpus in each configuration, no request: `providers/test/decision-tokens.test.ts` re-recorded with the earlier figures in its comments; the cost-grid bound still holds on all 360 cells (worst 1.82× by tokenizer, 1.994× by estimate). The live figures quoted in [dependency-decisioning.md](dependency-decisioning.md) predate the question.
 - **Changed tests.** `D3 (review)` used a combined limit as its barrier; it now uses an explicit order. The corpus's `split-combined-limit-barrier` became `combined-limit-atomic` (and `combined-limit-atomic-new` was added); `split-per-part-limit-no-barrier` no longer carries a `combined-limit` barrier in its reference decomposition. Gate question lists in `validation.test.ts` and `F3 (routing)` gained `combinedlimit`.
 
 ### Typed readiness, paused for input, the compatibility list (2026-11-12)
@@ -370,7 +370,7 @@ For the specification's edits of 2026-11-12 (07 · "Clarification", 08, 10, 11 �
 | `pnpm test` | 70 files, 1,432 tests, all passed (after the rebase onto `235b68f`) |
 | `pnpm --filter @committee/web lint` | Exit 0, warnings only |
 | `pnpm build` | Succeeds |
-| `pnpm vitest run --config vitest.smoke.config.ts packages/providers/src/readiness.smoke.test.ts` | 5 of 5 passed, once: both listed models returned `ready` and `clarification-needed` from the preparation step and ended a streamed answer with the signal; an answer that needs nothing completed without it |
+| `pnpm vitest run --config vitest.smoke.config.ts packages/providers/test/smoke/readiness.smoke.test.ts` | 5 of 5 passed, once: both listed models returned `ready` and `clarification-needed` from the preparation step and ended a streamed answer with the signal; an answer that needs nothing completed without it |
 
 Not done: the e2e flows were not rerun, and no browser flow exercises a clarification. How often a live answer model signals when it should not is not measured.
 
@@ -382,7 +382,7 @@ Not done: the e2e flows were not rerun, and no browser flow exercises a clarific
 - **Page**: `LogExportSource.exportLog(conversationId)` → `{ kind: 'blob' } | { kind: 'url' }`. Embedded wraps the chunks in a Blob; a server deployment can return a download URL with the same button. The object URL is revoked afterwards.
 - **Key guard**: the export fails loudly if the stored key occurs anywhere in it (only possible if the user typed it).
 - **Size**: 2,000 sections → 29,400 events, 36.6 MB, built in 1,047 ms; `JSON.parse` 191 ms.
-- **Tests**: `core/src/engine/log-export.test.ts` (every event in order; round trip through `fold` to the live state, projections and inspections; deterministic, also after a restart; no key or `Authorization`; the guard; unknown conversation), `log-export.measure.test.ts`, `web/src/features/debug/log-export/export-logs.test.tsx` (Blob and URL results, busy, error, retry, revocation), and the `exportLogs` e2e flow.
+- **Tests**: `core/test/engine/log-export.test.ts` (every event in order; round trip through `fold` to the live state, projections and inspections; deterministic, also after a restart; no key or `Authorization`; the guard; unknown conversation), `log-export.measure.test.ts`, `web/src/features/debug/log-export/export-logs.test.tsx` (Blob and URL results, busy, error, retry, revocation), and the `exportLogs` e2e flow.
 
 | Command | Result |
 |---|---|
@@ -432,7 +432,7 @@ On the dev server, `/?fixtures` opens the fixture gallery.
 
 **Routing (live model)**
 
-- **J request on one sibling (round 3, blocker; closed).** Which earlier work a message refers to is now decided by a referent strategy behind one interface (`ReferentStrategy`; [dependency-decisioning.md](dependency-decisioning.md)). Both strategies ask about a sibling group as a whole, as the join-back it will be, beside its members. Live, with titles as a live run records them, the J request was placed on both siblings in 25 of 25 runs with each strategy (five cases, five runs); with the round-3 questions the spec's wording went to the neighborhoods alone every time. Through the whole backend with live answers (`providers/src/j-request.smoke.test.ts`) J waited for the group and read both members in 4 of 4 runs. Tests: `C19 · J, clear about A and weak about B, builds on the two together: …`, `C9 · …` in `routing/acceptance/referents.test.ts`; live in `providers/src/referents.smoke.test.ts`.
+- **J request on one sibling (round 3, blocker; closed).** Which earlier work a message refers to is now decided by a referent strategy behind one interface (`ReferentStrategy`; [dependency-decisioning.md](dependency-decisioning.md)). Both strategies ask about a sibling group as a whole, as the join-back it will be, beside its members. Live, with titles as a live run records them, the J request was placed on both siblings in 25 of 25 runs with each strategy (five cases, five runs); with the round-3 questions the spec's wording went to the neighborhoods alone every time. Through the whole backend with live answers (`providers/test/smoke/j-request.smoke.test.ts`) J waited for the group and read both members in 4 of 4 runs. Tests: `C19 · J, clear about A and weak about B, builds on the two together: …`, `C9 · …` in `routing/acceptance/referents.test.ts`; live in `providers/test/smoke/referents.smoke.test.ts`.
 - **Follow-up naming two sections (round 3, major; closed).** Inferred in 10 of 10 live runs with each strategy (two siblings; two separate trees). "Compare the itinerary with the sky explanation" is a join chain again, after the section question was reworded to cover comparing and combining.
 - **Corpus scores.** 55 examples. Live decision model with reference decompositions: tree walk 54/55, one pass 53/55; with the live decomposer 53/55. The remaining miss under both is `split-correction-and-new-work`: the new part's handling chain scores below the threshold. One pass also misses `live-referent-beyond-window` by construction. The corpus is still too small to separate threshold values within each plateau.
 - **A referent below work the message does not refer to (2026-11-12; open).** The tree walk asks nothing below an unbranched run that is not plausible, and the question that used to look below ("anything built on this?") is removed. A referent that is neither one of the five first-pass sections nor a start candidate, under a root the decision model scores below 0.25, is not reached: two corpus examples live with the configured tree walk (59/62, 61 before), none with the default, which uses one pass inside the window. What recovers it is a candidate source (`CoreDependencies.candidateSource`: retrieval hits as places to start; the port exists, no retrieval does) or an estimator behind `ReferentOperations.estimate`. **Since later that day, mostly closed:** the lexical candidate source, on by default, names the referent when the message shares words with it; live the configured tree walk is back at 61/62. Still open for a reply that names old work in other words: no embedding index is built. [dependency-decisioning.md](dependency-decisioning.md) · "What removing the question costs".

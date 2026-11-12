@@ -12,9 +12,11 @@ The event store, the projection cache and the local secrets store (11 · "Record
 | `src/event-store.ts` | `createEventStore(adapter)`: the `EventStore` port plus `listLogs()` and `readAttemptOutput()` |
 | `src/projection-cache.ts` | `createProjectionCache(adapter)` |
 | `src/secrets-store.ts` | `createSecretsStore(adapter)`: the `SecretsStore` port plus `isConfigured` and `clear`; `secretControls(store)` drops the read |
-| `src/index.ts` | `openIndexedDbStorage(options?)` and `createMemoryStorage(options?)` → `{ eventStore, projectionCache, secretsStore, close }`, and everything above |
-| `src/conformance.ts` | `@committee/storage/conformance`: `describeEventStore`, `describeProjectionCache`, `describeSecretsStore`, `describeCommitteeStorage` |
-| `src/storage.test.ts` | Runs every suite against both adapters (`fake-indexeddb` for IndexedDB) |
+| `src/storage.ts` | `openIndexedDbStorage(options?)` and `createMemoryStorage(options?)` → `{ eventStore, projectionCache, secretsStore, close }` |
+| `src/index.ts` | Public exports for `@committee/storage` |
+| `testing/conformance.ts` | Shared adapter conformance suites, available as `@committee/storage/conformance` |
+| `test/storage.test.ts` | Runs the conformance suites against both adapters (`fake-indexeddb` for IndexedDB) |
+| `test/core-fakes.test.ts` | Runs the port conformance suites against core's in-memory fakes |
 
 ```ts
 // In the Worker:

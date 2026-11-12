@@ -8,7 +8,7 @@ export default defineConfig({
         test: {
           name: 'unit',
           environment: 'node',
-          include: ['packages/{protocol,core,storage,providers}/src/**/*.test.ts'],
+          include: ['packages/{protocol,core,storage,providers}/test/**/*.test.ts'],
           exclude: ['**/*.smoke.test.ts'],
         },
       },

@@ -19,8 +19,8 @@ import type { ModelProviderName, ModelRole } from './model'
  *   the user reads and must be able to stop and ask.
  *
  * Add a model here only together with a smoke run that covers it
- * (`packages/providers/src/readiness.smoke.test.ts` for OpenRouter,
- * `packages/providers/src/anthropic.smoke.test.ts` for the Claude API). An
+ * (`packages/providers/test/smoke/readiness.smoke.test.ts` for OpenRouter,
+ * `packages/providers/test/smoke/anthropic.smoke.test.ts` for the Claude API). An
  * entry whose `testedOn` is null is offered but has not had that run yet;
  * the settings say so. The decision model is
  * pinned and is not on this list (Q74).
