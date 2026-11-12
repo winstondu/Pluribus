@@ -3,7 +3,8 @@ import {
   DEFAULT_RELATIVE_TOKEN_BUDGET,
   DEFAULT_SETTINGS,
   RETRY_POLICIES,
-  type DebugToggles,
+  type ComparePlacement,
+  type DebugViewToggle,
   type DecisionThresholds,
   type DecisionTokenBudget,
   type ReferentStrategyName,
@@ -698,7 +699,7 @@ function KeySettings({ configured }: { configured: boolean }) {
 
 // ───────────────────────── debug views ─────────────────────────
 
-export const DEBUG_VIEWS: readonly { key: keyof DebugToggles; label: string; description: string }[] = [
+export const DEBUG_VIEWS: readonly { key: DebugViewToggle; label: string; description: string }[] = [
   { key: 'miniMap', label: 'Mini-map', description: 'The genealogy of chains: what each run could read.' },
   {
     key: 'operationGraph',
@@ -717,8 +718,18 @@ export const DEBUG_VIEWS: readonly { key: keyof DebugToggles; label: string; des
   },
 ]
 
+const COMPARE_PLACEMENT_OPTIONS: readonly { value: ComparePlacement; label: string; description: string }[] = [
+  { value: 'sidebar', label: 'In the side panel', description: 'Compare opens beside the conversation.' },
+  {
+    value: 'inline',
+    label: 'On the message',
+    description: 'A card under the decomposed message, opened with “Show decomposition”. The side panel has no Compare tab.',
+  },
+]
+
 function DebugSettings({ settings }: { settings: Settings }) {
   const change = useChangeSettings()
+  const placementLabel = useId()
   return (
     <Panel
       title="Debug views"
@@ -733,6 +744,20 @@ function DebugSettings({ settings }: { settings: Settings }) {
           onChange={(checked) => void change({ debug: { [view.key]: checked } })}
         />
       ))}
+      <Row
+        label="Where Compare is shown"
+        labelId={placementLabel}
+        description="For split messages, and for independent composites while their Compare is on."
+        stacked
+      >
+        <ChoiceCards
+          labelledBy={placementLabel}
+          options={COMPARE_PLACEMENT_OPTIONS}
+          value={settings.debug.comparePlacement}
+          onChoose={(value) => void change({ debug: { comparePlacement: value } })}
+          className="sm:grid-cols-2"
+        />
+      </Row>
     </Panel>
   )
 }

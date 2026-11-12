@@ -211,7 +211,19 @@ export interface DebugToggles {
   readonly runInspector: boolean
   /** Compare for an independent composite. Compare for split messages is always available. */
   readonly compareIndependent: boolean
+  /**
+   * Where Compare is shown: in the debug side panel, or as a card on the
+   * decomposed message in the transcript (10 · "User settings").
+   */
+  readonly comparePlacement: ComparePlacement
 }
+
+export type ComparePlacement = 'sidebar' | 'inline'
+
+export const COMPARE_PLACEMENTS: readonly ComparePlacement[] = ['sidebar', 'inline']
+
+/** The debug toggles that switch a view on or off; `comparePlacement` is a choice, not a toggle. */
+export type DebugViewToggle = { [K in keyof DebugToggles]: DebugToggles[K] extends boolean ? K : never }[keyof DebugToggles]
 
 export interface Settings {
   readonly retryPolicy: RetryPolicy
@@ -273,6 +285,7 @@ export const DEFAULT_SETTINGS: Settings = {
     operationGraph: false,
     runInspector: false,
     compareIndependent: false,
+    comparePlacement: 'sidebar',
   },
 }
 
@@ -370,6 +383,9 @@ export function validateSettingsPatch(patch: SettingsPatch): string | null {
   for (const [name, value] of Object.entries(patch.routing?.costGuard ?? {})) {
     if (typeof value === 'number' && !(value >= 0 && Number.isFinite(value))) return `Decision cost guard "${name}" cannot be negative`
   }
+  if (patch.debug?.comparePlacement !== undefined && !COMPARE_PLACEMENTS.includes(patch.debug.comparePlacement)) {
+    return `Unknown Compare placement "${String(patch.debug.comparePlacement)}"`
+  }
   for (const [role, model] of Object.entries(patch.models ?? {})) {
     if (typeof model === 'string' && model.trim() === '') return `Model for "${role}" cannot be empty`
   }
@@ -400,7 +416,11 @@ export function normalizeSettings(stored: Partial<Settings>): Settings {
       useSummaryIfAvailable: stored.routing?.useSummaryIfAvailable ?? DEFAULT_SETTINGS.routing.useSummaryIfAvailable,
       backgroundSummaries: stored.routing?.backgroundSummaries ?? DEFAULT_SETTINGS.routing.backgroundSummaries,
     },
-    debug: { ...DEFAULT_SETTINGS.debug, ...stored.debug },
+    debug: {
+      ...DEFAULT_SETTINGS.debug,
+      ...stored.debug,
+      comparePlacement: COMPARE_PLACEMENTS.find((placement) => placement === stored.debug?.comparePlacement) ?? DEFAULT_SETTINGS.debug.comparePlacement,
+    },
   }
 }
 

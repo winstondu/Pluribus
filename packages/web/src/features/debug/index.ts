@@ -8,3 +8,6 @@ import './debug.css'
  */
 export { DebugSidePanel } from './side-panel'
 export { OperationGraphDrawer } from './operation-graph/operation-graph'
+/** Compare as a card on the message, for the transcript (`debug.comparePlacement` is `inline`). */
+export { CompareCard } from './compare/compare-card'
+export { SourceMarks, useFragmentSelection } from './compare/compare-parts'

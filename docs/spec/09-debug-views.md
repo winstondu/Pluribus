@@ -91,6 +91,7 @@ How Committee split a composite message: the exact original text beside each **f
 - Fragments carry their applicable requirements with provenance; requirements are local unless the user explicitly made them session-wide (Q4, Q17).
 - Rewritten fragment text comes from generative decomposition, never from the decision model, which only selects among supplied candidates (invariant 9; Q59).
 - For a message split into separate user messages (sequential decomposition), the “split from one message” link between the bubbles opens Compare with the exact original text. The link is always available (Q53, Q87). Undo split is offered only until any split message shows answer text or receives a reply (Q85).
+- Compare is shown in the debug side panel by default. A user setting places it instead as a card on the message in the transcript, as in the prototype: the message marks the selected **fragment**'s source span and the inherited requirements, and the card shows the rest. Both placements show the same content ([user settings](10-front-end.md#user-settings)).
 
 ### Prototype detail
 

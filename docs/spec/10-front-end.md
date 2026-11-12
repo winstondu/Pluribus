@@ -94,6 +94,7 @@ Pending (responding bubble), streaming, completed, failed, stopped, interrupted,
 | Dependency attachment | Strategy selection by rules; configured strategy, used when selection is off: tree walk, long unbranched runs searched; decision budget 2% of the conversation's log; context summaries off | The referent strategy and the tree walk's two switches; strategy selection (off, rules, or decision model); the decision budget (absolute, or a share of the conversation's log); whether context summaries are used and generated ([architecture](11-architecture.md#dependency-attachment)) |
 | OpenRouter key | None | Pasted by the user; settings show only whether a key is configured (Q64, Q73) |
 | Debug view toggles | — | Mini-map, operation graph, run inspector, Compare for independent composites (Q87, Q94) |
+| Where Compare is shown | Side panel | Side panel, or a card on the decomposed message in the transcript, opened from the message header (or, for split messages, from the “split from one message” link). With the card, the side panel has no Compare tab |
 
 Retry policy, models, and keys apply to the whole app. Session-wide requirements belong to one conversation (Q70).
 

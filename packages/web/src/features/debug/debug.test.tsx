@@ -262,7 +262,7 @@ describe('debug toggles', () => {
     act(() => ui.getState().openCompare(fx.id('message', 'newsletter')))
     expect(screen.getByRole('tab', { name: 'Compare' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByTestId('compare')).toBeInTheDocument()
-    expect(DEFAULT_SETTINGS.debug).toEqual({ miniMap: false, operationGraph: false, runInspector: false, compareIndependent: false })
+    expect(DEFAULT_SETTINGS.debug).toEqual({ miniMap: false, operationGraph: false, runInspector: false, compareIndependent: false, comparePlacement: 'sidebar' })
   })
 
   test('an independent composite is offered for Compare only behind its toggle', () => {

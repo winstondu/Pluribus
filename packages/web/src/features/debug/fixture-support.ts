@@ -4,6 +4,7 @@ import {
   type ConsumedContext,
   type ConsumedMessage,
   type DebugToggles,
+  type DebugViewToggle,
   type RoutingDecision,
   type RunInspection,
   type UnitRoutingDecision,
@@ -20,7 +21,7 @@ export function debugApp(debug: Partial<DebugToggles>): Partial<AppSnapshot> {
   return { settings: { ...DEFAULT_SETTINGS, debug: { ...DEFAULT_SETTINGS.debug, ...debug } } }
 }
 
-export const ALL_DEBUG_VIEWS: DebugToggles = { miniMap: true, operationGraph: true, runInspector: true, compareIndependent: true }
+export const ALL_DEBUG_VIEWS: { readonly [K in DebugViewToggle]: boolean } = { miniMap: true, operationGraph: true, runInspector: true, compareIndependent: true }
 
 /** A recorded model input. Token counts are given, never computed here. */
 export function consumed(

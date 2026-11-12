@@ -99,6 +99,7 @@ PLAN §7 has the full reasoning for each.
 | Wording for the concurrency hold | "Waiting for a free slot". It is shown only after the scheduler records `directive-slot-held`, which happens when the limit actually holds ready work. Until then the status reads "Responding…" |
 | Stage that assigns fragments their chain and target | Atomic message: the gate. Composite: one further batched decision call after decomposition, with one question set per fragment |
 | Superseded-input detection | Three kinds of replaced input: a replaced result, an unread correction to a brief the run read, and a replaced session-wide requirement. Each is detected by comparing the run's recorded context with current state. There is no estimate of whether the result would change |
+| Where Compare is shown | A setting, `debug.comparePlacement`: `sidebar` (default, unchanged) or `inline`, a card on the message opened by “Show decomposition” (split messages: by the “split from one message” link). Inline, the side panel has no Compare tab. Both placements are built from the same parts (`features/debug/compare/compare-parts.tsx`); fixture `?fixture=compare-inline`, screenshots `screenshots/review/compare-inline-*.png` |
 
 ## Review rounds
 

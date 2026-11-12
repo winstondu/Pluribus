@@ -30,7 +30,7 @@ export function Header(props: { sidePanelAsSheet: boolean; sidePanelAvailable: b
   const change = useChangeSettings()
   const title = app?.conversations.find((conversation) => conversation.id === activeId)?.title ?? 'Committee'
   const debug = app?.settings.debug
-  const anyDebug = debug ? Object.values(debug).some(Boolean) : false
+  const anyDebug = debug ? DEBUG_VIEWS.some((view) => debug[view.key]) : false
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3 sm:px-4">

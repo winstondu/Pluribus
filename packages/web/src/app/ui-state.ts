@@ -17,6 +17,13 @@ export interface UiState {
   readonly inspected: { readonly directiveId: DirectiveId; readonly attemptId: AttemptId | null } | null
   /** The original message whose decomposition is open in Compare. */
   readonly compare: MessageId | null
+  /**
+   * The transcript messages showing their decomposition card, when Compare
+   * is placed on the message (`debug.comparePlacement` is `inline`). Each is
+   * the message the card sits on: the decomposed message, or the split
+   * message whose "split from one message" link opened it.
+   */
+  readonly inlineCompare: readonly MessageId[]
   readonly selectedOperation: OperationId | null
   /** Asks the transcript to scroll a section into view (Q81). `nonce` changes on every request. */
   readonly reveal: { readonly sectionId: SectionId; readonly nonce: number } | null
@@ -31,6 +38,7 @@ export interface UiState {
   pinFocus(chainId: ChainId | null): void
   inspect(target: { directiveId: DirectiveId; attemptId: AttemptId | null } | null): void
   openCompare(messageId: MessageId | null): void
+  toggleInlineCompare(messageId: MessageId): void
   selectOperation(id: OperationId | null): void
   revealSection(sectionId: SectionId): void
   openKeyPrompt(): void
@@ -50,6 +58,7 @@ export function createUiStore(): UiStore {
     focus: { pinned: null, preview: null },
     inspected: null,
     compare: null,
+    inlineCompare: [],
     selectedOperation: null,
     reveal: null,
     keyPromptOpen: false,
@@ -69,6 +78,12 @@ export function createUiStore(): UiStore {
       set((state) => (state.focus.pinned === chainId ? state : { focus: { ...state.focus, pinned: chainId } })),
     inspect: (target) => set({ inspected: target }),
     openCompare: (messageId) => set({ compare: messageId }),
+    toggleInlineCompare: (messageId) =>
+      set((state) => ({
+        inlineCompare: state.inlineCompare.includes(messageId)
+          ? state.inlineCompare.filter((id) => id !== messageId)
+          : [...state.inlineCompare, messageId],
+      })),
     selectOperation: (id) => set({ selectedOperation: id }),
     revealSection: (sectionId) =>
       set((state) => ({ reveal: { sectionId, nonce: (state.reveal?.nonce ?? 0) + 1 } })),
@@ -83,6 +98,7 @@ export function createUiStore(): UiStore {
         focus: { pinned: null, preview: null },
         inspected: null,
         compare: null,
+        inlineCompare: [],
         selectedOperation: null,
         reveal: null,
       }),

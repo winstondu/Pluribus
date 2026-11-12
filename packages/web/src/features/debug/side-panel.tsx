@@ -13,12 +13,16 @@ const TAB_LABEL: Record<DebugTab, string> = { 'mini-map': 'Mini-map', run: 'Run'
  * The inspection panel: one tab per view that is switched on. The mini-map
  * and the run inspector exist behind their debug toggles. Compare exists
  * behind its toggle too, and also whenever a decomposition is open, because
- * the "split from one message" link is always available (Q53, Q87).
+ * the "split from one message" link is always available (Q53, Q87). When
+ * Compare is placed on the message (`debug.comparePlacement` is `inline`),
+ * the panel has no Compare tab: the card in the transcript is Compare.
  */
 export function DebugSidePanel() {
   const debug = useApp()?.settings.debug
   const conversationId = useActiveConversationId()
-  const compare = useUiState((state) => state.compare)
+  const compareInSidePanel = debug?.comparePlacement !== 'inline'
+  const opened = useUiState((state) => state.compare)
+  const compare = compareInSidePanel ? opened : null
   const inspected = useUiState((state) => state.inspected)
   const tab = useDebugState((state) => state.tab)
   const setTab = useDebugState((state) => state.setTab)
@@ -27,7 +31,7 @@ export function DebugSidePanel() {
   const tabs: DebugTab[] = []
   if (debug?.miniMap) tabs.push('mini-map')
   if (debug?.runInspector) tabs.push('run')
-  if (debug?.compareIndependent || compare !== null) tabs.push('compare')
+  if (compareInSidePanel && (debug?.compareIndependent || compare !== null)) tabs.push('compare')
 
   // What points into a conversation does not outlive it. The state is kept outside the component, because below
   // 1180 px the panel lives in a sheet and is unmounted whenever the sheet is closed.
