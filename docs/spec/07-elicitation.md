@@ -6,7 +6,7 @@ When Pluribus asks the user to decide, and when it may go ahead on its own.
 
 | Kind | Trigger | While waiting | Default? |
 |---|---|---|---|
-| **Target ambiguity** | An untargeted reply could plausibly address different answer sections (target confidence below the threshold). Not raised when routing the reply reached its [decision budget](11-architecture.md#decision-budget): the best node found so far is used | The reply is not acted on | Never. The user chooses among existing sections (Q10, Q20, Q74) |
+| **Target ambiguity** | An untargeted reply could plausibly address different answer sections (target confidence below the threshold). Not raised when routing the reply reached its [decision budget](11-architecture.md#decision-budget): the best node found so far is used. Not raised either when the reply brings several lines of work together: the lines are joined ([reply targets](05-reply-targets-and-routing.md#joining-instead-of-asking)) | The reply is not acted on | Never. The user chooses among existing sections (Q10, Q20, Q74) |
 | **Clarification** | Missing information, or incompatible user requirements, blocks a directive | Unaffected work proceeds; the affected answer waits | Never (Q23, Q26, Q34) |
 | **Choice with default** | Pluribus can propose a reasonable action, but its scope is the user's call | Affected running work stops; affected queued work holds; unaffected work continues | Yes (Q42, Q44–Q46) |
 | **Recovery choice** | A dependency-queued request's prerequisite failed, was stopped, or was interrupted | The request stays paused | Never (Q48, Q52) |

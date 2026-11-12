@@ -24,14 +24,14 @@ The order and the contents of the "Brings in" column for milestones 1–3 and 5 
 | 1 | `core` with the fake provider | Event log, projections, chains, forks, join-back, dependencies, context assembly, scheduling | C1–C20 and the ordering rules of P1–P3 as core tests, with routing outcomes supplied by the test |
 | 2 | OpenRouter streaming and IndexedDB | Real answers, persistence, error mapping, interruption on reload | Live smoke suite; detection of interrupted attempts |
 | 3 | Web transcript | Sections, responding bubbles, placement, scroll following, composer queue | P1–P8 in the browser |
-| 4 | Routing | Decision calls, decomposition, validation, split messages, reply-target inference, target and clarification elicitation, typed readiness and the pause for user input, join chains | D1–D5, T1–T3, E1–E2, E5, P9, DA1–DA5; routing corpus evaluation |
+| 4 | Routing | Decision calls, decomposition, validation, split messages, reply-target inference, target and clarification elicitation, typed readiness and the pause for user input, join chains | D1–D5, T1–T4, E1–E2, E5, P9, DA1–DA5; routing corpus evaluation |
 | 5 | Revisions and recovery, then debug views | Supersession, propagation, Regenerate, choice with default, retry policies, paused dependents, mixed-result display; mini-map, association, Compare, operation graph, run inspector, log export | R1–R8, E3–E4, F1–F9, P10–P13 |
 
 Until milestone 4 exists, tests and the transcript supply routing outcomes directly (which chain, which dependencies), because there is no decision provider yet.
 
 ## Verification
 
-- **Coordinator tests.** One deterministic test for each of the 68 acceptance conditions (D1–D5, P1–P13, C1–C20, T1–T3, R1–R8, E1–E5, F1–F9, DA1–DA5) and for each [architecture invariant](11-architecture.md#invariants). They run against the fake provider, which scripts streaming timing, failures, and interruptions (Q61).
+- **Coordinator tests.** One deterministic test for each of the 69 acceptance conditions (D1–D5, P1–P13, C1–C20, T1–T4, R1–R8, E1–E5, F1–F9, DA1–DA5) and for each [architecture invariant](11-architecture.md#invariants). They run against the fake provider, which scripts streaming timing, failures, and interruptions (Q61).
 - **Routing corpus.** Labelled examples for targets, chain placement, revision versus addition, splits, and dependencies. It evaluates the decision model and decomposer offline and is used to tune the thresholds (Q61, Q74). It carries a second set of expected placements for hop between branch points. Its decision requests are also measured with no network, through a mock of the Decisions API that counts tokens with a tokenizer calibrated against the provider's reported counts; the bound of the [decision budget](11-architecture.md#decision-budget) against the answer is asserted under those counts.
 - **Live smoke suite.** A small number of real model calls (Q61), including the calls that qualify a model for the compatibility list (Q107) and the calibration of the token estimate.
 

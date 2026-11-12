@@ -22,6 +22,38 @@ const twoAnswers = scene()
   .build()
 
 /**
+ * Two lines that never met: a city, and the sky with a follow-up about the
+ * ocean. A message about the ocean and sky in that city is about all three
+ * answers a little and about none of them clearly (the conversation
+ * exported on 2026-11-12, where routing asked which answer was meant).
+ */
+const cityAndSky = scene()
+  .chain('city', 'root', 'kyoto city')
+  .add('K', {
+    chain: 'city',
+    on: null,
+    label: 'kyoto city',
+    request: 'Tell me about kyoto',
+    answer: 'Kyoto is a city in Japan\'s Kansai region, on the island of Honshu. It was the imperial capital for more than a thousand years, and is known for its temples, shrines and gardens.',
+  })
+  .chain('sky', 'root', 'sky color question')
+  .add('S', {
+    chain: 'sky',
+    on: null,
+    label: 'sky color question',
+    request: 'why is the sky blue?',
+    answer: 'The sky is blue because of Rayleigh scattering: air molecules scatter short blue wavelengths of sunlight far more than long red ones.',
+  })
+  .add('O', {
+    chain: 'sky',
+    on: 'S',
+    label: 'ocean sky reflection',
+    request: 'And does the ocean reflect the sky?',
+    answer: 'Partly. The surface reflects some skylight, but the ocean is blue mainly because water absorbs red light and scatters blue back.',
+  })
+  .build()
+
+/**
  * Three answers about one city, each on its own line. Only the history's
  * answer has a part about the city today, under a heading far below its
  * opening: a message about that part is identifiable only from later in the
@@ -574,6 +606,14 @@ export const ROUTING_CORPUS: readonly CorpusExample[] = [
     scene: twoAnswers,
     text: 'Use that one',
     expect: { outcome: 'target-ambiguity', ambiguous: ['S', 'M'] },
+  },
+  {
+    id: 'target-join-lines-instead-of-asking',
+    covers: ['targets', 'placement'],
+    note: '05 "Joining instead of asking": no section is a clear target, and the message brings two lines of work together, so "which one?" has no answer: the lines are joined. S is read through O, which continues it.',
+    scene: cityAndSky,
+    text: 'Tell me about the ocean and sky in kyoto',
+    expect: { composition: 'atomic', joinsLines: true, parts: [{ kind: 'unit', relation: 'addition', targets: ['K', 'S', 'O'], placement: { join: ['K', 'O'] } }] },
   },
   {
     id: 'target-explicit',

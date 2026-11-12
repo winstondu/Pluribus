@@ -100,13 +100,18 @@ function totals(examples: readonly MeasuredExample[]): Totals {
  * one pass 279,432 characters, 64,568 tokenizer, 98,430 calibrated; tree walk 329,373, 77,000, 115,873; rules
  * 329,324, 76,953, 114,827.
  */
+/**
+ * The "Live" figures were taken before the gate's question about several lines of work (`thresholds.joinChoice`) and
+ * the corpus example `target-join-lines-instead-of-asking`: together they add 43 questions, one request and about 2,000
+ * tokenizer tokens to each configuration.
+ */
 const RECORDED: { readonly [N in MeasuredConfiguration]: Totals } = {
   // Live: 74 requests, 92,592 tokens reported. Calibrated is 0.8% above it; the estimate 24.6% above.
-  'one pass': { passed: 61, requests: 75, questions: 983, characters: 279_431, tokenizer: 64_570, calibrated: 98_432, estimate: 121_917 },
+  'one pass': { passed: 62, requests: 76, questions: 1026, characters: 288_062, tokenizer: 66_539, calibrated: 101_155, estimate: 125_323 },
   // Live: 85 requests, 109,128 tokens reported (108,412 with the earlier estimate). Calibrated is 1.5% above it; the estimate 24.4% above.
-  'tree walk, long runs searched': { passed: 64, requests: 87, questions: 1038, characters: 329_372, tokenizer: 77_002, calibrated: 115_875, estimate: 142_266 },
+  'tree walk, long runs searched': { passed: 65, requests: 88, questions: 1081, characters: 338_003, tokenizer: 78_971, calibrated: 118_598, estimate: 145_672 },
   // Live: 82 requests, 108,557 tokens reported (107,841 with the earlier estimate). Calibrated is 1.1% above it; the estimate 24.0% above.
-  'selected by rules (the default)': { passed: 64, requests: 83, questions: 1060, characters: 329_323, tokenizer: 76_955, calibrated: 114_829, estimate: 141_106 },
+  'selected by rules (the default)': { passed: 65, requests: 84, questions: 1103, characters: 337_954, tokenizer: 78_924, calibrated: 117_552, estimate: 144_512 },
 }
 
 const configurations = Object.keys(MEASURED_CONFIGURATIONS) as MeasuredConfiguration[]
@@ -170,10 +175,11 @@ describe('decision tokens, measured with a tokenizer over the Decisions mock', (
     const est = { min: Math.min(...versusEstimate), mean: versusEstimate.reduce((s, r) => s + r, 0) / versusEstimate.length, max: Math.max(...versusEstimate) }
     const round = (x: number): number => Math.round(x * 1000) / 1000
     // The three configurations' requests: the tokenizer counts 79% to 104% of characters ÷ 4, 93% over all of them.
-    expect({ requests: calls.length, min: round(all.min), mean: round(all.mean), max: round(all.max), total: round(total) }).toEqual({ requests: 245, min: 0.817, mean: 0.9, max: 1.035, total: 0.932 })
+    expect({ requests: calls.length, min: round(all.min), mean: round(all.mean), max: round(all.max), total: round(total) }).toEqual({ requests: 248, min: 0.817, mean: 0.9, max: 1.035, total: 0.931 })
     // Calibrated against the guard's estimate of the same requests: always below it, at 78% to 89% of it (it was 0.994 to
-    // 1.223 with the estimate before 2026-11-12's refit; 0.78, 0.812, 0.885 before the gate's combined-limit question).
-    expect({ min: round(est.min), mean: round(est.mean), max: round(est.max) }).toEqual({ min: 0.779, mean: 0.81, max: 0.885 })
+    // 1.223 with the estimate before 2026-11-12's refit; 0.78, 0.812, 0.885 before the gate's combined-limit question;
+    // 0.779, 0.81, 0.885 before its question about several lines of work).
+    expect({ min: round(est.min), mean: round(est.mean), max: round(est.max) }).toEqual({ min: 0.78, mean: 0.81, max: 0.885 })
   })
 })
 
@@ -225,8 +231,8 @@ describe('decision cost grid, measured with a tokenizer', () => {
       return `  ${n} × ${x}: worst by estimate ${Math.max(...cells.map(byEstimate)).toFixed(3)}×, by tokenizer ${Math.max(...cells.map(byTokenizer)).toFixed(3)}×`
     })
     console.log([`prose: ${prose.toFixed(3)} characters per token`, `worst by estimate: ${at(we)}, ${we.guarded.tokens} estimated, ${we.guarded.measured} calibrated`, `worst by tokenizer: ${at(wt)}, ${wt.guarded.tokens} estimated, ${wt.guarded.measured} calibrated`, ...perSize].join('\n'))
-    // 4.119 before the corpus gained `target-later-in-answer`, whose answers are written out in full.
-    expect(round(prose)).toBe(4.122)
+    // 4.119 before the corpus gained `target-later-in-answer`, whose answers are written out in full; 4.122 before `target-join-lines-instead-of-asking`.
+    expect(round(prose)).toBe(4.127)
     expect({ at: at(we), estimate: we.guarded.tokens, ratio: round(byEstimate(we)), measured: we.guarded.measured, byTokenizer: round(byTokenizer(we)) }).toEqual(RECORDED_WORST.byEstimate)
     expect({ at: at(wt), estimate: wt.guarded.tokens, ratio: round(byEstimate(wt)), measured: wt.guarded.measured, byTokenizer: round(byTokenizer(wt)) }).toEqual(RECORDED_WORST.byTokenizer)
   })
@@ -254,15 +260,18 @@ describe('decision cost grid, measured with a tokenizer', () => {
 /** Recorded 2026-11-12 with the refitted estimate. Before it, the worst cell was 1.99× by estimate and 2.79× by tokenizer, and 208 of 360 cells were over 2× by tokenizer. */
 const RECORDED_WORST = {
   // With the gate's combined-limit question (Q102); before it: 50 × 300, nested forks, tree walk, runs listed, 6,123 estimated, 1.997, 5,184 calibrated, 1.743.
-  byEstimate: { at: '3300 × 300, nested forks, one pass', estimate: 6_114, ratio: 1.994, measured: 5_407, byTokenizer: 1.819 },
+  // With the gate's question about several lines of work (`thresholds.joinChoice`); before it: 3300 × 300, nested forks, one pass, 6,114 estimated, 1.994, 5,407 calibrated, 1.819.
+  byEstimate: { at: '50 × 300, many roots, one pass', estimate: 6_125, ratio: 1.997, measured: 5_204, byTokenizer: 1.753 },
   // Before it: 8000 × 120, bushy, tree walk, runs listed, 2,486 estimated, 1.996, 2,170 calibrated, 1.8.
   // 1.818 by the tokenizer before the corpus's prose gained `target-later-in-answer` (4.119 characters a token, now 4.122).
-  byTokenizer: { at: '3300 × 300, nested forks, one pass', estimate: 6_114, ratio: 1.994, measured: 5_407, byTokenizer: 1.819 },
+  // Before the question about several lines of work: 3300 × 300, nested forks, one pass, 6,114 estimated, 1.994, 5,407 calibrated, 1.819.
+  byTokenizer: { at: '3300 × 300, nested forks, tree walk, runs listed', estimate: 6_116, ratio: 1.994, measured: 5_394, byTokenizer: 1.817 },
 }
 
 const RECORDED_FLOOR: { readonly [floor: number]: { cells: number; over: number; worst: string; byTokenizer: number; byEstimate: number } } = {
   // Every 120-token cell is below the floor and over 2× its own answer; against an answer of 135 tokens they are within it.
   // With the gate's combined-limit question (Q102). Before it: 135, nested forks, tree walk, runs listed, 2.393 and 2.627; 155, nested forks, one pass, 2.723 and 2.976.
-  135: { cells: 120, over: 120, worst: '8000 × 120, bushy, one pass', byTokenizer: 2.358, byEstimate: 2.606 },
-  155: { cells: 120, over: 120, worst: '8000 × 120, bushy, tree walk, runs listed', byTokenizer: 2.727, byEstimate: 2.975 },
+  // With the gate's question about several lines of work. Before it: 135, bushy, one pass, 2.358 and 2.606; 155, bushy, tree walk, runs listed, 2.727 and 2.975.
+  135: { cells: 120, over: 120, worst: '8000 × 120, nested forks, tree walk, runs listed', byTokenizer: 2.373, byEstimate: 2.619 },
+  155: { cells: 120, over: 120, worst: '8000 × 120, nested forks, one pass', byTokenizer: 2.656, byEstimate: 2.918 },
 }

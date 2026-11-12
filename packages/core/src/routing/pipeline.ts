@@ -1,13 +1,16 @@
 import {
   type BestNodeRecord,
+  type JoinedLinesRecord,
   type RunEndRecord,
   type BudgetStopRecord,
   type CandidateSourceRecord,
   type DecisionBudget,
   type StrategySelectionRecord,
   type TreeWalkSettings,
+  JOIN_CHOICE_OFF,
   provisionalLabel,
   providerError,
+  type ChainId,
   type Decided,
   type DecisionQuestionRecord,
   type DirectiveId,
@@ -160,6 +163,8 @@ class Record {
   readonly bestFound: BestNodeRecord[] = []
   /** The units placed on the last section of a run without a search inside it (hop between branch points). */
   readonly runEnds: RunEndRecord[] = []
+  /** The units that joined several lines of work, in place of a question to the user. */
+  readonly joinedLines: JoinedLinesRecord[] = []
   /** Estimated input tokens of the pipeline's own decision requests so far: they are counted against the routing's token budget first. */
   pipelineTokens = 0
 
@@ -219,6 +224,7 @@ async function routeMessage(deps: Deps, input: RoutingInput, signal: CancelSigna
       corrective: relate,
       relation: relate,
       chain: relate,
+      lines: asksLines(input, given !== null, relate),
       dependencies: relate,
       sessionRequirements: input.sessionRequirements.length > 0,
       clarify: true,
@@ -341,9 +347,11 @@ async function routeMessage(deps: Deps, input: RoutingInput, signal: CancelSigna
     mayBeReply: m.relation?.value !== 'new' || (m.corrective ?? 0) >= t.clearlyCorrective,
     placedWithoutTarget: placedWithoutTarget(m, t),
     covered: (accepted, weak) => referentCovered(supplied, accepted, weak),
+    lineOf: (id) => lineOfSection(supplied, id),
     budgetStop: referents.stop ? { best: referents.stop.best.get('m')?.sectionIds ?? [] } : null,
   })
   if (resolution.kind === 'ambiguous') return { kind: 'target-ambiguity', candidates: resolution.candidates }
+  if (resolution.joined) record.joinedLines.push({ unit: 'message', sectionIds: resolution.sectionIds, confidence: resolution.joined.confidence })
   if (resolution.bestFound) record.bestFound.push({ unit: 'message', sectionIds: resolution.sectionIds, confidence: referents.stop?.best.get('m')?.confidence ?? 0 })
   noteRunEnds(record, 'message', referents.units['m'], resolution.sectionIds)
   const referred = answerTargets(supplied, resolution.sectionIds)
@@ -486,6 +494,7 @@ async function routeComposite(deps: Deps, input: RoutingInput, signal: CancelSig
       corrective: relate,
       relation: relate,
       chain: relate,
+      lines: asksLines(input, given !== null, relate),
       dependencies: relate,
       sessionRequirements: input.sessionRequirements.length > 0,
       clarify: true,
@@ -547,6 +556,7 @@ async function routeComposite(deps: Deps, input: RoutingInput, signal: CancelSig
       mayBeReply: s.relation?.value !== 'new' || (s.corrective ?? 0) >= t.clearlyCorrective,
       placedWithoutTarget: placedWithoutTarget(s, t),
       covered: (accepted, weak) => referentCovered(supplied, accepted, weak),
+      lineOf: (id) => lineOfSection(supplied, id),
       budgetStop: referred.stop ? { best: referred.stop.best.get(s.key)?.sectionIds ?? [] } : null,
     })
     if (resolution.kind === 'ambiguous') {
@@ -554,6 +564,7 @@ async function routeComposite(deps: Deps, input: RoutingInput, signal: CancelSig
       continue
     }
     if (resolution.bestFound) record.bestFound.push({ unit: s.key, sectionIds: resolution.sectionIds, confidence: referred.stop?.best.get(s.key)?.confidence ?? 0 })
+    if (resolution.joined) record.joinedLines.push({ unit: s.key, sectionIds: resolution.sectionIds, confidence: resolution.joined.confidence })
     noteRunEnds(record, s.key, referred.units[s.key], resolution.sectionIds)
     const targets = answerTargets(supplied, resolution.sectionIds)
     const changed = (s.corrective ?? 0) >= t.clearlyCorrective ? selected(s.sessionRequirements, t.clearlyCorrective) : []
@@ -1318,6 +1329,28 @@ function bestFoundNote(input: RoutingInput, record: Record): string {
   return ` The decision budget is a hard stop, so the user was not asked which section is meant: the best node found so far was used, ${placed.join('; ')}.`
 }
 
+/** Which units joined several lines of work where the user would otherwise have been asked which section is meant. */
+function joinedLinesNote(input: RoutingInput, record: Record): string {
+  if (record.joinedLines.length === 0) return ''
+  const title = (id: SectionId): string => `"${input.candidates.sections.find((s) => s.sectionId === id)?.title ?? id}"`
+  const placed = record.joinedLines.map((j) => {
+    const unit = j.unit === 'message' ? 'the message' : `part F${Number(j.unit.slice(1)) + 1}`
+    return `${unit} on ${j.sectionIds.map(title).join(' and ')} (${j.confidence.toFixed(2)})`
+  })
+  return ` No single section was a clear target, and the decision model says the request brings several lines of work together, so the user was not asked which section is meant: the lines were joined, ${placed.join('; ')}.`
+}
+
+/** Whether a unit is asked if it brings several lines of work together: joining instead of asking is on, and the unit's targets are not given. */
+function asksLines(input: RoutingInput, given: boolean, relate: boolean): boolean {
+  return relate && !given && input.settings.thresholds.joinChoice < JOIN_CHOICE_OFF
+}
+
+/** The line of work an answer section is on; null for an open clarification question, which is never joined. */
+function lineOfSection(supplied: Supplied, id: SectionId): ChainId | null {
+  const section = supplied.sectionById.get(id)
+  return section && !section.asksElicitationId ? section.chainId : null
+}
+
 /** Which targets are the last section of a run the unit refers to, taken without asking about them by themselves, and on what evidence. */
 function runEndNote(input: RoutingInput, record: Record): string {
   if (record.runEnds.length === 0) return ''
@@ -1345,13 +1378,14 @@ function decisionRecord(
     composition,
     units,
     thresholds: { ...input.settings.thresholds, ambiguityFloor: AMBIGUITY_FLOOR },
-    explanation: `${explanation}${selectionNote(record.selection)}${record.windowNote}${record.referentNote}${runEndNote(input, record)}${bestFoundNote(input, record)}${record.contextNote}`,
+    explanation: `${explanation}${selectionNote(record.selection)}${record.windowNote}${record.referentNote}${runEndNote(input, record)}${bestFoundNote(input, record)}${joinedLinesNote(input, record)}${record.contextNote}`,
     questions: record.questions,
     shownRecorded: true,
     ...(record.selection ? { strategySelection: record.selection } : {}),
     ...(record.budgetStop ? { budgetStop: { ...record.budgetStop, bestFound: record.bestFound } } : {}),
     ...(record.candidates ? { candidateSource: record.candidates } : {}),
     ...(record.runEnds.length > 0 ? { runEnds: record.runEnds } : {}),
+    ...(record.joinedLines.length > 0 ? { joinedLines: record.joinedLines } : {}),
   }
 }
 

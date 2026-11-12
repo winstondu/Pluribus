@@ -71,6 +71,7 @@ Every condition has its canonical test, titled with its ID. All 68 pass in the f
 | P10–P13 | `core/test/recovery/acceptance/placement.test.ts` | — | pass |
 | C1–C20 | `core/test/engine/acceptance/chains.test.ts` | C2 in `core/test/routing/acceptance/review-3.test.ts`; C10 in `core/test/recovery/acceptance/review-4.test.ts`; C19 in `core/test/routing/acceptance/review-4.test.ts`; `C3/C9/C11/C20 (engine)` in `core/test/engine/acceptance/named.test.ts` | pass |
 | T1 | `core/test/routing/acceptance/targets.test.ts` | `core/test/routing/acceptance/review-2.test.ts`, `review-3.test.ts` | pass |
+| T4 | `core/test/routing/acceptance/join-lines.test.ts` | Corpus example `target-join-lines-instead-of-asking` | pass |
 | T2, T3 | `core/test/recovery/acceptance/targets.test.ts` | T3 in `core/test/recovery/acceptance/review-4.test.ts` and `core/test/routing/acceptance/review-3.test.ts` | pass |
 | R1–R8 | `core/test/recovery/acceptance/revisions.test.ts` | R3, R8 in `core/test/recovery/acceptance/review-3.test.ts` | pass |
 | E1, E2 | `core/test/routing/acceptance/elicitation.test.ts` | `E1 (review)` in `core/test/routing/acceptance/review-2.test.ts` | pass |
@@ -93,7 +94,7 @@ PLAN §7 has the full reasoning for each.
 | Trivial messages skip the decision call? | No. The first message of an empty conversation asks only the gate and clarification questions |
 | Do decision and decomposition calls count against concurrency? "Per provider"? | Only answer, clarification-question and synthesis runs take a slot. Routing, label calls, join-backs and the preparation step take none. One pool, keyed `openrouter`. A conversation's messages are routed in submission order (C2) |
 | Backoff | Standard: 3 retries at 1 s, 2 s, 4 s, accepting `Retry-After` up to 60 s. Persistent: 8 retries up to 30 s apart, accepting `Retry-After` up to 10 min. No jitter. Routing failures (408, 429, 502, 503, an empty 200, a dropped connection) retry under the same setting |
-| Pinned decision model, tuned thresholds | `typesafe/jev-1.13`. Thresholds were swept on the 44-example corpus: `targetChoice` 0.7, `clearlyCorrective` 0.8, `composite` 0.65, `dependency` 0.6, `clarification` 0.75, ambiguity floor 0.25. Each is on its best plateau, 42/44 |
+| Pinned decision model, tuned thresholds | `typesafe/jev-1.13`. Thresholds were swept on the 44-example corpus: `targetChoice` 0.7, `clearlyCorrective` 0.8, `composite` 0.65, `dependency` 0.6, `clarification` 0.75, ambiguity floor 0.25. Each is on its best plateau, 42/44. `joinChoice` 0.8 was added on 2026-11-12 from a live run of the 65-example corpus (PLAN §7 · "Joining instead of asking") |
 | Which earlier work a message refers to | A referent strategy behind one interface, chosen in settings: `tree-walk` (default) or `one-pass`, with a per-routing decision budget. Measured live at about 0.3% of an answer's cost; bounded at 3.7%. See [dependency-decisioning.md](dependency-decisioning.md) |
 | Context warning | At 80 % of the model's limit, shown as a note on the section. A run fails before it starts only when the token count is exact. When the count is an estimate, a run over the limit warns and runs |
 | Chunk size for stored output | First text at once. After that, 96 characters or 80 ms, whichever comes first. Always flushed before the terminal event |
@@ -409,6 +410,17 @@ The user's report: the run inspector's "questions put to the decision model" sho
 | `pnpm --filter @pluribus/web lint` | Exit 0, warnings only, none in the new files |
 | `pnpm build` | Succeeds |
 | `pnpm smoke` (`referents.smoke.test.ts`, before the rebase) | Passed; scores above |
+
+### Joining instead of asking, and the token share (2026-11-12)
+
+From an exported conversation (`cnv_01M78JH41T1Y9GQB9ZBBXNF43Q`): after separate lines about Kyoto and about the sky and the ocean, "Tell me about the ocean and sky in kyoto" was put to the user as a target ambiguity (0.57, 0.43, 0.39 for the three answers), and the one answer the user picked lost the other line's context.
+
+- **Cause.** A join chain came only from sections that each reached `targetChoice` by themselves. No signal could say "these lines together": the line choice has one answer, and the several-sections question asks about plain references.
+- **Change.** A sixth threshold, `thresholds.joinChoice` (default 0.8; 1 is off), and one more gate question, `<unit>_lines`. Where routing would ask which section is meant, and the model says at the threshold that the unit brings several lines together, the candidate sections on two or more lines become the targets and the unit runs on a join chain. Spec: 05 · "Joining instead of asking", T4; 07; 11 · "Decision thresholds". Code: `joinedTargets` in `core/src/routing/derive.ts`, `linesQuestion` in `routing/questions.ts`, `JoinedLinesRecord` on the routing decision. Settings → Routing → "Join instead of asking".
+- **Verified.** T4 in `core/test/routing/acceptance/join-lines.test.ts` (six cases, with the scores of the export); corpus example `target-join-lines-instead-of-asking`; the export's fourth message replayed against the live decision model joins the Kyoto line and the sky line. Live corpus, decision model alone: 64/65 at 0.8, 62/65 with it off (PLAN §7).
+- **Cost.** One more question in the routing's first request whenever two or more lines are listed, no further request: 43 questions and about 2,000 tokenizer tokens over the corpus in each configuration, the new example included. The 2× bound of the price guard holds on every guarded cell (worst 1.997 by the estimate, 1.817 by the tokenizer); `providers/test/decision-tokens.test.ts` is re-recorded. A join chain costs a synthesis run where the question to the user cost none.
+- **Token share.** The default relative decision token budget is 3% of the conversation's log, up from 2%; floor 16,000 and ceiling 40,000 are unchanged (dependency-decisioning.md · "The token budget").
+- **Not done.** The export still does not record the questions behind an `elicitation-raised`: the routing decision is written only once a plan exists. The run inspector shows the join in the decision's explanation, with no row of its own.
 
 ## How to run
 

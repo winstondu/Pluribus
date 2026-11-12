@@ -154,7 +154,8 @@ Both the original text and any generated rewrite are recorded (Q59). Whether tri
 ### Decision thresholds
 
 - The decision model is pinned to a versioned model, not a moving alias (Q74).
-- Below the target-choice confidence threshold, Pluribus elicits the target (Q20, Q74). The one exception is a routing whose [decision budget](#decision-budget) was reached.
+- Below the target-choice confidence threshold, Pluribus elicits the target (Q20, Q74). Two exceptions: a routing whose [decision budget](#decision-budget) was reached, and a reply that is joined instead.
+- At or above the join threshold, a reply whose target would be elicited, and whose candidate sections are on two or more lines of work, joins those lines instead ([05](05-reply-targets-and-routing.md#joining-instead-of-asking)). The threshold is compared with the decision model's answer to one question, asked with the routing's first request whenever two or more lines are listed: does the reply bring together the subjects of more than one line of work? At 1 the question is not asked.
 - Below the "clearly corrective" threshold, a reply is treated as additional work rather than a revision (Q37, Q74).
 - Thresholds are tuned on the labelled routing corpus and are a frontend setting sent to the backend (Q74).
 
@@ -171,7 +172,7 @@ This section was settled after Q98, by the user's instructions of 2026-11-11 and
 - **Input.** One unit (the message, or one fragment of a composite) and the genealogy as supplied candidates: the current answer sections, the work behind them, the chains, and the sibling groups with their join-backs. Nothing else is read (invariant 9).
 - **Output.** The unit's referents: the answer sections it may refer to, each with a confidence, and the probability that it refers to several at once. A section that is not returned is not a referent.
 - **A strategy scores; it places nothing.** Everything after it is the same whichever strategy was used, and is binding:
-  - A referent at or above the target-choice threshold is a reply target. Below it, Pluribus elicits the target; it never guesses ([05](05-reply-targets-and-routing.md), [07](07-elicitation.md); Q20, Q74). The one exception is a routing whose decision budget was reached: it uses the best node found so far and does not ask ([Decision budget](#decision-budget)).
+  - A referent at or above the target-choice threshold is a reply target. Below it, Pluribus elicits the target; it never guesses which one is meant ([05](05-reply-targets-and-routing.md), [07](07-elicitation.md); Q20, Q74). Two exceptions. A routing whose decision budget was reached uses the best node found so far and does not ask ([Decision budget](#decision-budget)). A unit that brings several lines of work together, at the join threshold, takes every referent it would have offered the user and is placed on a join chain ([Decision thresholds](#decision-thresholds)).
   - Two or more members of one sibling group are the whole group: the unit depends on the full join-back, never on a subset (invariant 4; Q30; C9, C19).
   - Placement is a new chain, a continuation, or a new join chain whose parents are leaves ([Placement in the genealogy](#placement-in-the-genealogy); Q76, Q86; C20).
   - Dependencies are acyclic, and a plan that breaks a rule is repaired where it has one correct reading and refused otherwise ([Pipeline](#pipeline), stage 3).
@@ -276,7 +277,7 @@ A guard on what routing one message may cost in decision-model work. It applies 
 
 | Limit | What it is | Initial value |
 |---|---|---|
-| Token budget | Decision input tokens per routing. Either **absolute**, a fixed number, or **relative**: a share of the tokens recorded in the conversation's log, with a floor so that a new conversation is not starved and a ceiling so that a huge one is not unbounded | Relative: 2% of the log, at least 16,000 and at most 40,000 tokens |
+| Token budget | Decision input tokens per routing. Either **absolute**, a fixed number, or **relative**: a share of the tokens recorded in the conversation's log, with a floor so that a new conversation is not starved and a ceiling so that a huge one is not unbounded | Relative: 3% of the log, at least 16,000 and at most 40,000 tokens |
 | Bound against the answer | The decision requests of a routing cost at most a multiple of the answer they route, priced on the cheapest answer model offered | Twice the answer |
 | Backstops | Further requests and questions per routing, whatever the tokens and prices | 4 requests, 96 questions |
 

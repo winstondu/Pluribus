@@ -482,6 +482,12 @@ const THRESHOLDS: readonly { key: keyof DecisionThresholds; label: string; descr
     description: 'Below this confidence in the best target, Pluribus asks which section a reply addresses.',
   },
   {
+    key: 'joinChoice',
+    label: 'Join instead of asking',
+    description:
+      'At or above this confidence that a reply brings several lines of work together, Pluribus joins those lines instead of asking which section it addresses. Lower joins more readily; 1.00 always asks.',
+  },
+  {
     key: 'clearlyCorrective',
     label: 'Clearly corrective',
     description: 'Below this, a reply is treated as additional work, not as a revision.',

@@ -127,7 +127,17 @@ export interface DecisionThresholds {
   readonly dependency: number
   /** At or above this, a unit is blocked on a clarification question (Q23, Q34). */
   readonly clarification: number
+  /**
+   * At or above this confidence that a reply brings several lines of work together, a reply whose
+   * target is ambiguous joins those lines instead of asking which section it means (05 · "Joining
+   * instead of asking"). Lower joins more readily. At `JOIN_CHOICE_OFF` the question is not asked
+   * and Pluribus always asks the user.
+   */
+  readonly joinChoice: number
 }
+
+/** The `joinChoice` threshold at which joining instead of asking is off. */
+export const JOIN_CHOICE_OFF = 1
 
 /**
  * How routing decides which earlier work a message refers to and depends on
@@ -376,7 +386,7 @@ export interface Settings {
 }
 
 /** The relative token budget a routing gets unless the user chose another. */
-export const DEFAULT_RELATIVE_TOKEN_BUDGET: Extract<DecisionTokenBudget, { mode: 'relative' }> = { mode: 'relative', fraction: 0.02, floor: 16_000, ceiling: 40_000 }
+export const DEFAULT_RELATIVE_TOKEN_BUDGET: Extract<DecisionTokenBudget, { mode: 'relative' }> = { mode: 'relative', fraction: 0.03, floor: 16_000, ceiling: 40_000 }
 /** The absolute token budget offered when the user switches to a fixed one: the relative budget's floor. */
 export const DEFAULT_ABSOLUTE_TOKEN_BUDGET: Extract<DecisionTokenBudget, { mode: 'absolute' }> = { mode: 'absolute', inputTokens: 16_000 }
 
@@ -395,6 +405,7 @@ export const DEFAULT_SETTINGS: Settings = {
     composite: 0.65,
     dependency: 0.6,
     clarification: 0.75,
+    joinChoice: 0.8,
   },
   routing: {
     // Chosen on the routing corpus and on cost (docs/build/dependency-decisioning.md).
@@ -409,7 +420,7 @@ export const DEFAULT_SETTINGS: Settings = {
     // Today's behaviour: an ordered message is split, and the barrier keeps its outputs in the order asked for (D3).
     orderedMessages: 'decompose',
     referentBudget: { requests: 4, questions: 96 },
-    // 2% of the conversation's log, at least what the pipeline's request and a search of a long run cost (16,000) and
+    // 3% of the conversation's log, at least what the pipeline's request and a search of a long run cost (16,000) and
     // at most what twice a 1,700-token answer on the cheapest answer model buys (40,000): the budget grows with what
     // there is to search. Evidence in docs/build/dependency-decisioning.md · "The token budget".
     tokenBudget: DEFAULT_RELATIVE_TOKEN_BUDGET,

@@ -1384,7 +1384,7 @@ describe('token budget', () => {
     const run = { messageLength: 55, answerLengths: [], units: 1 }
     // Few answers yet: the allowance is that of a 1,700-token answer (40,542), so the budget binds.
     expect(routingTokenBudget(routing, { ...run, sessionLogTokens: 0 })).toEqual({ total: 16_000, limitedBy: 'token-budget' })
-    expect(routingTokenBudget(routing, { ...run, sessionLogTokens: 1_500_000 })).toEqual({ total: 30_000, limitedBy: 'token-budget' })
+    expect(routingTokenBudget(routing, { ...run, sessionLogTokens: 1_000_000 })).toEqual({ total: 30_000, limitedBy: 'token-budget' })
     // A huge conversation is not unbounded: the ceiling, still under the allowance.
     expect(routingTokenBudget(routing, { ...run, sessionLogTokens: 50_000_000 })).toEqual({ total: 40_000, limitedBy: 'token-budget' })
     // Short answers: twice a 300-token answer buys 7,209 decision tokens, less than any budget.
@@ -1407,12 +1407,12 @@ describe('token budget', () => {
 
   test('budget · relative to the log, a search reaches an old section of a long conversation that a fixed budget of the same floor does not', async () => {
     // Answers of 2,500 tokens: the search round over 700 sections is about 21,900 tokens by the guard's estimate (fitted
-    // 2026-11-12 never to count below the decision model's reported figure), so the log must be large enough for 2% of it
+    // 2026-11-12 never to count below the decision model's reported figure), so the log must be large enough for 3% of it
     // to hold the routing request and the round. With 1,700-token answers (24,080) it held only under the earlier estimate.
     const sc = chain(700, 2_500)
     const text = 'Make the answer to point 40 shorter'
-    // 700 exchanges of 2,520 tokens: 2% of the log is 35,280 tokens.
-    expect(resolveTokenBudget(DEFAULT_SETTINGS.routing.tokenBudget, logOf(sc, text))).toBe(35_280)
+    // 700 exchanges of 2,520 tokens: 3% of the log is 52,920 tokens, over the ceiling, so the budget is the ceiling.
+    expect(resolveTokenBudget(DEFAULT_SETTINGS.routing.tokenBudget, logOf(sc, text))).toBe(40_000)
     const relative = await route(sc, text, { own: { T40: 0.9 } })
     expect(unit(relative).targets).toEqual(sections(['T40']))
     expect(planOf(relative).decision.explanation).not.toContain('budget was reached')

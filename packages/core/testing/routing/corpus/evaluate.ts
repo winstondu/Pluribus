@@ -9,7 +9,7 @@ import {
   type PointRef,
   type PrerequisiteRef,
   type Settings,
-  type BudgetStopRecord, type CandidateSourceRecord, type RunEndRecord, type StrategySelectionRecord,
+  type BudgetStopRecord, type CandidateSourceRecord, type JoinedLinesRecord, type RunEndRecord, type StrategySelectionRecord,
   type TextSpan,
 } from '@pluribus/protocol'
 import type {
@@ -67,6 +67,8 @@ export interface CorpusResult {
   readonly candidates: CandidateSourceRecord | null
   /** The targets that hop between branch points placed on the last section of a run without a search inside it; empty when none. */
   readonly runEnds: readonly RunEndRecord[]
+  /** The units that joined several lines of work instead of asking the user which section is meant (`thresholds.joinChoice`). Empty when none did. */
+  readonly joinedLines: readonly JoinedLinesRecord[]
 }
 
 /** Decision calls made, and the input tokens the provider reported for them (0 where it reported none). */
@@ -195,6 +197,7 @@ export async function evaluateCorpus(run: CorpusRun): Promise<CorpusReport> {
       budgetStop: outcome.kind === 'plan' ? (outcome.plan.decision.budgetStop ?? null) : null,
       candidates: outcome.kind === 'plan' ? (outcome.plan.decision.candidateSource ?? null) : null,
       runEnds: outcome.kind === 'plan' ? (outcome.plan.decision.runEnds ?? []) : [],
+      joinedLines: outcome.kind === 'plan' ? (outcome.plan.decision.joinedLines ?? []) : [],
     })
   }
   const byTopic: { [T in CorpusTopic]?: { passed: number; total: number } } = {}
@@ -465,7 +468,9 @@ export function oracleDecisionProvider(example: CorpusExample, input: RoutingInp
     const question = match?.[2] ?? ''
     const part = partFor(key)
     const targets = part ? part.targets : []
-    if (question === 'several') return noul((targets?.length ?? 0) >= 2)
+    // A message that joins lines instead of asking names none of them plainly: the several-sections question stays below its threshold.
+    if (question === 'several') return expect.joinsLines ? noul('unsure') : noul((targets?.length ?? 0) >= 2)
+    if (question === 'lines') return noul(expect.joinsLines === true)
     if (question === 'corrective') return noul(part?.kind === 'revision')
     if (question === 'shared') return noul(part?.kind === 'revision' && part.scope === 'shared-requirement')
     if (question === 'relation') return choice(relationOption(part))
@@ -481,7 +486,7 @@ export function oracleDecisionProvider(example: CorpusExample, input: RoutingInp
       const h = sectionHandle(Number(section[1]))
       if (expect.answers && h === expect.answers) return noul(true)
       if (expect.ambiguous?.includes(h)) return noul('unsure')
-      if (targets?.includes(h)) return noul(true)
+      if (targets?.includes(h)) return noul(expect.joinsLines ? 'unsure' : true)
       return expect.context?.includes(h) ? { type: 'noul', probability: PLAUSIBLE } : noul(false)
     }
     const together = /^j(\d+)$/.exec(question)
