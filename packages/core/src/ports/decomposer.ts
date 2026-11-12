@@ -59,10 +59,18 @@ export interface Decomposition {
   readonly fragments: readonly DecomposedFragment[]
   /**
    * Set when the message relates its outputs to one another (an explicit
-   * order, a combined limit, an integrated presentation). A requirement that
-   * applies to each part separately is not a barrier (Q25).
+   * order, an integrated presentation). A requirement that applies to each
+   * part separately is not a barrier (Q25).
    */
   readonly barrier: WholeRequestBarrier | null
+  /**
+   * The phrase, in the user's words, when the message sets one total output
+   * limit across its parts ("under 100 words total"); otherwise null. Such a
+   * message is atomic (Q102): the decision gate keeps it so before the
+   * decomposer is asked, and core routes it atomic when only the decomposer
+   * saw the limit. A limit for each part ("each under 100 words") is not one.
+   */
+  readonly combinedLimit: string | null
   /** Fragment keys in the output order the user asked for, when the barrier is an explicit order (Q18). */
   readonly outputOrder: readonly string[] | null
 }

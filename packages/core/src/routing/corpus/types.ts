@@ -58,6 +58,14 @@ export interface CorpusExpectation {
   /** Order of the units in the plan, by part index (topological, Q53). */
   readonly order?: readonly number[]
   readonly barrier?: boolean
+  /**
+   * The message sets one combined total output limit (Q102): the oracle
+   * answers that its subjects are separable and that it sets such a limit,
+   * and the label says what routing makes of that.
+   */
+  readonly combinedLimit?: boolean
+  /** Whether the decomposer is asked: false for a message the gate keeps atomic (Q102). */
+  readonly decomposed?: boolean
   /** A shared requirement is asked about once for the parts it applies to. */
   readonly sharedClarification?: boolean
   /** The message makes a requirement conversation-wide (Q17). */
@@ -84,6 +92,8 @@ export interface ReferenceDecomposition {
   readonly barrier?: WholeRequestBarrier
   /** Fragment indexes in the output order the user asked for. */
   readonly outputOrder?: readonly number[]
+  /** The combined total output limit in the user's words (Q102). */
+  readonly combinedLimit?: string
 }
 
 export interface CorpusExample {

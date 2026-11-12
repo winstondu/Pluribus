@@ -1,6 +1,6 @@
 import { act, screen, waitFor } from '@testing-library/react'
 import { describe, expect, test } from 'vitest'
-import { useAttempt, useSection, useTranscriptOrder } from '@/backend'
+import { createBackendStore, useAttempt, useSection, useTranscriptOrder } from '@/backend'
 import { createFixtureBackend, fx, type Fixture } from '@/fixtures'
 import { renderWithBackend } from '@/test/render'
 
@@ -73,5 +73,43 @@ describe('backend store', () => {
       await backend.send({ type: 'delete-conversation', conversationId: initial.conversationId })
     })
     await waitFor(() => expect(store.getState().activeConversationId).toBe(other.conversationId))
+  })
+
+  test('Q99 · a second tab stands by in the already-open state and becomes ready when ownership is released to it', async () => {
+    const backend = createFixtureBackend(fixture, { timers: false })
+    let released: () => void = () => {}
+    // The port client's `ready`: pending while another tab holds the backend lock.
+    const ready = new Promise<void>((resolve) => (released = resolve))
+    const store = createBackendStore(backend, { ready })
+    store.setStatus('standby', 'another-tab')
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(store.getState().status).toBe('standby')
+    expect(store.getState().app).toBeNull()
+    released()
+    await waitFor(() => expect(store.getState().status).toBe('ready'))
+    expect(store.getState().app?.conversations.length).toBeGreaterThan(0)
+    expect(store.getState().statusDetail).toBeNull()
+    store.dispose()
+  })
+
+  test('Q100 · opening another conversation only changes what is shown: no command reaches the backend, so work in the previous one goes on', async () => {
+    const other = fx.conversation('second').build()
+    const backend = createFixtureBackend({ ...fixture, others: [other] })
+    const { store, ready } = renderWithBackend(<Order />, { client: backend })
+    await act(() => ready)
+    const before = backend.sent.length
+    await act(async () => {
+      store.openConversation(other.conversationId)
+    })
+    await waitFor(() => expect(store.getState().conversation?.conversationId).toBe(other.conversationId))
+    expect(backend.sent.slice(before)).toEqual([])
+    // Coming back shows the first conversation as the backend has it.
+    await act(async () => {
+      store.openConversation(initial.conversationId)
+    })
+    await waitFor(() => expect(store.getState().conversation?.conversationId).toBe(initial.conversationId))
+    expect(backend.sent.slice(before)).toEqual([])
   })
 })

@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'vitest'
-import type { AttemptStarted } from '@committee/protocol'
+import type { AttemptStarted, DirectiveId } from '@committee/protocol'
 import { answer } from '../../testing'
 import { routingScenario } from './helpers'
 
-/** D1–D4 (02 · "Messages and decomposition"), through the real routing pipeline over scripted decisions. */
+/** D1–D5 (02 · "Messages and decomposition"), through the real routing pipeline over scripted decisions. */
 
 const REC = 'Recommend a laptop for programming, with reasons'
 
@@ -85,8 +85,9 @@ describe('messages and decomposition', () => {
     expect(response?.grouped).toBe(true)
   })
 
-  test('D3 · with an output-order qualifier on that request, the translation does not start before A completes', async () => {
-    const s = await routingScenario()
+  test('D3 · with ordered-message decomposition enabled and an output-order qualifier on that request, the translation does not start before A completes', async () => {
+    // Enabled is the default (Q104); stated here so the condition reads as the spec words it.
+    const s = await routingScenario({ settings: { routing: { orderedMessages: 'decompose' } } })
     s.t.model.script(REC, answer('Get a ThinkPad.', 100, 3_000))
     await s.send(REC)
     const text = 'Summarize that recommendation and separately translate this menu: soup, bread, but put the translation first'
@@ -121,6 +122,117 @@ describe('messages and decomposition', () => {
     const snap = await s.t.snapshot(s.c)
     const response = snap.transcript.responses[s.state().messages[s.d('summary').messageId]?.initialResponseId ?? '']
     expect(response?.sectionIds).toEqual([s.d('menu translation').sectionId, s.d('summary').sectionId])
+  })
+
+  test('D3 (atomic) · with ordered-message decomposition off, the ordered request is one directive: no split, no barrier (Q104)', async () => {
+    const s = await routingScenario({ settings: { routing: { orderedMessages: 'atomic' } } })
+    s.t.model.script(REC, answer('Get a ThinkPad.', 100, 3_000))
+    await s.send(REC)
+    const text = 'Summarize that recommendation and separately translate this menu: soup, bread, but put the translation first'
+    await s.send(
+      text,
+      {
+        composite: 0.9,
+        ordered: 0.9,
+        message: { relation: 'dependent', targets: { 'Recommend a laptop for programming, with…': 0.9 }, needs: { 'Recommend a laptop for programming, with…': 0.9 } },
+      },
+      {
+        decompose: [
+          { part: 'Summarize that recommendation', instruction: 'Summarize the laptop recommendation.', label: 'summary' },
+          { part: 'translate this menu: soup, bread', instruction: 'Translate this menu: soup, bread.', label: 'menu translation' },
+        ],
+        extra: { barrier: { reason: 'explicit-order', qualifier: 'put the translation first' }, outputOrder: [1, 0] },
+      },
+    )
+    // The decomposer finds the order and the decision model confirms it; the message is then routed as one request.
+    expect(s.t.decomposer.requests).toHaveLength(1)
+    expect(s.t.decisions.requests.flatMap((r) => Object.keys(r.questions))).toContain('ordered')
+    const message = Object.values(s.state().messages).find((m) => m.text === text)
+    expect(message?.directiveIds).toHaveLength(1)
+    expect(message?.decision?.composition.value).toBe('atomic')
+    expect(message?.decision?.explanation).toContain('ordered messages are kept atomic')
+    expect(Object.keys(s.state().decompositions)).toHaveLength(0)
+    const one = s.directive(message?.directiveIds[0] ?? ('' as DirectiveId))
+    expect(one.instruction).toBe(text)
+    expect(one.heldByBarrier).toBe(false)
+    // The one request needs the recommendation, so it waits for it like any dependent request.
+    expect(one.state).toBe('dependency-queued')
+    await s.t.advance(3_200)
+    expect(s.directive(one.id).state).toBe('completed')
+
+    // A sequence of tasks the decomposer gave an order, not confirmed as an order of presentation, is decomposed.
+    const sequence = 'Find three good neighborhoods in Kyoto, and then make a two-day plan around the best one'
+    await s.send(sequence, { composite: 0.9, ordered: 0.2, parts: [{ relation: 'new' }, { relation: 'dependent', after: { 1: 0.9 } }] }, {
+      decompose: [
+        { part: 'Find three good neighborhoods in Kyoto', label: 'neighborhoods' },
+        { part: 'make a two-day plan around the best one', label: 'two-day plan', after: [0] },
+      ],
+      extra: { barrier: { reason: 'explicit-order', qualifier: 'and then' }, outputOrder: [0, 1] },
+    })
+    const sequenced = Object.values(s.state().messages).find((m) => m.text === sequence)
+    expect(s.state().decompositions[sequenced?.id ?? '']?.presentation).toBe('split-messages')
+    expect(s.d('two-day plan').heldByBarrier).toBe(false)
+
+    // A message with no output order is still decomposed under this setting.
+    const plain = 'Explain tides and separately explain eclipses'
+    await s.send(plain, { composite: 0.9, parts: [{ relation: 'new' }, { relation: 'new' }] }, {
+      decompose: [
+        { part: 'Explain tides', label: 'tides' },
+        { part: 'explain eclipses', label: 'eclipses' },
+      ],
+    })
+    expect(Object.values(s.state().messages).find((m) => m.text === plain)?.directiveIds).toHaveLength(2)
+  })
+
+  test('D5 · a combined total output limit keeps otherwise separable work atomic; independent per-part limits still permit decomposition (Q102)', async () => {
+    const s = await routingScenario()
+    // Separable subjects under one total limit: one directive that carries the limit, and no decomposition call.
+    const total = 'Explain photosynthesis and translate this menu: soup, bread. Keep both answers under 100 words total.'
+    s.t.model.script(total, answer('Plants turn light into sugar. Soupe, pain.', 10, 20))
+    // No decomposition is scripted: a call to the decomposer would fail the routing.
+    await s.send(total, { composite: 0.9, combinedLimit: 0.9, message: { relation: 'new' } })
+    expect(s.t.decomposer.requests).toHaveLength(0)
+    const atomic = Object.values(s.state().messages).find((m) => m.text === total)
+    expect(atomic?.directiveIds).toHaveLength(1)
+    expect(atomic?.decision?.composition.value).toBe('atomic')
+    expect(atomic?.decision?.explanation).toContain('combined total output limit')
+    const one = s.directive(atomic?.directiveIds[0] ?? ('' as DirectiveId))
+    expect(one.instruction).toBe(total)
+    await s.t.advance(50)
+    expect(one.id && s.directive(one.id).state).toBe('completed')
+    const input = s.state().attempts[s.directive(one.id).attemptIds[0] ?? '']?.context.messages.map((m) => m.content).join('\n') ?? ''
+    expect(input).toContain('under 100 words total')
+
+    // The same subjects with a limit for each answer: decomposed, and no barrier.
+    const each = 'Explain photosynthesis and translate this menu: soup, bread. Keep each answer under 100 words.'
+    await s.send(each, { composite: 0.9, combinedLimit: 0.1, parts: [{ relation: 'new' }, { relation: 'new' }] }, {
+      decompose: [
+        { part: 'Explain photosynthesis', label: 'photosynthesis', requirements: [{ text: 'Under 100 words', part: 'Keep each answer under 100 words' }] },
+        { part: 'translate this menu: soup, bread', label: 'menu translation', requirements: [{ text: 'Under 100 words', part: 'Keep each answer under 100 words' }] },
+      ],
+    })
+    expect(s.t.decomposer.requests).toHaveLength(1)
+    expect(s.d('photosynthesis').requirements.map((r) => r.text)).toEqual(['Under 100 words'])
+    expect(s.d('menu translation').heldByBarrier).toBe(false)
+    const split = Object.values(s.state().messages).find((m) => m.text === each)
+    expect(split?.directiveIds).toHaveLength(2)
+    expect(s.state().decompositions[split?.id ?? '']?.barrier).toBeNull()
+  })
+
+  test('D5 (decomposer) · a combined limit only the decomposer reports still routes the message as one request', async () => {
+    const s = await routingScenario()
+    const total = 'Explain tides and explain eclipses, 150 words altogether'
+    await s.send(total, { composite: 0.9, combinedLimit: 0.2, parts: [{ relation: 'new' }, { relation: 'new' }] }, {
+      decompose: [
+        { part: 'Explain tides', label: 'tides' },
+        { part: 'explain eclipses', label: 'eclipses' },
+      ],
+      extra: { combinedLimit: '150 words altogether' },
+    })
+    const message = Object.values(s.state().messages).find((m) => m.text === total)
+    expect(message?.directiveIds).toHaveLength(1)
+    expect(s.directive(message?.directiveIds[0] ?? ('' as DirectiveId)).instruction).toBe(total)
+    expect(Object.keys(s.state().decompositions)).toHaveLength(0)
   })
 
   test('D4 · undo split is unavailable once any split message shows answer text or has a reply; before that, it stops running attempts and restarts one atomic request', async () => {

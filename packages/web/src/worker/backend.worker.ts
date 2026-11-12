@@ -8,6 +8,7 @@ import {
   createOpenRouterModelProvider,
 } from '@committee/providers'
 import { openIndexedDbStorage, type CommitteeStorage } from '@committee/storage'
+import { runAsOwner, type OwnershipLocks } from './ownership'
 import { createSystemIds, systemClock, systemTimers } from './system'
 
 /**
@@ -15,15 +16,13 @@ import { createSystemIds, systemClock, systemTimers } from './system'
  * IndexedDB storage, served to the page over this Worker's port.
  *
  * Exactly one executor may run over the local stores (PLAN §2, "Interruption
- * and the single executor"). The Worker asks for the `committee-backend` Web
- * Lock before it opens storage. If another tab holds it, the page is told
- * `standby` and this Worker keeps waiting; it builds and starts the backend
- * when the other tab closes and its lock is released. The lock is held for
- * the Worker's lifetime: closing the tab ends the Worker, which is the
- * interrupted case, recovered by the next `start()`.
+ * and the single executor"; Q99). The Worker asks for the `committee-backend`
+ * Web Lock before it opens storage (`ownership.ts`). If another tab holds it,
+ * the page is told `standby` and this Worker keeps waiting; it builds and
+ * starts the backend when the other tab closes and its lock is released. The
+ * lock is held for the Worker's lifetime: closing the tab ends the Worker,
+ * which is the interrupted case, recovered by the next `start()`.
  */
-
-export const BACKEND_LOCK = 'committee-backend'
 
 const scope = self as unknown as DedicatedWorkerGlobalScope
 const port = scope as unknown as WirePort<ClientMessage, BackendMessage>
@@ -74,24 +73,8 @@ async function serveHoldingLock(): Promise<void> {
   await new Promise<never>(() => {})
 }
 
-async function main(): Promise<void> {
-  const locks = scope.navigator.locks as LockManager | undefined
-  if (!locks) {
-    // No Web Locks (very old browsers): there is no way to know about another tab.
-    await serveHoldingLock()
-    return
-  }
-  let acquired = false
-  await locks.request(BACKEND_LOCK, { ifAvailable: true }, async (lock) => {
-    if (lock === null) return
-    acquired = true
-    await serveHoldingLock()
-  })
-  if (acquired) return
-  scope.postMessage({ kind: 'standby', reason: 'another-tab' } satisfies BackendMessage)
-  await locks.request(BACKEND_LOCK, async () => {
-    await serveHoldingLock()
-  })
-}
-
-void main().catch((error: unknown) => rejectBackend(error))
+const locks = scope.navigator.locks as (LockManager & OwnershipLocks) | undefined
+void runAsOwner(locks, {
+  standby: () => scope.postMessage({ kind: 'standby', reason: 'another-tab' } satisfies BackendMessage),
+  serve: serveHoldingLock,
+}).catch((error: unknown) => rejectBackend(error))

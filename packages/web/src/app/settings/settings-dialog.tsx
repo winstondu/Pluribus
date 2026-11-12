@@ -8,6 +8,7 @@ import {
   type DebugViewToggle,
   type DecisionThresholds,
   type DecisionTokenBudget,
+  type OrderedMessageHandling,
   type ReferentStrategyName,
   type RetryPolicy,
   type Settings,
@@ -339,8 +340,23 @@ function CommittedSlider(props: {
 
 // ───────────────────────── models ─────────────────────────
 
+/** The decomposer option for messages that ask for their outputs in an explicit order (Q104). */
+const ORDERED_MESSAGES: readonly { value: OrderedMessageHandling; label: string; description: string }[] = [
+  {
+    value: 'decompose',
+    label: 'Decompose',
+    description: 'Splits the message like any other; the whole request waits until every part can start, so the outputs keep the order asked for. The default.',
+  },
+  {
+    value: 'atomic',
+    label: 'Keep atomic',
+    description: 'Answers the message as one request, in one answer that follows the order itself.',
+  },
+]
+
 function ModelSettingsPanel({ settings }: { settings: Settings }) {
   const change = useChangeSettings()
+  const orderedLabel = useId()
   return (
     <Panel title="Models" description="One OpenRouter model per role. A change applies to runs that start after it.">
       {MODEL_ROLES.map((entry) => (
@@ -353,6 +369,20 @@ function ModelSettingsPanel({ settings }: { settings: Settings }) {
           />
         </Row>
       ))}
+      <Row
+        label="Ordered-message decomposition"
+        labelId={orderedLabel}
+        description="For a message that asks for its answers in a set order, such as “but put the translation first”. A combined limit like “under 100 words total” always keeps a message as one request."
+        stacked
+      >
+        <ChoiceCards
+          labelledBy={orderedLabel}
+          options={ORDERED_MESSAGES}
+          value={settings.routing.orderedMessages}
+          onChoose={(value) => void change({ routing: { orderedMessages: value } })}
+          className="sm:grid-cols-2"
+        />
+      </Row>
     </Panel>
   )
 }

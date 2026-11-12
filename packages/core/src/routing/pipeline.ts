@@ -72,7 +72,11 @@ import { MAX_SECTIONS, MIN_SECTIONS, decisionContextOf, describeState, numberedA
  *    itself are asked.
  * 2. Generative decomposition, only when the gate judges the message
  *    composite (or it states a conversation-wide requirement, whose text
- *    only the decomposer may write). Then a second batched call asks the
+ *    only the decomposer may write). A message that sets one combined total
+ *    output limit is atomic however separable its subjects: the gate asks,
+ *    and it is not decomposed (Q102). While the ordered-message setting keeps
+ *    ordered messages atomic, a message the decomposer finds an explicit
+ *    output order in is routed as one request, with no barrier (Q104). Then a second batched call asks the
  *    unit question set per fragment over the same candidates, with the
  *    decomposer's candidate dependencies between fragments, the shared
  *    requirements, and its proposed whole-request barrier: this is the
@@ -199,6 +203,8 @@ async function routeMessage(deps: Deps, input: RoutingInput, signal: CancelSigna
     const gate = new Batch()
     if (!forced) {
       gate.noul('composite', 'Does the new message contain two or more independent requests that could each be answered on its own? Several topics, a requested contrast, or one integrated output are one request.')
+      // A combined total output limit keeps the message atomic, however separable its subjects (Q102).
+      gate.noul('combinedlimit', COMBINED_LIMIT_QUESTION)
       gate.noul(
         'sessionwide',
         'Does the user explicitly say that a requirement in the new message applies to the whole conversation from now on ("from now on", "in this chat", "for all answers")? A requirement for this request alone does not count.',
@@ -256,7 +262,9 @@ async function routeMessage(deps: Deps, input: RoutingInput, signal: CancelSigna
   }
 
   // ── 2. Generative decomposition, only when needed ──
-  const isComposite = !forced && composite !== null && composite >= t.composite
+  // A combined total output limit makes the message one request: it is not decomposed (Q102).
+  const keptAtomic: KeptAtomic | null = !forced && (g.noul('combinedlimit') ?? 0) >= t.composite ? 'combined-limit' : null
+  const isComposite = !forced && keptAtomic === null && composite !== null && composite >= t.composite
   let decomposition: Decomposition | null = null
   if (!forced && (isComposite || sessionWide || changedRequirements.length > 0)) {
     const candidates: DecompositionCandidate[] = [
@@ -301,7 +309,24 @@ async function routeMessage(deps: Deps, input: RoutingInput, signal: CancelSigna
   const requirements = new RequirementBook(input, decomposition, confirmed)
   const compositeDecided: Decided<'atomic' | 'composite'> = { value: 'atomic', confidence: composite }
 
-  if (isComposite && decomposition && decomposition.fragments.length >= 2) {
+  // What only the decomposer sees: a combined limit the gate missed (Q102), and an explicit output
+  // order, which keeps the message one request while ordered messages are kept atomic (Q104). The
+  // decomposer also proposes an order for a plain sequence of tasks ("…, and then …"), so the order
+  // is confirmed with the decision model first, as the barrier is for a decomposed message.
+  let seenByDecomposer: KeptAtomic | null = null
+  if (isComposite && decomposition) {
+    if (decomposition.combinedLimit !== null) seenByDecomposer = 'combined-limit'
+    else if (input.settings.routing.orderedMessages === 'atomic' && decomposition.barrier?.reason === 'explicit-order' && !orderFollowsDependencies(decomposition)) {
+      const batch = new Batch()
+      batch.noul('ordered', orderedQuestion(decomposition.barrier.qualifier))
+      const result = await record.ask(deps.decisionProvider, input.settings.models.decision, describeState(input, supplied, subject), batch, signal)
+      if (!result.ok) return failed(result.error)
+      record.add(result.answers)
+      if ((result.answers.noul('ordered') ?? 0) >= t.dependency) seenByDecomposer = 'ordered'
+    }
+  }
+  const atomicBecause = keptAtomic ?? seenByDecomposer
+  if (isComposite && atomicBecause === null && decomposition && decomposition.fragments.length >= 2) {
     return routeComposite(deps, input, signal, { given, record, decomposition, requirements, composite, strategy, treeWalk })
   }
 
@@ -370,7 +395,7 @@ async function routeMessage(deps: Deps, input: RoutingInput, signal: CancelSigna
   const affected = await affectedWork(deps, input, signal, supplied, revisions, record)
   if (!affected.ok) return failed(affected.error)
   const plan: RoutingPlan = {
-    decision: decisionRecord(input, record, compositeDecided, decisions, units.length === 0 && revision ? 'A correction of earlier work.' : 'One request.'),
+    decision: decisionRecord(input, record, compositeDecided, decisions, units.length === 0 && revision ? 'A correction of earlier work.' : `One request${atomicBecause ? KEPT_ATOMIC_NOTE[atomicBecause] : ''}.`),
     composition: 'atomic',
     units,
     barrier: null,
@@ -383,6 +408,33 @@ async function routeMessage(deps: Deps, input: RoutingInput, signal: CancelSigna
   }
   return finish(input, plan)
 }
+
+/** Why a message whose subjects could be answered separately is one request all the same. */
+type KeptAtomic = 'combined-limit' | 'ordered'
+
+const KEPT_ATOMIC_NOTE: { readonly [K in KeptAtomic]: string } = {
+  'combined-limit': ': a combined total output limit keeps it atomic (Q102)',
+  ordered: ': ordered messages are kept atomic by the decomposer setting (Q104)',
+}
+
+/**
+ * Whether the output order the decomposer proposes says nothing the parts'
+ * dependencies do not: each part in it needs the one before. That is a
+ * sequence of tasks ("find X, then plan around it"), not an order of
+ * presentation, and it does not keep the message atomic.
+ */
+function orderFollowsDependencies(decomposition: Decomposition): boolean {
+  const order = decomposition.outputOrder ?? decomposition.fragments.map((f) => f.key)
+  const byKey = new Map(decomposition.fragments.map((f) => [f.key, f]))
+  return order.length >= 2 && order.slice(1).every((key, i) => byKey.get(key)?.dependsOnFragments.includes(order[i] ?? '') ?? false)
+}
+
+const orderedQuestion = (qualifier: string): string =>
+  `Does the new message ask for its answers to be shown to the user in a set order (${qualifier ? `"${qualifier}"` : 'for example "put the translation first"'}), rather than describe a sequence of tasks in which one uses another's result?`
+
+const COMBINED_LIMIT_QUESTION =
+  'Does the new message set one limit on its answers taken together, such as a total length for all of them ("under 100 words total", "200 words altogether")? A limit that applies to each answer on its own ("each answer under 100 words") does not count.'
+
 
 function finish(input: RoutingInput, plan: RoutingPlan): RoutingOutcome {
   const valid = validatePlan(input, plan)
@@ -449,7 +501,7 @@ async function routeComposite(deps: Deps, input: RoutingInput, signal: CancelSig
     if (decomposition.barrier) {
       batch.noul(
         'barrier',
-        `Does the message relate its parts' outputs to one another (${decomposition.barrier.qualifier ? `"${decomposition.barrier.qualifier}"` : 'an explicit order, a combined limit, or one integrated presentation'}), rather than give requirements that apply to each part separately?`,
+        `Does the message relate its parts' outputs to one another (${decomposition.barrier.qualifier ? `"${decomposition.barrier.qualifier}"` : 'an explicit order or one integrated presentation'}), rather than give requirements that apply to each part separately?`,
       )
     }
     const subject = [

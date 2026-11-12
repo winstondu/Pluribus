@@ -42,6 +42,7 @@ function proposal(overrides: Record<string, unknown> = {}) {
     ],
     barrier: null,
     outputOrder: null,
+    combinedLimit: null as string | null,
     ...overrides,
   }
 }
@@ -90,14 +91,26 @@ describe('OpenRouter decomposer · decompose', () => {
 
   it('keeps a barrier with its output order only for an explicit order', async () => {
     const ordered = proposal({ barrier: { reason: 'explicit-order', qualifier: 'put the translation first' }, outputOrder: ['f2', 'f1'] })
-    const combined = proposal({ barrier: { reason: 'combined-limit', qualifier: 'under 100 words total' }, outputOrder: ['f2', 'f1'] })
+    const integrated = proposal({ barrier: { reason: 'integrated-presentation', qualifier: 'as one table' }, outputOrder: ['f2', 'f1'] })
     const a = await setup(() => completion(JSON.stringify(ordered))).decomposer.decompose(REQUEST, NEVER_CANCELLED)
-    const b = await setup(() => completion(JSON.stringify(combined))).decomposer.decompose(REQUEST, NEVER_CANCELLED)
+    const b = await setup(() => completion(JSON.stringify(integrated))).decomposer.decompose(REQUEST, NEVER_CANCELLED)
     expect(a.ok && [a.decomposition.barrier, a.decomposition.outputOrder]).toEqual([
       { reason: 'explicit-order', qualifier: 'put the translation first' },
       ['f2', 'f1'],
     ])
-    expect(b.ok && [b.decomposition.barrier?.reason, b.decomposition.outputOrder]).toEqual(['combined-limit', null])
+    expect(b.ok && [b.decomposition.barrier?.reason, b.decomposition.outputOrder]).toEqual(['integrated-presentation', null])
+  })
+
+  it('reports a combined total output limit apart from the barrier, which no longer has that reason (Q102)', async () => {
+    const combined = proposal({ combinedLimit: ' under 100 words total ' })
+    const result = await setup(() => completion(JSON.stringify(combined))).decomposer.decompose(REQUEST, NEVER_CANCELLED)
+    expect(result.ok && [result.decomposition.combinedLimit, result.decomposition.barrier]).toEqual(['under 100 words total', null])
+    const legacy = proposal({ barrier: { reason: 'combined-limit', qualifier: 'under 100 words total' } })
+    const again = await setup(
+      () => completion(JSON.stringify(legacy)),
+      () => completion(JSON.stringify(legacy)),
+    ).decomposer.decompose(REQUEST, NEVER_CANCELLED)
+    expect(again.ok).toBe(false)
   })
 
   it('passes dependencies on fragments and supplied candidates through', async () => {
@@ -213,6 +226,7 @@ describe('OpenRouter decomposer · decompose', () => {
       ],
       barrier: null,
       outputOrder: null,
+      combinedLimit: null,
     }
     const result = await setup(() => completion(JSON.stringify(p))).decomposer.decompose({ ...REQUEST, text, candidates: [] }, NEVER_CANCELLED)
     expect(result.ok && result.decomposition.fragments.map((f) => f.requirements[0]?.scope)).toEqual(['session-wide', 'session-wide'])

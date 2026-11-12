@@ -17,7 +17,8 @@ const routingScenario = () => baseScenario({ modules: [engineModule, routingModu
 describe('second review: barrier, Undo split, targets', () => {
   test('D3 (review) · a whole-request barrier on a sequential composite does not make its first part wait for itself', async () => {
     const s = await routingScenario()
-    const text = 'Find three good neighborhoods in Kyoto, then make a two-day plan around the best one, under 200 words in total'
+    // An explicit output order is the barrier here; a combined total limit no longer makes one: it keeps a message atomic (Q102).
+    const text = 'Find three good neighborhoods in Kyoto, then make a two-day plan around the best one, and show me the plan first'
     s.t.model.script('Find three good neighborhoods in Kyoto', answer('Gion, Higashiyama, Arashiyama.', 10, 50))
     s.t.model.script('make a two-day plan', answer('Day one…', 10, 50))
     await s.send(text, { composite: 0.9, barrier: 0.9, parts: [{ relation: 'new' }, { relation: 'dependent', after: { 1: 0.9 } }] }, {
@@ -25,7 +26,7 @@ describe('second review: barrier, Undo split, targets', () => {
         { part: 'Find three good neighborhoods in Kyoto', label: 'neighborhoods' },
         { part: 'make a two-day plan around the best one', label: 'two-day plan', after: [0] },
       ],
-      extra: { barrier: { reason: 'combined-limit', qualifier: 'under 200 words in total' } },
+      extra: { barrier: { reason: 'explicit-order', qualifier: 'show me the plan first' }, outputOrder: [1, 0] },
     })
     expect(s.state().decompositions[Object.keys(s.state().decompositions)[0] ?? '']?.barrier).not.toBeNull()
     await s.t.advance(5_000)
@@ -236,7 +237,7 @@ describe('second review: routing failures', () => {
     t.decisions.answerWith(() => {
       calls += 1
       if (calls === 1) return { ok: false, error: providerError('rate-limited', 'Too many requests', { httpStatus: 429, retryAfterMs: 1_000 }) }
-      return { ok: true, model: 'typesafe/jev-1.13-20260917', answers: { composite: { type: 'noul', probability: 0.05 }, sessionwide: { type: 'noul', probability: 0.05 }, m_clarify: { type: 'noul', probability: 0.05 }, m_why: { type: 'choice', choice: 'missing', confidence: 0.9, probabilities: {} } } as never, usage: null }
+      return { ok: true, model: 'typesafe/jev-1.13-20260917', answers: { composite: { type: 'noul', probability: 0.05 }, combinedlimit: { type: 'noul', probability: 0.05 }, sessionwide: { type: 'noul', probability: 0.05 }, m_clarify: { type: 'noul', probability: 0.05 }, m_why: { type: 'choice', choice: 'missing', confidence: 0.9, probabilities: {} } } as never, usage: null }
     })
     const c = await t.createConversation()
     await t.submit(c, 'Why is the sky blue?')

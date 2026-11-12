@@ -75,14 +75,21 @@ function totals(examples: readonly MeasuredExample[]): Totals {
  * `long-chain-unrelated`, `long-roots-old-section`, 21 more questions in all. With the earlier estimate: tree walk 956
  * questions, 308,442 characters, 72,306 tokenizer, 109,913 calibrated, 100,067 estimate; rules 978, 308,393, 72,259,
  * 108,866, 99,304; one pass the same but its estimate, 85,896.
+ *
+ * Recorded again when the decision gate began asking whether a message sets one combined total output limit (Q102,
+ * `combinedlimit`, one question in every gate request), and the corpus's combined-limit example became two atomic ones:
+ * no request count changed, 48 questions and about 3,000 tokenizer tokens more in each configuration. Before it: one
+ * pass 59 passed, 922 questions, 261,560 characters, 60,559 tokenizer, 93,352 calibrated, 115,370 estimate; tree walk
+ * 62, 977, 311,501, 72,991, 110,797, 135,719; rules 62, 999, 311,452, 72,944, 109,750, 134,559. The live figures in the
+ * comments are from before it.
  */
 const RECORDED: { readonly [N in MeasuredConfiguration]: Totals } = {
   // Live: 74 requests, 92,592 tokens reported. Calibrated is 0.8% above it; the estimate 24.6% above.
-  'one pass': { passed: 59, requests: 74, questions: 922, characters: 261_560, tokenizer: 60_559, calibrated: 93_352, estimate: 115_370 },
+  'one pass': { passed: 60, requests: 74, questions: 970, characters: 274_744, tokenizer: 63_494, calibrated: 96_883, estimate: 119_955 },
   // Live: 85 requests, 109,128 tokens reported (108,412 with the earlier estimate). Calibrated is 1.5% above it; the estimate 24.4% above.
-  'tree walk, long runs searched': { passed: 62, requests: 86, questions: 977, characters: 311_501, tokenizer: 72_991, calibrated: 110_797, estimate: 135_719 },
+  'tree walk, long runs searched': { passed: 63, requests: 86, questions: 1025, characters: 324_685, tokenizer: 75_926, calibrated: 114_326, estimate: 140_304 },
   // Live: 82 requests, 108,557 tokens reported (107,841 with the earlier estimate). Calibrated is 1.1% above it; the estimate 24.0% above.
-  'selected by rules (the default)': { passed: 62, requests: 82, questions: 999, characters: 311_452, tokenizer: 72_944, calibrated: 109_750, estimate: 134_559 },
+  'selected by rules (the default)': { passed: 63, requests: 82, questions: 1047, characters: 324_636, tokenizer: 75_879, calibrated: 113_280, estimate: 139_144 },
 }
 
 const configurations = Object.keys(MEASURED_CONFIGURATIONS) as MeasuredConfiguration[]
@@ -146,10 +153,10 @@ describe('decision tokens, measured with a tokenizer over the Decisions mock', (
     const est = { min: Math.min(...versusEstimate), mean: versusEstimate.reduce((s, r) => s + r, 0) / versusEstimate.length, max: Math.max(...versusEstimate) }
     const round = (x: number): number => Math.round(x * 1000) / 1000
     // The three configurations' requests: the tokenizer counts 79% to 104% of characters ÷ 4, 93% over all of them.
-    expect({ requests: calls.length, min: round(all.min), mean: round(all.mean), max: round(all.max), total: round(total) }).toEqual({ requests: 242, min: 0.793, mean: 0.897, max: 1.035, total: 0.934 })
+    expect({ requests: calls.length, min: round(all.min), mean: round(all.mean), max: round(all.max), total: round(total) }).toEqual({ requests: 242, min: 0.817, mean: 0.9, max: 1.035, total: 0.932 })
     // Calibrated against the guard's estimate of the same requests: always below it, at 78% to 89% of it (it was 0.994 to
-    // 1.223 with the estimate before 2026-11-12's refit).
-    expect({ min: round(est.min), mean: round(est.mean), max: round(est.max) }).toEqual({ min: 0.78, mean: 0.812, max: 0.885 })
+    // 1.223 with the estimate before 2026-11-12's refit; 0.78, 0.812, 0.885 before the gate's combined-limit question).
+    expect({ min: round(est.min), mean: round(est.mean), max: round(est.max) }).toEqual({ min: 0.779, mean: 0.81, max: 0.885 })
   })
 })
 
@@ -228,12 +235,15 @@ describe('decision cost grid, measured with a tokenizer', () => {
 
 /** Recorded 2026-11-12 with the refitted estimate. Before it, the worst cell was 1.99× by estimate and 2.79× by tokenizer, and 208 of 360 cells were over 2× by tokenizer. */
 const RECORDED_WORST = {
-  byEstimate: { at: '50 × 300, nested forks, tree walk, runs listed', estimate: 6_123, ratio: 1.997, measured: 5_184, byTokenizer: 1.743 },
-  byTokenizer: { at: '8000 × 120, bushy, tree walk, runs listed', estimate: 2_486, ratio: 1.996, measured: 2_170, byTokenizer: 1.8 },
+  // With the gate's combined-limit question (Q102); before it: 50 × 300, nested forks, tree walk, runs listed, 6,123 estimated, 1.997, 5,184 calibrated, 1.743.
+  byEstimate: { at: '3300 × 300, nested forks, one pass', estimate: 6_114, ratio: 1.994, measured: 5_407, byTokenizer: 1.818 },
+  // Before it: 8000 × 120, bushy, tree walk, runs listed, 2,486 estimated, 1.996, 2,170 calibrated, 1.8.
+  byTokenizer: { at: '3300 × 300, nested forks, one pass', estimate: 6_114, ratio: 1.994, measured: 5_407, byTokenizer: 1.818 },
 }
 
 const RECORDED_FLOOR: { readonly [floor: number]: { cells: number; over: number; worst: string; byTokenizer: number; byEstimate: number } } = {
   // Every 120-token cell is below the floor and over 2× its own answer; against an answer of 135 tokens they are within it.
-  135: { cells: 120, over: 120, worst: '8000 × 120, nested forks, tree walk, runs listed', byTokenizer: 2.393, byEstimate: 2.627 },
-  155: { cells: 120, over: 120, worst: '8000 × 120, nested forks, one pass', byTokenizer: 2.723, byEstimate: 2.976 },
+  // With the gate's combined-limit question (Q102). Before it: 135, nested forks, tree walk, runs listed, 2.393 and 2.627; 155, nested forks, one pass, 2.723 and 2.976.
+  135: { cells: 120, over: 120, worst: '8000 × 120, bushy, one pass', byTokenizer: 2.357, byEstimate: 2.606 },
+  155: { cells: 120, over: 120, worst: '8000 × 120, bushy, tree walk, runs listed', byTokenizer: 2.725, byEstimate: 2.975 },
 }

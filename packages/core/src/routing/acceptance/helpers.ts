@@ -40,6 +40,10 @@ export interface MessageRules {
   /** Requirement text → probability that the user made it conversation-wide; defaults to `sessionwide`. */
   readonly sessionwideRequirements?: { readonly [text: string]: number }
   readonly barrier?: number
+  /** Probability that the message sets one combined total output limit (Q102). */
+  readonly combinedLimit?: number
+  /** Probability that the order the decomposer found is an order of presentation; asked only while ordered messages are kept atomic (Q104). */
+  readonly ordered?: number
   /** Shared requirement number (1-based) → probability that it is ambiguous. */
   readonly sharedClarify?: { readonly [n: number]: number }
   /** Consumer label → probability that the correction affects it. */
@@ -83,6 +87,8 @@ export function answerFrom(rules: { readonly [text: string]: MessageRules }) {
       if (id === 'composite') answers[id] = noul(r.composite)
       else if (id === 'sessionwide') answers[id] = noul(r.sessionwide)
       else if (id === 'barrier') answers[id] = noul(r.barrier)
+      else if (id === 'combinedlimit') answers[id] = noul(r.combinedLimit)
+      else if (id === 'ordered') answers[id] = noul(r.ordered)
       else if (/^rq\d+_sessionwide$/.test(id)) {
         const text = Object.keys(r.sessionwideRequirements ?? {}).find((x) => q.instructions.includes(`"${x}"`))
         answers[id] = noul(text ? r.sessionwideRequirements?.[text] : r.sessionwide)
@@ -133,7 +139,7 @@ export interface FragmentSpec {
 export function decomposition(
   text: string,
   fragments: readonly FragmentSpec[],
-  extra: { readonly barrier?: { readonly reason: 'explicit-order' | 'combined-limit' | 'integrated-presentation'; readonly qualifier: string }; readonly outputOrder?: readonly number[] } = {},
+  extra: { readonly barrier?: { readonly reason: 'explicit-order' | 'integrated-presentation'; readonly qualifier: string }; readonly outputOrder?: readonly number[]; readonly combinedLimit?: string } = {},
 ): DecomposeResult {
   return {
     ok: true,
@@ -151,6 +157,7 @@ export function decomposition(
       ),
       barrier: extra.barrier ?? null,
       outputOrder: extra.outputOrder ? extra.outputOrder.map((j) => `k${j}`) : null,
+      combinedLimit: extra.combinedLimit ?? null,
     },
   }
 }

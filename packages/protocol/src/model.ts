@@ -445,10 +445,11 @@ export type PrerequisiteRef =
 /**
  * Whole-request barrier (Q19, Q25): the message relates its outputs to one
  * another, so if any part is blocked every part waits. A requirement that
- * applies to each part separately creates no barrier.
+ * applies to each part separately creates no barrier. A combined total
+ * output limit is not a barrier: it keeps the message atomic (Q102).
  */
 export interface WholeRequestBarrier {
-  readonly reason: 'explicit-order' | 'combined-limit' | 'integrated-presentation'
+  readonly reason: 'explicit-order' | 'integrated-presentation'
   /** The qualifier in the user's words, for the queue item and the inspector. */
   readonly qualifier: string
 }

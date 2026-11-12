@@ -269,7 +269,6 @@ export function FragmentPanel(props: {
 
 const BARRIER_WORD = {
   'explicit-order': 'The message asks for its outputs in a set order',
-  'combined-limit': 'The message sets a limit across its outputs together',
   'integrated-presentation': 'The message asks for its outputs presented together',
 } as const
 
