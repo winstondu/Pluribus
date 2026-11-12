@@ -14,3 +14,4 @@
  * exposed by `@pluribus/core/ports`.
  */
 export * from './ports'
+export * from './engine'
