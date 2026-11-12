@@ -12,7 +12,7 @@ import {
   type SettingsPatch,
   type StreamFrame,
 } from '@pluribus/protocol'
-import type { Backend, CoreOptions } from '../src/ports'
+import type { Backend, CoreOptions, ReferentStrategy } from '../src/ports'
 import { createEngine, type EngineInternals } from '../src/engine/backend'
 import { defaultModules } from '../src/engine/engine-module'
 import type { CoreModule } from '../src/engine/module'
@@ -37,6 +37,8 @@ export interface TestBackendOverrides {
   readonly key?: boolean
   /** False to leave `deps.router` out, so a module's `createRouter` is used. */
   readonly useScriptedRouter?: boolean
+  /** Injected in place of the referent strategy that settings name (routing pipeline only). */
+  readonly referentStrategy?: ReferentStrategy
   // Reused across a simulated interruption:
   readonly clock?: FakeClock
   readonly model?: ScriptedModelProvider
@@ -117,6 +119,7 @@ export async function createTestBackend(overrides: TestBackendOverrides = {}): P
       timers: clock,
       ids,
       ...(overrides.useScriptedRouter === false ? {} : { router }),
+      ...(overrides.referentStrategy ? { referentStrategy: overrides.referentStrategy } : {}),
     },
     overrides.options,
     modules,

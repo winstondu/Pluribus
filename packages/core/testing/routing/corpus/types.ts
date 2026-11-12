@@ -62,6 +62,13 @@ export interface CorpusExpectation {
   readonly sharedClarification?: boolean
   /** The message makes a requirement conversation-wide (Q17). */
   readonly sessionWide?: boolean
+  /**
+   * Sections the message is about only through what was built on them: the
+   * line of work above a target. The oracle answers the question about each
+   * as plausible, below what makes a target. A tree walk descends along
+   * plausible lines only.
+   */
+  readonly context?: readonly Handle[]
 }
 
 /** A reference decomposition, so the decision model can be evaluated on its own. Parts are quoted from the message. */
@@ -89,5 +96,41 @@ export interface CorpusExample {
   /** Section handles the user replied to with "Reply to this". */
   readonly replyTo?: readonly Handle[]
   readonly decomposition?: ReferenceDecomposition
+  /**
+   * The work the message refers to is older than the pipeline's window of
+   * listed sections (`MAX_SECTIONS`): only a referent strategy that reaches
+   * beyond the window can route it as labelled. The label is still what
+   * routing should conclude.
+   */
+  readonly beyondWindow?: true
+  /**
+   * The work the message refers to lies below these sections, which the
+   * message does not itself refer to, and is not among the first-pass
+   * sections. A tree walk examines nothing below an unbranched run that is
+   * not plausible, so with decisions strictly as labelled it does not reach
+   * the referent. It does when the decision model finds these sections
+   * plausible (`CorpusExpectation.context`), or when a candidate source
+   * names the referent as a place to start.
+   */
+  readonly below?: readonly Handle[]
+  /** What routing should conclude: the default expectation, and the one every routing without its own expectation set is scored against. */
   readonly expect: CorpusExpectation
+  /**
+   * What routing should conclude when the tree walk runs with hop between
+   * branch points on, where that differs from `expect`
+   * (11 · "Referent strategies", DA3). Absent: `expect` holds with the hop
+   * too. The decisions stay those of `expect`: what the message refers to
+   * does not change, only where the hop places it.
+   */
+  readonly hop?: HopExpectation
+}
+
+/** Which expectations a routing is scored against: the default ones, or those for the tree walk with hop between branch points on. */
+export type ExpectationSet = 'default' | 'hop'
+
+/** An example's expectation under hop between branch points, where it differs: its parts replace those of the default expectation. */
+export interface HopExpectation {
+  /** Why the hop places it there, by the spec's rule. */
+  readonly note: string
+  readonly parts: readonly PartExpectation[]
 }

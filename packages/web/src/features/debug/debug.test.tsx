@@ -528,6 +528,11 @@ describe('run inspector', () => {
     expect(routing).toHaveTextContent('not a judgement that it was right')
     expect(routing).toHaveTextContent('confidence 0.89')
     expect(routing).toHaveTextContent(DEFAULT_SETTINGS.models.decision)
+    // Hop between branch points: which section was taken for which run, that it was not asked about by itself, and on what evidence.
+    const hop = within(routing).getByTestId('run-ends')
+    expect(hop).toHaveTextContent('Placed on itinerary, the last answer of a run of 2 · confidence 0.84')
+    expect(hop).toHaveTextContent('No answer inside the run was searched for, and this one was not asked about by itself: its context holds the whole run.')
+    expect(hop).toHaveTextContent('The run is trip brief to itinerary; the score is that of a question about 2 of its answers together, trip brief to itinerary.')
 
     await user.click(screen.getByRole('button', { name: 'Show in transcript' }))
     expect(ui.getState().reveal?.sectionId).toBe(fx.id('section', 'packing'))

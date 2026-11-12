@@ -31,6 +31,65 @@ export interface DecisionThresholds {
   readonly clarification: number
 }
 
+/**
+ * How routing decides which earlier work a message refers to and depends on
+ * The strategies sit behind one
+ * interface in core (`ReferentStrategy`); the rest of the pipeline does not
+ * know which is in use.
+ * - `one-pass`: the questions ride in the routing request the pipeline sends
+ *   anyway. No further request.
+ * - `tree-walk`: breadth-first over the context tree from each root, pruned
+ *   where a line of work is not relevant, one further request per branching
+ *   level. Long runs of only
+ *   children are searched (`treeWalk`).
+ */
+export type ReferentStrategyName = 'one-pass' | 'tree-walk'
+
+export const REFERENT_STRATEGY_NAMES: readonly ReferentStrategyName[] = ['one-pass', 'tree-walk']
+
+/**
+ * How the tree walk treats an unbranched run: the answers of one line of
+ * work between two places where it splits. Read by the `tree-walk`
+ * strategy only.
+ */
+export interface TreeWalkSettings {
+  /**
+   * Start at the trunk base. The trunk of a root is the run from the root
+   * down to the first answer where the line splits, or to its last answer
+   * when it never splits. On: only the base is asked about by itself at
+   * once; the answers above it are searched for the last relevant one
+   * (asked about in parts, and one by one only inside the latest part that
+   * is relevant), however few they are. Off: they are asked about one by
+   * one, unless the run is longer than `searchRunsOverTokens`.
+   */
+  readonly startAtTrunkBase: boolean
+  /**
+   * Hop between branch points. On: the walk does not look for the last
+   * relevant answer inside a run. A unit that refers to a run, and to
+   * nothing built on it, is placed on the run's last answer (or the deepest
+   * one a run's context allows), which was not asked about by itself: its
+   * context holds the whole run. The answers of the run that were not asked
+   * about yet are asked about in parts only, to learn whether the run is
+   * relevant. Fewer decision tokens; the answer then reads everything after
+   * the relevant part of the run. A correction keeps the search: it needs
+   * the exact answer it revises. Off: the last relevant answer of a run is
+   * searched for.
+   */
+  readonly hopBetweenBranchPoints: boolean
+  /**
+   * The size above which a run is searched whatever the two switches say,
+   * and the size of a part small enough to ask about answer by answer:
+   * the estimated input tokens of listing the answers one by one (about
+   * 125 for a full-length answer). Whole number ≥ 1.
+   */
+  readonly searchRunsOverTokens: number
+}
+
+export interface RoutingSettings {
+  readonly referentStrategy: ReferentStrategyName
+  readonly treeWalk: TreeWalkSettings
+}
+
 /** Views behind debug toggles (Q87, Q94). Margin rails, Focus and the split link are always on and have no toggle. */
 export interface DebugToggles {
   readonly miniMap: boolean
@@ -60,6 +119,7 @@ export interface Settings {
   readonly concurrencyLimit: number
   readonly models: ModelSettings
   readonly thresholds: DecisionThresholds
+  readonly routing: RoutingSettings
   readonly debug: DebugToggles
 }
 
@@ -81,6 +141,13 @@ export const DEFAULT_SETTINGS: Settings = {
     dependency: 0.6,
     clarification: 0.75,
   },
+  routing: {
+    // Chosen on the routing corpus and on cost.
+    referentStrategy: 'tree-walk',
+    // Both switches cost a further request whenever a skipped answer is referred to and save little inside the
+    // pipeline's window; a long run is searched anyway.
+    treeWalk: { startAtTrunkBase: false, hopBetweenBranchPoints: false, searchRunsOverTokens: 1_500 },
+  },
   debug: {
     miniMap: false,
     operationGraph: false,
@@ -97,6 +164,10 @@ export interface SettingsPatch {
   readonly concurrencyLimit?: number
   readonly models?: Partial<ModelSettings>
   readonly thresholds?: Partial<DecisionThresholds>
+  readonly routing?: {
+    readonly referentStrategy?: ReferentStrategyName
+    readonly treeWalk?: Partial<TreeWalkSettings>
+  }
   readonly debug?: Partial<DebugToggles>
 }
 
@@ -108,6 +179,10 @@ export function applySettingsPatch(settings: Settings, patch: SettingsPatch): Se
     concurrencyLimit: patch.concurrencyLimit ?? settings.concurrencyLimit,
     models: { ...settings.models, ...definedOnly(patch.models) },
     thresholds: { ...settings.thresholds, ...definedOnly(patch.thresholds) },
+    routing: {
+      referentStrategy: patch.routing?.referentStrategy ?? settings.routing.referentStrategy,
+      treeWalk: { ...settings.routing.treeWalk, ...definedOnly(patch.routing?.treeWalk) },
+    },
     debug: { ...settings.debug, ...definedOnly(patch.debug) },
   }
   return JSON.stringify(next) === JSON.stringify(settings) ? settings : next
@@ -130,6 +205,13 @@ export function validateSettingsPatch(patch: SettingsPatch): string | null {
       return `Threshold "${name}" must be between 0 and 1`
     }
   }
+  if (patch.routing?.referentStrategy !== undefined && !REFERENT_STRATEGY_NAMES.includes(patch.routing.referentStrategy)) {
+    return `Unknown referent strategy "${String(patch.routing.referentStrategy)}"`
+  }
+  const searchOver = patch.routing?.treeWalk?.searchRunsOverTokens
+  if (searchOver !== undefined && (!Number.isInteger(searchOver) || searchOver < 1)) {
+    return 'The run size above which the tree walk searches must be a whole number of at least 1'
+  }
   if (patch.debug?.comparePlacement !== undefined && !COMPARE_PLACEMENTS.includes(patch.debug.comparePlacement)) {
     return `Unknown Compare placement "${String(patch.debug.comparePlacement)}"`
   }
@@ -149,6 +231,10 @@ export function normalizeSettings(stored: Partial<Settings>): Settings {
     ...stored,
     models: { ...DEFAULT_SETTINGS.models, ...stored.models },
     thresholds: { ...DEFAULT_SETTINGS.thresholds, ...stored.thresholds },
+    routing: {
+      referentStrategy: stored.routing?.referentStrategy ?? DEFAULT_SETTINGS.routing.referentStrategy,
+      treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, ...stored.routing?.treeWalk },
+    },
     debug: {
       ...DEFAULT_SETTINGS.debug,
       ...stored.debug,

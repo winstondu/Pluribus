@@ -1,4 +1,5 @@
 import {
+  type RunEndRecord,
   provisionalLabel,
   providerError,
   type Decided,
@@ -19,6 +20,7 @@ import {
 } from '@pluribus/protocol'
 import type {
   CancelSignal,
+  CandidateSection,
   DecisionProvider,
   CoreDependencies,
   DecomposedFragment,
@@ -41,7 +43,7 @@ import type {
 import { Batch, ask, type Answers } from './batch'
 import { AMBIGUITY_FLOOR, derivePlacement, neededWork, placedWithoutTarget, referentCovered, resolveUnitTargets, selected, validatePlan, type TargetMode } from './derive'
 import { askUnit, readUnit, sectionNumbers, withReferents, type UnitScope, type UnitSignals } from './questions'
-import { firstPassQuestions, onePassStrategy } from './referents'
+import { createReferentAsk, firstPassQuestions, referentStrategyFor, type ReferentSpend } from './referents'
 import { describeState, numberedAnswerSections, supply, type Supplied } from './supply'
 
 /**
@@ -66,7 +68,7 @@ import { describeState, numberedAnswerSections, supply, type Supplied } from './
  *
  * Which answer sections a unit refers to is decided by a referent strategy
  * (`referents/`): its questions ride
- * in the calls above. The
+ * in the calls above, and it may make further calls of its own. The
  * pipeline does not know which strategy it
  * has; thresholds, placement and validation are the same after any of them.
  *
@@ -88,7 +90,7 @@ export function createRouter(deps: Deps): Router {
   }
 }
 
-type Deps = Pick<CoreDependencies, 'decisionProvider' | 'decomposer'>
+type Deps = Pick<CoreDependencies, 'decisionProvider' | 'decomposer' | 'referentStrategy'>
 
 const failed = (error: ProviderError): RoutingOutcome => ({ kind: 'failed', error })
 const malformed = (message: string): RoutingOutcome => failed(providerError('malformed-response', message))
@@ -102,6 +104,10 @@ interface Given {
 class Record {
   readonly questions: DecisionQuestionRecord[] = []
   model: string | null = null
+  /** What the referent strategy did beyond the pipeline's own calls, for the decision's explanation. Empty when nothing. */
+  referentNote = ''
+  /** The units placed on the last section of a run without a search inside it (hop between branch points). */
+  readonly runEnds: RunEndRecord[] = []
 
   /** One of the pipeline's own decision requests. */
   ask(provider: DecisionProvider, model: string, stateText: string, batch: Batch, signal: CancelSignal): ReturnType<typeof ask> {
@@ -130,7 +136,7 @@ async function routeMessage(deps: Deps, input: RoutingInput, signal: CancelSigna
   if (answered) return answerPlan(input, answered, record, given?.mode ?? 'explicit', given?.sectionIds ?? [])
 
   const relate = input.candidates.sections.length > 0 || input.candidates.chains.length > 0
-  const strategy = onePassStrategy
+  const strategy = deps.referentStrategy ?? referentStrategyFor(input.settings.routing.referentStrategy)
   const messageUnit: ReferentUnit = { key: 'm', name: 'the new message' }
 
   // ── 1. The decision gate ──
@@ -164,7 +170,7 @@ async function routeMessage(deps: Deps, input: RoutingInput, signal: CancelSigna
     ].join('\n')
     const stateText = describeState(input, supplied, subject)
     // Explicit and chosen targets are used as given: nothing is asked about the message's referents.
-    const referentRequest = referentRequestFor(input, supplied, given ? [] : [messageUnit])
+    const referentRequest = referentRequestFor(input, supplied, given ? [] : [messageUnit], stateText, subject)
     addReferentQuestions(gate, strategy, referentRequest)
     return { supplied, batch: gate, messageScope, subject, stateText, referentRequest }
   }
@@ -243,7 +249,7 @@ async function routeMessage(deps: Deps, input: RoutingInput, signal: CancelSigna
   }
 
   // ── Atomic ──
-  const referents = await resolveReferents(input, strategy, referentRequest, g, [gateSignals])
+  const referents = await resolveReferents(deps, input, signal, strategy, referentRequest, g, [gateSignals], record)
   if (!referents.ok) return failed(referents.error)
   m = withReferents(gateSignals, referents.units['m'])
   const resolution = resolveUnitTargets(m, given, t, {
@@ -253,6 +259,7 @@ async function routeMessage(deps: Deps, input: RoutingInput, signal: CancelSigna
     covered: (accepted, weak) => referentCovered(supplied, accepted, weak),
   })
   if (resolution.kind === 'ambiguous') return { kind: 'target-ambiguity', candidates: resolution.candidates }
+  noteRunEnds(record, 'message', referents.units['m'], resolution.sectionIds)
   const referred = answerTargets(supplied, resolution.sectionIds)
   const revision = revisionOf(m, referred, changedRequirements, input.text, null, supplied, t)
   const targets = withNeededGroups(supplied, referred, selected(m.needsGroups, t.dependency))
@@ -384,7 +391,7 @@ async function routeComposite(deps: Deps, input: RoutingInput, signal: CancelSig
       ...(given ? [`The user replied to ${given.sectionIds.map((id) => `S${numbers.get(id) ?? '?'}`).join(' and ')}.`] : []),
     ].join('\n')
     const stateText = describeState(input, supplied, subject)
-    const referentRequest = referentRequestFor(input, supplied, scopes.map((scope) => ({ key: scope.key, name: scope.name })))
+    const referentRequest = referentRequestFor(input, supplied, scopes.map((scope) => ({ key: scope.key, name: scope.name })), stateText, subject)
     addReferentQuestions(batch, c.strategy, referentRequest)
     return { supplied, batch, scopes, stateText, referentRequest }
   }
@@ -396,7 +403,7 @@ async function routeComposite(deps: Deps, input: RoutingInput, signal: CancelSig
 
   // Targets, revisions and units per fragment.
   const fragmentSignals = scopes.map((scope) => readUnit(a, supplied, input, scope))
-  const referred = await resolveReferents(input, c.strategy, referentRequest, a, fragmentSignals)
+  const referred = await resolveReferents(deps, input, signal, c.strategy, referentRequest, a, fragmentSignals, record)
   if (!referred.ok) return failed(referred.error)
   const signals = fragmentSignals.map((s) => withReferents(s, referred.units[s.key]))
   const ambiguous = new Map<SectionId, number>()
@@ -418,6 +425,7 @@ async function routeComposite(deps: Deps, input: RoutingInput, signal: CancelSig
       for (const cand of resolution.candidates) ambiguous.set(cand.sectionId, Math.max(ambiguous.get(cand.sectionId) ?? 0, cand.confidence))
       continue
     }
+    noteRunEnds(record, s.key, referred.units[s.key], resolution.sectionIds)
     const targets = answerTargets(supplied, resolution.sectionIds)
     const changed = (s.corrective ?? 0) >= t.clearlyCorrective ? selected(s.sessionRequirements, t.clearlyCorrective) : []
     for (const id of changed) if (!changedByAny.includes(id)) changedByAny.push(id)
@@ -566,19 +574,25 @@ async function routeComposite(deps: Deps, input: RoutingInput, signal: CancelSig
 /**
  * What a referent strategy is asked: the answer sections, numbered as the
  * state text names them. Sections beyond the pipeline's window keep
- * numbering after it and are marked as not listed.
+ * numbering after it and are marked as not listed; a strategy that reaches
+ * them shows them in a state text of its own.
  */
 function referentRequestFor(
   input: RoutingInput,
   supplied: Supplied,
   units: ReferentRequest['units'],
+  stateText: string,
+  subject: string,
 ): ReferentRequest {
   const sections = numberedAnswerSections(input, supplied)
   return {
     units: sections.length > 0 ? units : [],
     sections,
     candidates: input.candidates,
+    stateText,
+    subject,
     relevance: { clear: input.settings.thresholds.targetChoice, floor: AMBIGUITY_FLOOR },
+    treeWalk: input.settings.routing.treeWalk,
   }
 }
 
@@ -598,32 +612,55 @@ function addReferentQuestions(batch: Batch, strategy: ReferentStrategy, request:
 }
 
 /**
- * Runs the strategy over the answers of the pipeline's request. Only
- * supplied sections come back (invariant 9).
+ * Runs the strategy over the answers of the pipeline's request. Further
+ * requests it makes go through `createReferentAsk` and into the decision
+ * record. Only supplied sections come back (invariant 9).
  */
 async function resolveReferents(
+  deps: Deps,
   input: RoutingInput,
+  signal: CancelSignal,
   strategy: ReferentStrategy,
   request: ReferentRequest,
   answers: Answers,
   signals: readonly UnitSignals[],
+  record: Record,
 ): Promise<ReferentResult> {
   if (request.units.length === 0) return { ok: true, units: {} }
   const clearlyCorrective = input.settings.thresholds.clearlyCorrective
   const corrective = new Set(signals.filter((s) => (s.corrective ?? 0) >= clearlyCorrective).map((s) => s.key))
-  const result = await strategy.resolve(request, { probability: (id) => answers.noul(id), corrective })
+  const asker = createReferentAsk({
+    provider: deps.decisionProvider,
+    model: input.settings.models.decision,
+    signal,
+    onAnswers: (a) => record.add(a),
+  })
+  const result = await strategy.resolve(request, { probability: (id) => answers.noul(id), corrective }, asker)
   if (!result.ok) return result
+  record.referentNote = referentNote(strategy.name, asker.spent())
   const known = new Set(request.sections.map((s) => s.section.sectionId))
   const units: { [key: string]: UnitReferents } = {}
   for (const [key, unit] of Object.entries(result.units)) {
     const sections = unit.sections.filter((s) => known.has(s.sectionId)).map((s) => ({ sectionId: s.sectionId, confidence: clamp01(s.confidence) }))
-    units[key] = { several: unit.several === null ? null : clamp01(unit.several), sections }
+    const runEnds = (unit.runEnds ?? []).filter((end) => known.has(end.sectionId)).map((end) => ({ ...end, confidence: clamp01(end.confidence) }))
+    units[key] = { several: unit.several === null ? null : clamp01(unit.several), sections, ...(runEnds.length > 0 ? { runEnds } : {}) }
   }
   return { ok: true, units }
 }
 
+/** Records the targets of a unit that are the last section of a run, taken without a search inside the run. */
+function noteRunEnds(record: Record, unit: string, referents: UnitReferents | undefined, targets: readonly SectionId[]): void {
+  for (const end of referents?.runEnds ?? []) if (targets.includes(end.sectionId)) record.runEnds.push({ unit, ...end })
+}
+
 function clamp01(value: number): number {
   return Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0
+}
+
+function referentNote(name: string, spent: ReferentSpend): string {
+  if (spent.requests === 0) return ''
+  const requests = spent.requests === 1 ? 'one further decision request' : `${spent.requests} further decision requests`
+  return ` Referents by ${name}: ${requests}.`
 }
 
 // ───────────────────────────── pieces ─────────────────────────────
@@ -848,6 +885,20 @@ function relationText(relation: string): string {
   }
 }
 
+/** Which targets are the last section of a run the unit refers to, taken without asking about them by themselves, and on what evidence. */
+function runEndNote(input: RoutingInput, record: Record): string {
+  if (record.runEnds.length === 0) return ''
+  const section = (id: SectionId): CandidateSection | undefined => input.candidates.sections.find((s) => s.sectionId === id)
+  const title = (id: SectionId): string => `"${section(id)?.title ?? id}"`
+  const placed = record.runEnds.map((end) => {
+    const unit = end.unit === 'message' ? 'the message' : `part F${Number(end.unit.slice(1)) + 1}`
+    const asked = end.evidence.sections === 1 ? `a question about ${title(end.evidence.firstSectionId)} by itself` : `a question about ${end.evidence.sections} of its answers together, ${title(end.evidence.firstSectionId)} to ${title(end.evidence.lastSectionId)},`
+    const where = end.limitedByContext ? 'the deepest answer a run can continue from' : 'the last answer'
+    return `${unit} on ${title(end.sectionId)}, ${where} of a run of ${end.run.sections} (${title(end.run.firstSectionId)} to ${title(end.run.lastSectionId)}): ${asked} scored ${end.confidence.toFixed(2)}`
+  })
+  return ` Hop between branch points is on, so no answer inside a run was searched for: ${placed.join('; ')}. That answer was not asked about by itself; its context holds the whole run.`
+}
+
 function decisionRecord(
   input: RoutingInput,
   record: Record,
@@ -861,8 +912,9 @@ function decisionRecord(
     composition,
     units,
     thresholds: { ...input.settings.thresholds, ambiguityFloor: AMBIGUITY_FLOOR },
-    explanation,
+    explanation: `${explanation}${record.referentNote}${runEndNote(input, record)}`,
     questions: record.questions,
+    ...(record.runEnds.length > 0 ? { runEnds: record.runEnds } : {}),
   }
 }
 

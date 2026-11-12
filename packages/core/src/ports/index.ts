@@ -62,6 +62,9 @@ export type {
   RoutingPlan,
 } from './router'
 export type {
+  RunEndTaken,
+  ReferentAsk,
+  ReferentAskResult,
   ReferentGate,
   ReferentQuestions,
   ReferentRequest,
@@ -77,10 +80,12 @@ export type {
   GroupProbe,
   PointProbe,
   Probe,
+  ProbeRoundResult,
   ReferentNode,
   ReferentOperations,
   ReferentTree,
   SectionNode,
+  SegmentProbe,
   SeveralProbe,
 } from './referent-operations'
 export type { Backend, CoreDependencies, CoreOptions } from './backend'

@@ -141,3 +141,67 @@ export function ancestorsOfAll(nodes: Iterable<TreeNode>): Set<TreeNode> {
   }
   return out
 }
+
+/**
+ * The non-ancestor set of some nodes: those of them that are not an
+ * ancestor of another one of them. An ancestor is dropped in favour of its
+ * descendant, whose context already holds it; so no node of the result is
+ * an ancestor of another. Duplicates are dropped; the order is kept.
+ */
+export function reduceToNonAncestors<N extends TreeNode>(nodes: readonly N[]): N[] {
+  const unique = [...new Set(nodes)]
+  const ancestors = ancestorsOfAll(unique)
+  return unique.filter((node) => !ancestors.has(node))
+}
+
+/** The sibling groups a section is a member of: their join-backs are its children in the genealogy. */
+export function joinBacksOf(tree: ReferentTree, node: TreeNode): GroupNode[] {
+  if (node.kind !== 'section') return []
+  let index = memberships.get(tree)
+  if (!index) {
+    index = new Map()
+    for (const group of tree.byGroup.values()) {
+      for (const member of group.members) index.set(member, [...(index.get(member) ?? []), group])
+    }
+    memberships.set(tree, index)
+  }
+  return index.get(node) ?? []
+}
+const memberships = new WeakMap<ReferentTree, Map<SectionNode, GroupNode[]>>()
+
+/**
+ * A node and the run of only children below it: where nothing branches
+ * there is nothing to prune, so the run is asked about in one request. It
+ * ends at a leaf or at a branch point (two or more children, a group node
+ * among them).
+ */
+export function segmentFrom(node: TreeNode): TreeNode[] {
+  const out = [node]
+  let at = node
+  while (at.children.length === 1 && at.children[0]) {
+    at = at.children[0]
+    out.push(at)
+  }
+  return out
+}
+
+/**
+ * The unbranched run a node is in, from its top to its end: the node, the
+ * only children above it up to a branch point or a root, and the only
+ * children below it.
+ */
+export function stretchOf(node: TreeNode): TreeNode[] {
+  let top = node
+  while (top.parent && top.parent.children.length === 1) top = top.parent
+  return segmentFrom(top)
+}
+
+/** Depth of the tree in segments: the most requests a walk can need, the pipeline's own included. */
+export function branchingDepth(tree: ReferentTree): number {
+  const depth = (node: TreeNode): number => {
+    const segment = segmentFrom(node)
+    const end = segment[segment.length - 1]
+    return 1 + Math.max(0, ...(end?.children ?? []).map(depth))
+  }
+  return Math.max(0, ...tree.roots.map(depth))
+}
