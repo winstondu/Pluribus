@@ -357,9 +357,13 @@ describe('typed readiness and clarification', () => {
     const retried = await s.t.send({ type: 'retry', conversationId: s.c, target: { kind: 'section', sectionId: caching.sectionId as SectionId } })
     expect(retried.ok).toBe(false)
 
-    // Cancel applies to any paused request. Work that ran keeps its text and is stopped; the question is withdrawn.
+    // Cancel is a recovery choice and does not apply to it either (10 · "Cancel | A request paused for dependency recovery").
     const cancelled = await s.t.send({ type: 'cancel', conversationId: s.c, directiveId: caching.id })
-    expect(cancelled.ok).toBe(true)
+    expect(cancelled.ok).toBe(false)
+    expect(s.d('caching').state).toBe('paused')
+    // Stop ends it: work that ran keeps its text and is stopped; the question is withdrawn.
+    const stopped = await s.t.send({ type: 'stop', conversationId: s.c, target: { kind: 'request', messageId: caching.messageId } })
+    expect(stopped.ok).toBe(true)
     expect(s.d('caching').state).toBe('stopped')
     expect(textOf(s, caching.sectionId)).toBe('Caching is')
     expect(Object.values(s.state().elicitations).find((e) => e.record.kind === 'clarification')?.status).toBe('withdrawn')

@@ -19,9 +19,9 @@ test('Q107 · the answer and decomposition selectors offer the tested compatibil
   }
 })
 
-test('synthesis is not restricted, and decisions stay on the decision model', () => {
-  expect(roleIsListed('synthesis')).toBe(false)
-  expect(modelsForRole('synthesis', LOADED).map((model) => model.id)).toContain('example/other-model')
+test('synthesis comes from the tested list too, and decisions stay on the decision model', () => {
+  expect(roleIsListed('synthesis')).toBe(true)
+  expect(modelsForRole('synthesis', LOADED).map((model) => model.id)).not.toContain('example/other-model')
   expect(roleIsListed('decision')).toBe(false)
   expect(modelsForRole('decision', LOADED).map((model) => model.id)).toEqual(['typesafe/jev-1.13'])
 })

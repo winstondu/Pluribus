@@ -515,8 +515,7 @@ export interface DirectiveSlotHeld extends ConversationEnvelope<'directive-slot-
  */
 export interface DirectiveCancelled extends ConversationEnvelope<'directive-cancelled'> {
   readonly directiveId: DirectiveId
-  /** `paused-cancel`: Cancel on work paused for input that had not started. */
-  readonly cause: 'request-stopped' | 'section-stopped' | 'recovery-cancel' | 'paused-cancel'
+  readonly cause: 'request-stopped' | 'section-stopped' | 'recovery-cancel'
 }
 
 /**

@@ -86,13 +86,13 @@ A directive is, at any moment, in one of these situations:
 | State | Meaning |
 |---|---|
 | Dependency-queued | Waiting for a result it needs |
-| Paused | The result it needs failed, was stopped, or was interrupted; waiting for the user's recovery choice |
+| Paused | Waiting for user action: an answer to a clarification question, before it starts or after partial output; or a recovery choice after the result it needs failed, was stopped, or was interrupted. Its pause reason determines how it resumes ([elicitation](07-elicitation.md), [failure and recovery](08-failure-and-recovery.md)) |
 | Waiting for capacity | Ready, held back by a provider's rate limit |
 | Running | An attempt is in flight (status only, or streaming answer text) |
 | Completed | Finished successfully; only this releases dependents |
 | Failed | Ended in an error after any automatic retries |
 | Stopped | An attempt ended deliberately by the user. An attempt Committee ends in order to replace it is superseded, not stopped |
-| Cancelled | Work cancelled by the user before it started: queued work inside a stopped request, or a paused request the user chose to cancel (Q91) |
+| Cancelled | Work cancelled by the user before it started: queued work inside a stopped request, or a request paused for dependency recovery that the user chose to cancel (Q91) |
 | Interrupted | Lost because whatever was executing it stopped unexpectedly |
 | Superseded | Replaced by a revision; kept as history |
 

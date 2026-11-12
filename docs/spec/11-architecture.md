@@ -208,13 +208,13 @@ Each operation that asks has a **subject**, what the question is about, and a **
 
 | Operation | Subject | Shown context | What its answer may do | Costs budget |
 |---|---|---|---|---|
-| **Point** | One section, by itself | Some of the section's ancestry | Confirm the section as a referent | Yes |
+| **Point** | One section, by itself | The section with as much of its answer as the decision budget allows (the whole answer; else its opening and the passages that best match the unit; else its opening), and some of its ancestry | Confirm the section as a referent | Yes |
 | **Group** | One sibling group as a whole, as the join-back it is or will be | Its members | Confirm the group, which resolves to every member (Q30) | Yes |
 | **Segment** | A contiguous part of one unbranched run | Some of the sections at the top of the run | Say where to look next. It confirms none of the sections it names. With hop between branch points on, it also says whether the unit refers to the unbranched run | Yes |
 | **Several** | The unit: does it refer to more than one section at once | The sections asked about | Admit a merely plausible further referent beside a clear one, where that changes nothing about where the work runs; tell a search to look on other lines after its first find | Yes |
 | **Estimate** | A section or a part of an unbranched run | None: it is computed, not asked | Order and prune what is asked. It confirms nothing | No |
 | **Structure** | The genealogy: roots, continuations, the unbranched run of a node, ancestors, recency | | Read from the backend's records | No |
-| **Describe** | How a section is shown in a question: its title, the request it answered, its context chain, or a [context summary](#context-summaries-for-decisions) | | | No |
+| **Describe** | How a section is shown in a question: its title, the request it answered, its context chain, or a [context summary](#context-summaries-for-decisions); a section asked about by itself is shown as much of its answer as the decision budget allows | | | No |
 | **Cost** | The size of a question before it is sent, and what is left of the budget | | Questions of one step are sent as one request | No |
 
 - **Only Point and Group confirm.** This is the rule that a unit is placed on a section only if that section was asked about by itself (DA3). The one exception is the last section of an unbranched run under the tree walk's [hop between branch points](#referent-strategies): it is a referent because the unit refers to the run, not because it was asked about.
@@ -284,7 +284,7 @@ A guard on what routing one message may cost in decision-model work. It applies 
 - **The conversation's log**, for a relative budget, is the text of every user message and of every attempt. Superseded, failed, stopped, and interrupted attempts count, with the partial text they recorded: they are part of the append-only history (invariant 3), and counting them means a revision never shrinks the budget. It is computed from the backend's records alone.
 - **The answer's cost** is estimated before it is written: its least input, the message itself, and its expected length, taken from the conversation's completed answers, or a set figure while there are too few.
 - **Decided before sending.** Every request is sized by an estimate and compared with what is left. A request that would pass a limit is not sent. The guard therefore never depends on a provider's reply, and routing stays deterministic.
-- **The routing request draws from the budget first.** When it would not fit with every section it normally lists, it lists fewer, the most recent, down to the first-pass sections alone. One request is always sent, because a message has to be routed: when even the smallest does not fit, it is sent and nothing follows it.
+- **The routing request draws from the budget first.** When it would not fit with every section it normally lists, it lists fewer, the most recent, down to the first-pass sections alone. One request is always sent, because a message has to be routed: when even the smallest does not fit, it is sent and nothing follows it. Once its sections are chosen, the sections it asks about by themselves are shown more of their answers with what is left, up to a share kept for the strategy's further requests.
 - **Two requests are counted but never refused**, because no plan can be made without them: the confirmation that a requirement was made session-wide (Q17), and the question which consumers a shared-requirement revision affects (Q44).
 - **The budget is a hard stop.** When a limit is reached, the strategy sends nothing that does not fit. It asks about the listed sections it has not yet asked about in one request if that still fits, and otherwise keeps what it has scored. With hop between branch points on, the sections of an unbranched run that was asked about in their place are not asked about in that request: the answer about the run stands. Nothing further is asked, of the decision model or of the user.
 - **Best node found so far.** A routing whose budget was reached does not elicit the target. Referents at or above the target-choice threshold are reply targets as always. Where the rules of the stage would otherwise ask the user which section is meant, the unit is placed on the best node found so far, although its score is below the target-choice threshold. It is chosen from the sections confirmed by a Point and the sibling groups confirmed by a Group, as far as they are at least plausible (the threshold the tree walk descends on); with hop between branch points on, also from the last sections of the unbranched runs the unit plausibly refers to. Among them:
@@ -339,6 +339,7 @@ An optional layer in front of the referent strategy chooses, for each routing, w
 
 With the routing decision of each message ([Inspection](#inspection)), in addition to the questions and answers:
 
+- for each question about a section, the section's text as the decision model was shown it and in what form (whole answer, opening and matching passages, opening only, or summary), so the inspector shows what was sent and not a reconstruction. A summary is recorded by reference, never as text (invariant 12);
 - the limit of the decision budget that was reached, if one was, and what the strategy did instead;
 - that the best node found so far was used in place of a question to the user, for which unit, which node, and its score;
 - that hop between branch points placed a unit on the last section of an unbranched run without a search inside the run: for which unit, which run, which section, its score, and the question the score comes from;
@@ -413,9 +414,9 @@ The embedded Web Worker calls OpenRouter directly, with no CORS proxy (Q72). Jev
 - Model choice is per role, using OpenRouter model IDs (Q65):
   - answer runs, including work continuing from a join-back (Q90);
   - generative decomposition;
-  - synthesis, for join chains only (Q65, Q90);
+  - synthesis, for join chains only (Q65, Q90). A join chain exists only where lines of work have truly diverged over further turns, or were separate chains from the start. Work that needs several members of one sibling group continues from that group's join-back, which is bookkeeping: it is an ordinary answer and involves no synthesis (invariant 4; C5);
   - the pinned decision model (Q74).
-- **Embedded:** configurable from the frontend. MVP answer/decomposition choices are restricted to a small tested compatibility list, covering structured preparation and streamed clarification signals for the relevant roles (Q107). **Server:** set by server environment settings (Q65).
+- **Embedded:** configurable from the frontend. MVP answer, decomposition, and synthesis choices are restricted to a small tested compatibility list, covering structured preparation and streamed clarification signals for the relevant roles (Q107). Synthesis is on the list because a synthesis run is an answer the user reads and must be able to stop and ask. **Server:** set by server environment settings (Q65).
 - Each attempt records the model it used (Q65).
 
 ## Inspection

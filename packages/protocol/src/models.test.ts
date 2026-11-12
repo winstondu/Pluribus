@@ -24,20 +24,22 @@ describe('model compatibility list', () => {
     expect(compatibleModels('decomposition').every((m) => m.structuredPreparation)).toBe(true)
   })
 
-  test('answer and decomposition can only be set to a listed model; synthesis is free and the decision model is not on the list', () => {
+  test('answer, decomposition and synthesis can only be set to a listed model; the decision model is not on the list', () => {
     expect(validateSettingsPatch({ models: { answer: 'anthropic/claude-haiku-5.5' } })).toBeNull()
     expect(validateSettingsPatch({ models: { decomposition: 'anthropic/claude-sonnet-5.5' } })).toBeNull()
     expect(validateSettingsPatch({ models: { answer: 'example/untested-model' } })).toMatch(/tested models/)
     expect(validateSettingsPatch({ models: { decomposition: 'typesafe/jev-1.13' } })).toMatch(/tested models/)
-    expect(validateSettingsPatch({ models: { synthesis: 'example/untested-model' } })).toBeNull()
+    expect(validateSettingsPatch({ models: { synthesis: 'anthropic/claude-haiku-5.5' } })).toBeNull()
+    expect(validateSettingsPatch({ models: { synthesis: 'example/untested-model' } })).toMatch(/tested models/)
     expect(isCompatibleModel('decision', 'typesafe/jev-1.13')).toBe(true)
     expect(compatibleModel('typesafe/jev-1.13')).toBeNull()
   })
 
-  test('stored settings that name an unlisted answer or decomposition model are normalised to the default; the rest is kept', () => {
-    const stored = applySettingsPatch(DEFAULT_SETTINGS, { models: { synthesis: 'example/other' } })
+  test('stored settings that name an unlisted answer, decomposition or synthesis model are normalised to the default; a listed choice is kept', () => {
+    const stored = applySettingsPatch(DEFAULT_SETTINGS, { models: { synthesis: 'anthropic/claude-haiku-5.5' } })
     const normalised = normalizeSettings({ ...stored, models: { ...stored.models, answer: 'example/retired-model', decomposition: 'example/retired-too' } })
-    expect(normalised.models).toEqual({ ...DEFAULT_SETTINGS.models, synthesis: 'example/other' })
+    expect(normalised.models).toEqual({ ...DEFAULT_SETTINGS.models, synthesis: 'anthropic/claude-haiku-5.5' })
+    expect(normalizeSettings({ ...stored, models: { ...stored.models, synthesis: 'example/other' } }).models.synthesis).toBe(DEFAULT_SETTINGS.models.synthesis)
     // A listed choice survives.
     expect(normalizeSettings({ ...stored, models: { ...stored.models, answer: 'anthropic/claude-haiku-5.5' } }).models.answer).toBe('anthropic/claude-haiku-5.5')
   })

@@ -91,7 +91,7 @@ Pending (responding bubble), streaming, paused awaiting user input, completed, f
 | Retry policy | Standard | Standard, Persistent, or Manual (Q47) |
 | Wait before a default choice runs | 30 seconds | (Q45) |
 | Concurrency limit | 4 | (Q60) |
-| Model per role | — | Answers (including work continuing from a join-back), decomposition, synthesis for join chains, decisions (Q65, Q90); MVP answer/decomposition choices come from the tested compatibility list (Q107) |
+| Model per role | — | Answers (including work continuing from a join-back), decomposition, synthesis for join chains, decisions (Q65, Q90); MVP answer, decomposition, and synthesis choices come from the tested compatibility list (Q107) |
 | Ordered-message decomposition | Implementation default | Decomposer option: decompose ordered requests or keep them atomic; combined total limits remain atomic (Q102, Q104) |
 | Decision confidence thresholds | Tuned on the routing corpus | Sent to the backend (Q74) |
 | Dependency attachment | Strategy selection by rules; configured strategy, used when selection is off: tree walk, long unbranched runs searched; hop between branch points off; candidate sections from the lexical index; decision budget 2% of the conversation's log; context summaries off | The referent strategy and start at the trunk base, both used when selection is off; hop between branch points, used whenever the tree walk runs: a message about a section inside an unbranched run continues from the run's last section, which saves decision tokens and makes the answer read everything after the relevant part of the run; strategy selection (off, rules, or decision model); the candidate source (none, or the lexical index); the decision budget (absolute, or a share of the conversation's log); whether context summaries are used and generated ([architecture](11-architecture.md#dependency-attachment)) |
@@ -121,7 +121,7 @@ The backend owns all coordination: routing, scheduling, context assembly, and re
 | Retry | A section, or a whole request | [08](08-failure-and-recovery.md) |
 | Regenerate | An item with a superseded-input note | [06](06-revisions.md) |
 | Continue without | A request paused for dependency recovery | [08](08-failure-and-recovery.md) |
-| Cancel | A paused request | [08](08-failure-and-recovery.md) |
+| Cancel | A request paused for dependency recovery. Work paused awaiting user input is ended with Stop | [08](08-failure-and-recovery.md) |
 | Answer elicitation | The elicitation and the user's choice | [07](07-elicitation.md) |
 | Undo split | A set of split messages | [02](02-messages-and-decomposition.md) |
 | Change settings | The settings above | — |

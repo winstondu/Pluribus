@@ -3,7 +3,7 @@ import type { ModelRole } from './model'
 /**
  * The tested compatibility list (Q107; 10 · "User settings", 11 · "Models").
  *
- * In the MVP the answer and decomposition models are chosen from this list
+ * In the MVP the answer, decomposition and synthesis models are chosen from this list
  * and nowhere else. A model is on it only after the live smoke suite has
  * shown, against OpenRouter, the two things readiness needs of it:
  *
@@ -12,18 +12,18 @@ import type { ModelRole } from './model'
  *   decomposition role, which also runs generative decomposition;
  * - **streamed clarification signal**: while streaming an answer it can
  *   stop and signal, in a typed way, that the user must be asked (Q106);
- *   used in the answer role.
+ *   used in the answer and synthesis roles: a synthesis run is an answer
+ *   the user reads and must be able to stop and ask.
  *
  * Add a model here only together with a smoke run that covers it
  * (`packages/providers/src/readiness.smoke.test.ts`). The decision model is
- * pinned and is not on this list (Q74); the synthesis model is not
- * restricted by the specification.
+ * pinned and is not on this list (Q74).
  */
 
 /** The roles whose choices come from the list. */
-export type ListedModelRole = Extract<ModelRole, 'answer' | 'decomposition'>
+export type ListedModelRole = Extract<ModelRole, 'answer' | 'decomposition' | 'synthesis'>
 
-export const LISTED_MODEL_ROLES: readonly ListedModelRole[] = ['answer', 'decomposition']
+export const LISTED_MODEL_ROLES: readonly ListedModelRole[] = ['answer', 'decomposition', 'synthesis']
 
 export interface CompatibleModel {
   /** OpenRouter model ID. */
@@ -44,7 +44,7 @@ export const MODEL_COMPATIBILITY: readonly CompatibleModel[] = [
   {
     id: 'anthropic/claude-sonnet-5.5',
     name: 'Claude Sonnet 5.5',
-    roles: ['answer', 'decomposition'],
+    roles: ['answer', 'decomposition', 'synthesis'],
     structuredPreparation: true,
     streamedClarificationSignal: true,
     testedOn: '2026-11-12',
@@ -52,7 +52,7 @@ export const MODEL_COMPATIBILITY: readonly CompatibleModel[] = [
   {
     id: 'anthropic/claude-haiku-5.5',
     name: 'Claude Haiku 5.5',
-    roles: ['answer', 'decomposition'],
+    roles: ['answer', 'decomposition', 'synthesis'],
     structuredPreparation: true,
     streamedClarificationSignal: true,
     testedOn: '2026-11-12',

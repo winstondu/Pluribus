@@ -1,5 +1,5 @@
 import type { DirectiveId, PauseCause, PrerequisiteRef } from '@committee/protocol'
-import { queries, settleWait, startedInSection, type CommandHandlers, type ConversationState, type DirectiveRow, type Reaction } from '../engine'
+import { queries, settleWait, type CommandHandlers, type ConversationState, type DirectiveRow, type Reaction } from '../engine'
 
 /**
  * Dependents of work that did not finish (08, Q48): a dependency-queued
@@ -96,17 +96,10 @@ export const pauseCommands: CommandHandlers = {
   cancel: (state, command, ctx) => {
     const d = state.directives[command.directiveId]
     if (!d) return { code: 'unknown-target', message: `Unknown directive ${command.directiveId}` }
-    if (d.state !== 'paused' || !d.pause) return { code: 'not-allowed', message: 'Only a paused request can be cancelled this way' }
-    if (d.pause.reason === 'awaiting-input') {
-      // Cancel applies to any paused request (10 · "Cancel | A paused request"). Work paused for input
-      // that never ran is cancelled; work that ran and stopped to ask keeps its partial text and is
-      // stopped, because cancelled means "before it started" (Q91). Its question is then withdrawn.
-      if (startedInSection(state, d) && d.sectionId !== null) {
-        ctx.emit({ type: 'directive-stopped', directiveId: d.id, sectionId: d.sectionId, scope: 'section' })
-      } else {
-        ctx.emit({ type: 'directive-cancelled', directiveId: d.id, cause: 'paused-cancel' })
-      }
-      return []
+    // Cancel is a recovery choice (10 · "Cancel | A request paused for dependency recovery"). Work paused
+    // awaiting user input is ended with Stop, which does the same thing.
+    if (d.state !== 'paused' || d.pause?.reason !== 'dependency-recovery') {
+      return { code: 'not-allowed', message: 'Only a request paused for dependency recovery can be cancelled this way; stop the request instead' }
     }
     ctx.emit({ type: 'elicitation-answered', elicitationId: d.pause.elicitationId, resolution: { kind: 'recovery-choice', choice: 'cancel' } })
     ctx.emit({ type: 'directive-cancelled', directiveId: d.id, cause: 'recovery-cancel' })

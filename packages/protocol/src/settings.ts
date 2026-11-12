@@ -1,5 +1,5 @@
 import type { ModelRole } from './model'
-import { compatibleModels, isCompatibleModel, isListedModelRole } from './models'
+import { LISTED_MODEL_ROLES, compatibleModels, isCompatibleModel, isListedModelRole } from './models'
 
 /**
  * User settings (10 · "User settings"). App-wide: retry policy, models and
@@ -486,13 +486,13 @@ export function normalizeSettings(stored: Partial<Settings>): Settings {
 }
 
 /**
- * Stored models, with an answer or decomposition model that is not on the
- * tested compatibility list replaced by that role's default (Q107). The
- * other roles are kept as stored.
+ * Stored models, with an answer, decomposition or synthesis model that is
+ * not on the tested compatibility list replaced by that role's default
+ * (Q107). The decision model is kept as stored.
  */
 export function normalizeModels(models: ModelSettings): ModelSettings {
   let next = models
-  for (const role of ['answer', 'decomposition'] as const) {
+  for (const role of LISTED_MODEL_ROLES) {
     if (!isCompatibleModel(role, next[role])) next = { ...next, [role]: DEFAULT_SETTINGS.models[role] }
   }
   return next

@@ -49,7 +49,7 @@ describe('stopping', () => {
   test('work stopped between retries has its own event, and a single not-started section can be cancelled by a stop', () => {
     expect(CONVERSATION_EVENT_TYPES).toContain('directive-stopped')
     expectTypeOf<DirectiveStopped['scope']>().toEqualTypeOf<'section' | 'request'>()
-    expectTypeOf<DirectiveCancelled['cause']>().toEqualTypeOf<'request-stopped' | 'section-stopped' | 'recovery-cancel' | 'paused-cancel'>()
+    expectTypeOf<DirectiveCancelled['cause']>().toEqualTypeOf<'request-stopped' | 'section-stopped' | 'recovery-cancel'>()
   })
 })
 
