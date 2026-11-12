@@ -85,7 +85,8 @@ describe('context summaries', () => {
     expect(outcomes[1]).toEqual(outcomes[0])
   })
 
-  test('summaries · an injected provider is asked for the nodes of the listed sections with their real chains, only while the setting is on; a run still consumes the full context', async () => {
+  test('DA5 · with context summaries in use, a run receives the recorded exchanges and never a summary; summaries are used only for search and decisions', async () => {
+    // A scripted summary provider: every node that has a context gets the same summary, anchored at the brief.
     const asked: { nodeId: string; chain: number }[] = []
     const provider: ContextSummaryProvider = {
       contextFor(request): DecisionContext | null {
@@ -111,11 +112,23 @@ describe('context summaries', () => {
     // The decision model was shown the summary and the content specific to each section.
     const state = s.t.decisions.requests.at(-1)?.state ?? ''
     expect(state).toContain('the work before it, summarised: "A trip to Kyoto is being planned."; after that: request "Suggest neighborhoods to stay in"; answer "Gion and Higashiyama."')
-    // The run itself read the recorded exchanges, never the summary (04 · "Context for a run", invariant 2).
+    // The run itself read the recorded exchanges, never the summary (04 · "Context for a run", invariants 2 and 12).
     const run = s.state().attempts[j(s).attemptIds[0] ?? '']
     expect(run?.context.messages.some((m) => m.content.includes('A trip to Kyoto is being planned.'))).toBe(false)
-    expect(run?.context.messages.some((m) => m.content.includes('Gion and Higashiyama.'))).toBe(true)
-    expect(run?.context.messages.some((m) => m.content.includes('Museums and tea houses.'))).toBe(true)
+    expect(run?.context.messages.map((m) => m.content)).toEqual(expect.arrayContaining([BRIEF, 'Noted.', A, 'Gion and Higashiyama.', B, 'Museums and tea houses.', J]))
+    // The same for a run started while summaries are in use and shown for the section it continues: a reply to the itinerary.
+    const before = s.t.decisions.requests.length
+    const SHORTER = 'Make the itinerary shorter'
+    s.t.model.script(SHORTER, answer('Day 1: Gion, briefly.', 10, 20))
+    await s.send(SHORTER, { message: { relation: 'addition', targets: { [title(s, 'Use those recommendations to make a…')]: 0.9 } } })
+    await s.t.advance(100)
+    expect(s.t.decisions.requests.slice(before).some((r) => r.state.includes('the work before it, summarised: "A trip to Kyoto is being planned."'))).toBe(true)
+    // No attempt of the conversation was given the summary, in what it consumed or in what the event log records of it.
+    const started = (await s.events()).filter((e): e is AttemptStarted => e.type === 'attempt-started')
+    expect(started).toHaveLength(5)
+    for (const e of started) expect(e.context.messages.every((m) => !m.content.includes('A trip to Kyoto is being planned.'))).toBe(true)
+    expect(started.at(-1)?.context.messages.map((m) => m.content)).toEqual(expect.arrayContaining([BRIEF, A, 'Gion and Higashiyama.', B, 'Museums and tea houses.', J, 'Day 1: Gion.', SHORTER]))
+    expect(JSON.stringify(await s.events())).not.toContain('A trip to Kyoto is being planned.')
   })
 
   test('summaries · backgroundSummaries offers each completed run to the summariser with its node and chain, and only while it is on', async () => {

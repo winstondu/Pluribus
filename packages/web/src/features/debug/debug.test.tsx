@@ -534,6 +534,10 @@ describe('run inspector', () => {
     expect(selection).toHaveTextContent('the decision model was not confident')
     expect(selection).toHaveTextContent('9 answers are older than the routing request lists')
     expect(selection).toHaveTextContent('strategy 0.58')
+    // The decision budget stopped the search: which limit, what was done instead, and that the user was not asked.
+    const stop = within(routing).getByTestId('budget-stop')
+    expect(stop).toHaveTextContent('Reached the token budget · the remaining listed sections were asked about in one request')
+    expect(stop).toHaveTextContent('The best node found so far was not needed for this work.')
 
     await user.click(screen.getByRole('button', { name: 'Show in transcript' }))
     expect(ui.getState().reveal?.sectionId).toBe(fx.id('section', 'packing'))

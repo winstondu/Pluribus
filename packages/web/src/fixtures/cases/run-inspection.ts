@@ -467,6 +467,8 @@ const packing: RunInspection = {
       fallback: 'low-confidence',
       reused: false,
     },
+    // The token budget stopped the walk; the target was clear from what had been asked, so nothing had to be taken below the threshold.
+    budgetStop: { limit: 'token-budget', fallback: 'one-pass', bestFound: [] },
   }),
   attempt: null,
   directiveState: 'dependency-queued',

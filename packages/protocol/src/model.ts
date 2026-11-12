@@ -498,7 +498,8 @@ export interface UnitRoutingDecision {
     readonly sectionIds: readonly SectionId[]
     /**
      * - `explicit`: the user used a section's reply affordance.
-     * - `inferred`: selected by the decision model above the threshold.
+     * - `inferred`: selected by the decision model above the threshold, or, when the decision budget stopped the
+     *   search, the best node found so far (`RoutingDecision.budgetStop`).
      * - `elicited`: the user chose in a target-ambiguity elicitation.
      * - `none`: the message addresses no existing section.
      */
@@ -555,6 +556,39 @@ export interface StrategySelectionRecord {
   readonly reused: boolean
 }
 
+/** A limit of the decision budget (11 · "Decision budget"). */
+export type DecisionBudgetLimit = 'token-budget' | 'price-guard' | 'requests' | 'questions'
+
+/** The best node found so far, as routing used it for one unit in place of a question to the user. */
+export interface BestNodeRecord {
+  /** The unit's key in `RoutingDecision.units`. */
+  readonly unit: string
+  /** The section, or every member of the sibling group that was asked about as a whole. */
+  readonly sectionIds: readonly SectionId[]
+  /** Its score: below the target-choice threshold, at or above the plausibility floor. */
+  readonly confidence: number
+}
+
+/**
+ * Recorded when a limit of the decision budget stopped the referent
+ * strategy. The budget is a hard stop: nothing more was asked of the
+ * decision model, and the user was not asked which section is meant.
+ */
+export interface BudgetStopRecord {
+  readonly limit: DecisionBudgetLimit
+  /**
+   * What the strategy did instead:
+   * - `one-pass`: asked about the listed sections it had not asked about in one request, which still fitted;
+   * - `partial`: kept what it had scored.
+   */
+  readonly fallback: 'one-pass' | 'partial'
+  /**
+   * The units that were placed on the best node found so far, where routing would otherwise have asked the user.
+   * Empty when no unit needed it: its targets were clear, or nothing asked about by itself was plausible.
+   */
+  readonly bestFound: readonly BestNodeRecord[]
+}
+
 export interface RoutingDecision {
   /**
    * - `decision-model`: produced by the routing pipeline.
@@ -571,6 +605,8 @@ export interface RoutingDecision {
   readonly questions: readonly DecisionQuestionRecord[]
   /** How the referent strategy was chosen, when a strategy selector was on (`settings.routing.strategySelection`). */
   readonly strategySelection?: StrategySelectionRecord | null
+  /** Set when a limit of the decision budget stopped the referent strategy, with the best node found so far where one was used. */
+  readonly budgetStop?: BudgetStopRecord | null
 }
 
 // ─────────────────────────── decomposition ───────────────────────────

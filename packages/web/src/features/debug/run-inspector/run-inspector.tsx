@@ -1,5 +1,6 @@
 import type {
   AttemptResultStatus,
+  BudgetStopRecord,
   ConsumedMessage,
   ContextOrigin,
   Decided,
@@ -9,6 +10,7 @@ import type {
   PointRef,
   PrerequisiteRef,
   RunInspection,
+  SectionId,
   StrategyChoice,
   StrategySelectionRecord,
   TranscriptProjection,
@@ -489,6 +491,34 @@ function StrategySelectionRow({ selection }: { selection: StrategySelectionRecor
   )
 }
 
+const LIMIT_WORD: { readonly [L in BudgetStopRecord['limit']]: string } = {
+  'token-budget': 'the token budget',
+  'price-guard': 'the bound against the answer',
+  requests: 'the limit on further requests',
+  questions: 'the limit on questions',
+}
+
+/** That the decision budget stopped the search for referents, and the best node found so far where routing used one. */
+function BudgetStopRow({ stop, unitKey, transcript }: { stop: BudgetStopRecord; unitKey: string | null; transcript: TranscriptProjection }) {
+  const best = stop.bestFound.find((found) => found.unit === unitKey) ?? null
+  const title = (sectionId: SectionId): string => transcript.sections[sectionId]?.title ?? sectionId
+  return (
+    <Row label="Decision budget">
+      <span data-testid="budget-stop">
+        Reached {LIMIT_WORD[stop.limit]} ·{' '}
+        <span className="text-muted-foreground">
+          {stop.fallback === 'one-pass' ? 'the remaining listed sections were asked about in one request' : 'nothing more was asked'}
+        </span>
+        <span className="mt-0.5 block text-muted-foreground">
+          {best
+            ? `The user was not asked which section is meant. The best node found so far was used: ${best.sectionIds.map(title).join(' + ')}, confidence ${best.confidence.toFixed(2)}.`
+            : 'The best node found so far was not needed for this work.'}
+        </span>
+      </span>
+    </Row>
+  )
+}
+
 /** Item 5: what routing decided. A record, not a verdict. */
 function Routing(props: { inspection: RunInspection; transcript: TranscriptProjection; genealogy: GenealogyProjection }) {
   const { inspection, transcript, genealogy } = props
@@ -516,6 +546,7 @@ function Routing(props: { inspection: RunInspection; transcript: TranscriptProje
         </Row>
         {unit ? <UnitRows unit={unit} transcript={transcript} genealogy={genealogy} inspection={inspection} /> : null}
         {decision.strategySelection ? <StrategySelectionRow selection={decision.strategySelection} /> : null}
+        {decision.budgetStop ? <BudgetStopRow stop={decision.budgetStop} unitKey={unit?.key ?? null} transcript={transcript} /> : null}
         <Row label="Explanation">{unit?.explanation || decision.explanation || 'None recorded.'}</Row>
       </dl>
       {decision.questions.length > 0 ? (

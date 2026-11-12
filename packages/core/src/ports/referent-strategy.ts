@@ -115,14 +115,38 @@ export interface ScoredSection {
   readonly confidence: number
 }
 
+/**
+ * The best node found so far, for a unit whose strategy was stopped by the
+ * decision budget (11 · "Decision budget"): of the nodes that were asked
+ * about by themselves and are at least plausible, the one preferred by
+ * `bestNodeFound`. A sibling group asked about as a whole resolves to every
+ * member. A section that was only named in a question about several
+ * sections is never among them.
+ */
+export interface BestNodeFound {
+  readonly sectionIds: readonly SectionId[]
+  /** The score of the node: of the section, or of the group as a whole. */
+  readonly confidence: number
+}
+
 export interface UnitReferents {
   /**
-   * Every section the strategy scored and kept. A section left out is not a
-   * referent: it was never reached, or a relevant descendant stands for it.
+   * Every section the strategy scored and kept, each asked about by itself
+   * (or as a member of a sibling group asked about as a whole). A section
+   * left out is not a referent: it was never asked about by itself, or a
+   * relevant descendant stands for it.
    */
   readonly sections: readonly ScoredSection[]
   /** Probability that the unit refers to several sections at once; null when not asked. */
   readonly several: number | null
+  /**
+   * Set when the decision budget stopped the strategy: the best node found
+   * so far, or null when nothing asked about by itself is plausible. Where
+   * the pipeline's rules would ask the user which section is meant, it takes
+   * this node instead and does not ask. A strategy that leaves it out has
+   * the highest-scoring section of `sections` taken in its place.
+   */
+  readonly best?: BestNodeFound | null
 }
 
 export type ReferentResult =
@@ -131,12 +155,13 @@ export type ReferentResult =
       /** By unit key. */
       readonly units: { readonly [key: string]: UnitReferents }
       /**
-       * Set when the strategy did not finish as designed because the budget
-       * would have been exceeded: what it did instead.
-       * - `one-pass`: asked the one-pass questions in one request;
-       * - `partial`: kept what it had scored, because not even that request was affordable.
-       * Either way, the sections of a relevant chunk that a search could not finish are reported below the
-       * target-choice threshold, so the user is asked about them rather than one being taken.
+       * Set when the strategy did not finish as designed because the
+       * decision budget would have been exceeded: the limit, and what it
+       * did instead.
+       * - `one-pass`: asked the one-pass questions it had not asked yet in one request, which still fitted;
+       * - `partial`: kept what it had scored, because not even that request fitted.
+       * The budget is a hard stop: nothing more is asked, of the decision model or of the user. Each unit
+       * reports the best node found so far (`UnitReferents.best`).
        */
       readonly fallback: { readonly limit: keyof DecisionBudget; readonly to: 'one-pass' | 'partial' } | null
     }

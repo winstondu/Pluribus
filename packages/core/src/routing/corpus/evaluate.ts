@@ -9,7 +9,7 @@ import {
   type PointRef,
   type PrerequisiteRef,
   type Settings,
-  type StrategySelectionRecord,
+  type BudgetStopRecord, type StrategySelectionRecord,
   type TextSpan,
 } from '@committee/protocol'
 import type {
@@ -29,7 +29,7 @@ import type {
 import { NEVER_CANCELLED } from '../../ports'
 import { createRouter } from '../pipeline'
 import { buildTree, type TreeNode } from '../referents/tree'
-import { MAX_SECTIONS, numberedAnswerSections, supply, type Supplied } from '../supply'
+import { MAX_SECTIONS, MIN_SECTIONS, numberedAnswerSections, supply, type Supplied } from '../supply'
 import { ROUTING_CORPUS } from './examples'
 import { ids } from './scene'
 import type { CorpusExample, CorpusTopic, PartExpectation, PlacementExpectation, ReferenceDecomposition } from './types'
@@ -59,6 +59,8 @@ export interface CorpusResult {
   readonly decisions: DecisionSpend
   /** How the referent strategy was chosen, when a strategy selector was on. */
   readonly selection: StrategySelectionRecord | null
+  /** Set when a limit of the decision budget stopped the referent strategy, with the best node found so far where one was used. */
+  readonly budgetStop: BudgetStopRecord | null
 }
 
 /** Decision calls made, and the input tokens the provider reported for them (0 where it reported none). */
@@ -176,6 +178,7 @@ export async function evaluateCorpus(run: CorpusRun): Promise<CorpusReport> {
       questions: outcome.kind === 'plan' ? outcome.plan.decision.questions : [],
       decisions: metered.spent(),
       selection: outcome.kind === 'plan' ? (outcome.plan.decision.strategySelection ?? null) : null,
+      budgetStop: outcome.kind === 'plan' ? (outcome.plan.decision.budgetStop ?? null) : null,
     })
   }
   const byTopic: { [T in CorpusTopic]?: { passed: number; total: number } } = {}
@@ -346,10 +349,12 @@ function expectedPlacementText(p: PlacementExpectation): string {
  */
 export function suppliedIn(input: RoutingInput, given: readonly RoutingInput['explicitTargets'][number][], state: string): Supplied | null {
   if (!state.startsWith('Answer sections in this conversation, oldest first:')) return null
-  const listed = state.split('\n').filter((line) => /^S\d+\. /.test(line)).length
-  for (let window = MAX_SECTIONS; window >= 1; window--) {
+  // Which sections a window lists is read from their lines: two windows can list the same number of sections.
+  const lines = state.split('\n').filter((line) => /^S\d+\. /.test(line))
+  for (let window = MAX_SECTIONS; window >= MIN_SECTIONS; window--) {
     const supplied = supply(input, given, window)
-    if (supplied.sections.length === listed) return supplied
+    if (supplied.sections.length !== lines.length) continue
+    if (supplied.sections.every((s, i) => s.asksElicitationId !== null || (lines[i] ?? '').startsWith(`S${i + 1}. "${s.title}"`))) return supplied
   }
   return null
 }

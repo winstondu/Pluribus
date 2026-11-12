@@ -1,6 +1,6 @@
-import type { NoulQuestion, ReferentRequest, ReferentUnit, ScoredSection, UnitReferents } from '../../ports'
+import type { BestNodeFound, NoulQuestion, ReferentRequest, ReferentUnit, ScoredSection, UnitReferents } from '../../ports'
 import type { SectionId } from '@committee/protocol'
-import { ancestorsOf, sectionsBelow, type GroupNode, type ReferentTree, type SectionNode, type TreeNode } from './tree'
+import { ancestorsOf, rank, sectionsBelow, type GroupNode, type ReferentTree, type SectionNode, type TreeNode } from './tree'
 
 /**
  * What both strategies share: the wording of the questions, their IDs, and
@@ -95,7 +95,8 @@ export function underQuestion(unit: ReferentUnit, node: TreeNode): NoulQuestion 
  *
  * Sections below `clear` that were not dropped are reported with their own
  * score: the pipeline asks the user about them or takes them as further
- * referents by its own rules.
+ * referents by its own rules. When the decision budget stopped the
+ * strategy the user is not asked: see `bestNodeFound`.
  */
 export function referentsFromScores(
   tree: ReferentTree,
@@ -123,6 +124,64 @@ export function referentsFromScores(
     else if (value >= options.clear) for (const member of node.members) note(member, value)
   }
   return [...out].map(([sectionId, confidence]) => ({ sectionId, confidence }))
+}
+
+/**
+ * The best node found so far: what routing uses, without asking the user,
+ * when the decision budget stopped a strategy before it finished (11 ·
+ * "Decision budget").
+ *
+ * Only nodes that were asked about by themselves have a score here: a
+ * section through its own question, a sibling group through the question
+ * about the group as a whole. A yes to a question about several sections (a
+ * chunk, "anything built on this") gives none of them a score. Of the nodes
+ * scored at or above `floor`, the plausibility threshold the walk descends
+ * on:
+ *
+ * 1. a node with a plausible descendant is passed over for the descendant,
+ *    whose context already holds it (not for a correction, as in
+ *    `referentsFromScores`);
+ * 2. of the rest, the highest score;
+ * 3. on equal scores, the most recent in conversation order (a group counts
+ *    as just after its last member).
+ *
+ * A group resolves to every member: the full join-back, never a subset.
+ * Null when nothing asked about by itself is plausible: the unit is then
+ * routed as referring to nothing there.
+ */
+export function bestNodeFound(
+  tree: ReferentTree,
+  score: (node: TreeNode) => number | null,
+  options: { readonly corrective: boolean; readonly floor: number },
+): BestNodeFound | null {
+  const plausible = tree.nodes.flatMap((node) => {
+    const value = score(node)
+    return value !== null && value >= options.floor ? [{ node, value }] : []
+  })
+  // Every ancestor of a plausible node, each visited once: a long chain of plausible answers is not walked once per answer.
+  const above = new Set<TreeNode>()
+  if (!options.corrective) {
+    for (const { node } of plausible) {
+      const stack: TreeNode[] = [node]
+      for (let at = stack.pop(); at; at = stack.pop()) {
+        const up: TreeNode[] = at.kind === 'group' ? [...at.members] : []
+        if (at.parent) up.push(at.parent)
+        for (const p of up) {
+          if (above.has(p)) continue
+          above.add(p)
+          stack.push(p)
+        }
+      }
+    }
+  }
+  let best: { readonly node: TreeNode; readonly value: number } | null = null
+  for (const candidate of plausible) {
+    if (above.has(candidate.node)) continue
+    if (!best || candidate.value > best.value || (candidate.value === best.value && rank(candidate.node) > rank(best.node))) best = candidate
+  }
+  if (!best) return null
+  const members = best.node.kind === 'section' ? [best.node] : best.node.members
+  return { sectionIds: members.map((m) => m.entry.section.sectionId), confidence: best.value }
 }
 
 /** Reads every unit's referents from answers by question ID. */

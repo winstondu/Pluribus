@@ -133,7 +133,8 @@ describe('settings', () => {
     const old = { ...DEFAULT_SETTINGS, routing: { referentStrategy: 'one-pass', referentBudget: { requests: 1, questions: 10, inputTokens: 500 } } } as unknown as typeof DEFAULT_SETTINGS
     expect(normalizeSettings(old).routing).toEqual({
       referentStrategy: 'one-pass',
-      strategySelection: 'off',
+      // Stored before strategy selection existed: there is no value to keep, so the default applies.
+      strategySelection: 'rules',
       referentBudget: { requests: 1, questions: 10 },
       tokenBudget: { mode: 'absolute', inputTokens: 500 },
       treeWalk: DEFAULT_SETTINGS.routing.treeWalk,
@@ -150,19 +151,21 @@ describe('settings', () => {
 })
 
 describe('strategy selection', () => {
-  test('selection · the mode is a setting: off by default, validated, and defaulted for settings stored before it existed', () => {
-    expect(DEFAULT_SETTINGS.routing.strategySelection).toBe('off')
+  test('selection · the mode is a setting: rules by default, validated, a stored value kept, and defaulted for settings stored before it existed', () => {
+    expect(DEFAULT_SETTINGS.routing.strategySelection).toBe('rules')
     expect(STRATEGY_SELECTION_MODES).toEqual(['off', 'rules', 'decision-model'])
-    const rules = applySettingsPatch(DEFAULT_SETTINGS, { routing: { strategySelection: 'rules' } })
-    expect(rules.routing).toEqual({ ...DEFAULT_SETTINGS.routing, strategySelection: 'rules' })
-    expect(applySettingsPatch(rules, { routing: { strategySelection: 'decision-model' } }).routing.strategySelection).toBe('decision-model')
-    expect(applySettingsPatch(DEFAULT_SETTINGS, { routing: { strategySelection: 'off' } })).toBe(DEFAULT_SETTINGS)
+    const off = applySettingsPatch(DEFAULT_SETTINGS, { routing: { strategySelection: 'off' } })
+    expect(off.routing).toEqual({ ...DEFAULT_SETTINGS.routing, strategySelection: 'off' })
+    expect(applySettingsPatch(off, { routing: { strategySelection: 'decision-model' } }).routing.strategySelection).toBe('decision-model')
+    expect(applySettingsPatch(DEFAULT_SETTINGS, { routing: { strategySelection: 'rules' } })).toBe(DEFAULT_SETTINGS)
     expect(validateSettingsPatch({ routing: { strategySelection: 'rules' } })).toBeNull()
     expect(validateSettingsPatch({ routing: { strategySelection: 'guess' as never } })).toMatch(/Unknown strategy selection/)
     const { strategySelection: _dropped, ...before } = DEFAULT_SETTINGS.routing
-    expect(normalizeSettings({ ...DEFAULT_SETTINGS, routing: before as never }).routing.strategySelection).toBe('off')
-    expect(normalizeSettings({ ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, strategySelection: 'guess' as never } }).routing.strategySelection).toBe('off')
-    expect(normalizeSettings({ ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, strategySelection: 'rules' } }).routing.strategySelection).toBe('rules')
+    // Stored before the mode existed, or with a value that is not a mode: the default.
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, routing: before as never }).routing.strategySelection).toBe('rules')
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, strategySelection: 'guess' as never } }).routing.strategySelection).toBe('rules')
+    // A stored mode is kept, `off` included: only the default changed.
+    for (const mode of STRATEGY_SELECTION_MODES) expect(normalizeSettings({ ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, strategySelection: mode } }).routing.strategySelection).toBe(mode)
   })
 })
 

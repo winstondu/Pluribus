@@ -111,11 +111,17 @@ export function createReferentAsk(options: {
   readonly signal: CancelSignal
   /** Every answered request, for the routing decision record. */
   readonly onAnswers: (answers: Answers) => void
-}): ReferentAsk & { spent(): ReferentSpend } {
+}): ReferentAsk & { spent(): ReferentSpend; refused(): keyof DecisionBudget | null } {
   const { budget } = options
   let requests = 0
   let questionCount = 0
   let inputTokens = 0
+  /** The limit behind the first request that was refused. */
+  let refusedBy: keyof DecisionBudget | null = null
+  const refuse = (limit: keyof DecisionBudget): ReferentAskResult => {
+    refusedBy ??= limit
+    return { kind: 'refused', limit }
+  }
   const remaining = (): DecisionBudget => ({
     requests: Math.max(0, budget.requests - requests),
     questions: Math.max(0, budget.questions - questionCount),
@@ -126,9 +132,9 @@ export function createReferentAsk(options: {
     if (count === 0) return { kind: 'answered', probability: () => null }
     const tokens = estimateDecisionTokens(stateText, questions)
     const left = remaining()
-    if (left.requests < 1) return { kind: 'refused', limit: 'requests' }
-    if (left.questions < count) return { kind: 'refused', limit: 'questions' }
-    if (left.inputTokens < tokens) return { kind: 'refused', limit: 'inputTokens' }
+    if (left.requests < 1) return refuse('requests')
+    if (left.questions < count) return refuse('questions')
+    if (left.inputTokens < tokens) return refuse('inputTokens')
     requests += 1
     questionCount += count
     inputTokens += tokens
@@ -145,5 +151,5 @@ export function createReferentAsk(options: {
     options.onAnswers(result.answers)
     return { kind: 'answered', probability: (id) => result.answers.noul(id) }
   }
-  return Object.assign(send, { remaining, estimate: estimateDecisionTokens, spent: (): ReferentSpend => ({ requests, questions: questionCount, inputTokens }) })
+  return Object.assign(send, { remaining, estimate: estimateDecisionTokens, spent: (): ReferentSpend => ({ requests, questions: questionCount, inputTokens }), refused: () => refusedBy })
 }

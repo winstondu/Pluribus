@@ -61,6 +61,7 @@ export type {
   RoutingPlan,
 } from './router'
 export type {
+  BestNodeFound,
   ReferentAsk,
   ReferentAskResult,
   ReferentGate,

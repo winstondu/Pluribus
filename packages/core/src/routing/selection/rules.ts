@@ -12,9 +12,10 @@ import type { GenealogyShape, StrategySelection, StrategySelector } from '../../
  * - **One pass** when the routing's token budget is under
  *   `FURTHER_REQUEST_ROOM`: the pipeline's request takes up to 5,400 tokens
  *   with its full window and one level of a walk about 600, so with less
- *   the walk could not descend. It asks only about the roots in the
- *   pipeline's request, and the answers below them, listed or not, would go
- *   unasked; one pass asks about every listed answer in that same request.
+ *   the walk could not descend. It asks only about the roots and the
+ *   first-pass sections in the pipeline's request, and the other answers
+ *   below the roots, listed or not, would go unasked; one pass asks about
+ *   every listed answer in that same request.
  * - **Tree walk** when answers are older than the window: only the walk
  *   reaches them.
  * - **Search long runs**: always. It is the only setting that found a

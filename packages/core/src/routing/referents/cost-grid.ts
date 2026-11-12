@@ -130,17 +130,19 @@ const UNGUARDED: Pick<RoutingSettings, 'referentBudget' | 'tokenBudget' | 'costG
   costGuard: { ...DEFAULT_SETTINGS.routing.costGuard, maxAnswerCostRatio: 0 },
 }
 const NO_SEARCH = 1_000_000_000
+/** A row names its strategy: strategy selection is off unless the row turns it on. */
+const FIXED: RoutingSettings = { ...DEFAULT_SETTINGS.routing, strategySelection: 'off' }
 
 const STRATEGIES: readonly (readonly [string, Partial<RoutingSettings>])[] = [
   ['one pass', { referentStrategy: 'one-pass' }],
   ['tree walk, runs listed', { treeWalk: { startAtTrunkBase: false, hopBetweenBranchPoints: false, searchRunsOverTokens: NO_SEARCH } }],
-  ['tree walk, long runs searched (default)', {}],
+  ['tree walk, long runs searched', {}],
   ['+ trunk base', { treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, startAtTrunkBase: true } }],
   ['+ hops', { treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, hopBetweenBranchPoints: true } }],
   ['+ trunk base and hops', { treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, startAtTrunkBase: true, hopBetweenBranchPoints: true } }],
   // A strategy selector in front: the rules cost nothing; the decision model's request is counted like any other. The
   // worst-case provider is not confident about anything, so the rules choose after the request has been paid for.
-  ['selected by rules', { strategySelection: 'rules' }],
+  ['selected by rules (default)', { strategySelection: 'rules' }],
   ['selected by the decision model', { strategySelection: 'decision-model' }],
 ]
 
@@ -195,8 +197,8 @@ export async function costGridRows(sections: number, exchange: number, options: 
   for (const shape of SHAPES) {
     const sc = conversation(shape, sections, exchange)
     for (const [strategy, settings] of STRATEGIES) {
-      const guarded = await spend(sc, { ...DEFAULT_SETTINGS.routing, ...settings })
-      const unguarded = options.unguarded === false ? guarded : await spend(sc, { ...DEFAULT_SETTINGS.routing, ...settings, ...UNGUARDED })
+      const guarded = await spend(sc, { ...FIXED, ...settings })
+      const unguarded = options.unguarded === false ? guarded : await spend(sc, { ...FIXED, ...settings, ...UNGUARDED })
       rows.push({ sections, exchange, shape, strategy, guarded, unguarded, answer: haikuAnswer(exchange) })
     }
   }

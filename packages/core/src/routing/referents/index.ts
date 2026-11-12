@@ -33,4 +33,5 @@ export {
   type RoutingTokenBudget,
 } from './ask'
 export { buildTree, branchingDepth, ancestorsOf, segmentFrom, type ReferentTree, type TreeNode } from './tree'
-export { referentsFromScores, questionId as referentQuestionId } from './shared'
+export { bestNodeFound, referentsFromScores, questionId as referentQuestionId } from './shared'
+export { FIRST_PASS_SECTIONS, firstPassQuestions, firstPassSectionIds } from './first-pass'

@@ -1,4 +1,6 @@
 import {
+  type BestNodeRecord,
+  type BudgetStopRecord,
   type DecisionBudget,
   type StrategySelectionRecord,
   type TreeWalkSettings,
@@ -21,6 +23,8 @@ import {
   type WholeRequestBarrier,
 } from '@committee/protocol'
 import type {
+  BestNodeFound,
+  ScoredSection,
   CancelSignal,
   DecisionProvider,
   CoreDependencies,
@@ -44,7 +48,7 @@ import type {
 import { Batch, ask, type Answers } from './batch'
 import { AMBIGUITY_FLOOR, derivePlacement, neededWork, placedWithoutTarget, referentCovered, resolveUnitTargets, selected, validatePlan, type TargetMode } from './derive'
 import { askUnit, readUnit, sectionNumbers, withReferents, type UnitScope, type UnitSignals } from './questions'
-import { createReferentAsk, estimateRequestTokens, referentStrategyFor, routingTokenBudget, type ReferentSpend, type RoutingTokenBudget } from './referents'
+import { createReferentAsk, estimateRequestTokens, firstPassQuestions, firstPassSectionIds, referentStrategyFor, routingTokenBudget, type ReferentSpend, type RoutingTokenBudget } from './referents'
 import { applyChoice, choiceText, selectStrategy, strategySelectorFor } from './selection'
 import { MAX_SECTIONS, MIN_SECTIONS, decisionContextOf, describeState, numberedAnswerSections, supply, type Supplied } from './supply'
 
@@ -78,8 +82,10 @@ import { MAX_SECTIONS, MIN_SECTIONS, decisionContextOf, describeState, numberedA
  * (`routingTokenBudget`): the smaller of `settings.routing.tokenBudget` and
  * the price guard's allowance. The pipeline's own request comes first: when
  * it would not fit with the full window of answer sections it lists fewer,
- * the most recent ones, down to `MIN_SECTIONS`. What is left is the referent
- * strategy's.
+ * the most recent ones, down to the first-pass sections alone
+ * (`MIN_SECTIONS`). What is left is the referent strategy's. The budget is a
+ * hard stop: a strategy it stops asks nothing more, the user is not asked
+ * which section is meant, and the best node found so far is used.
  *
  * Which strategy runs, and with which tree-walk settings, is the settings'
  * unless a strategy selector is on (`selection/`): then it is chosen for
@@ -127,6 +133,10 @@ class Record {
   selection: StrategySelectionRecord | null = null
   /** Why the pipeline's request listed fewer answer sections than its window, for the decision's explanation. Empty when it listed them all. */
   windowNote = ''
+  /** Set when a limit of the decision budget stopped the referent strategy: the limit and what the strategy did instead. */
+  budgetStop: Pick<BudgetStopRecord, 'limit' | 'fallback'> | null = null
+  /** The units placed on the best node found so far, in place of a question to the user. */
+  readonly bestFound: BestNodeRecord[] = []
   /** Estimated input tokens of the pipeline's own decision requests so far: they are counted against the routing's token budget first. */
   pipelineTokens = 0
 
@@ -284,8 +294,10 @@ async function routeMessage(deps: Deps, input: RoutingInput, signal: CancelSigna
     mayBeReply: m.relation?.value !== 'new' || (m.corrective ?? 0) >= t.clearlyCorrective,
     placedWithoutTarget: placedWithoutTarget(m, t),
     covered: (accepted, weak) => referentCovered(supplied, accepted, weak),
+    budgetStop: referents.stop ? { best: referents.stop.best.get('m')?.sectionIds ?? [] } : null,
   })
   if (resolution.kind === 'ambiguous') return { kind: 'target-ambiguity', candidates: resolution.candidates }
+  if (resolution.bestFound) record.bestFound.push({ unit: 'message', sectionIds: resolution.sectionIds, confidence: referents.stop?.best.get('m')?.confidence ?? 0 })
   const referred = answerTargets(supplied, resolution.sectionIds)
   const revision = revisionOf(m, referred, changedRequirements, input.text, null, supplied, t)
   const targets = withNeededGroups(supplied, referred, selected(m.needsGroups, t.dependency))
@@ -450,11 +462,13 @@ async function routeComposite(deps: Deps, input: RoutingInput, signal: CancelSig
       mayBeReply: s.relation?.value !== 'new' || (s.corrective ?? 0) >= t.clearlyCorrective,
       placedWithoutTarget: placedWithoutTarget(s, t),
       covered: (accepted, weak) => referentCovered(supplied, accepted, weak),
+      budgetStop: referred.stop ? { best: referred.stop.best.get(s.key)?.sectionIds ?? [] } : null,
     })
     if (resolution.kind === 'ambiguous') {
       for (const cand of resolution.candidates) ambiguous.set(cand.sectionId, Math.max(ambiguous.get(cand.sectionId) ?? 0, cand.confidence))
       continue
     }
+    if (resolution.bestFound) record.bestFound.push({ unit: s.key, sectionIds: resolution.sectionIds, confidence: referred.stop?.best.get(s.key)?.confidence ?? 0 })
     const targets = answerTargets(supplied, resolution.sectionIds)
     const changed = (s.corrective ?? 0) >= t.clearlyCorrective ? selected(s.sessionRequirements, t.clearlyCorrective) : []
     for (const id of changed) if (!changedByAny.includes(id)) changedByAny.push(id)
@@ -690,13 +704,31 @@ function selectionNote(selection: StrategySelectionRecord | null): string {
   return ` Referent strategy chosen by ${by}${reused}: ${choiceText(selection.choice)}. ${selection.reason}`
 }
 
-/** The strategy's questions ride in the pipeline's own request. A question never replaces one the pipeline asks itself. */
+/**
+ * The strategy's questions ride in the pipeline's own request, and with
+ * them the first pass, whichever strategy it is: the most recent answer
+ * sections that no later one of them builds on, each asked about by itself
+ * (`firstPassQuestions`). So every routing has scored a bounded set of
+ * sections individually before a strategy asks anything further, and the
+ * best node found so far has candidates when the budget stops it. A
+ * question never replaces one the pipeline asks itself.
+ */
 function addReferentQuestions(batch: Batch, strategy: ReferentStrategy, request: ReferentRequest): void {
   if (request.units.length === 0) return
-  for (const [id, question] of Object.entries(strategy.questions(request))) {
+  for (const [id, question] of Object.entries({ ...strategy.questions(request), ...firstPassQuestions(request) })) {
     if (!batch.has(id)) batch.noul(id, question.instructions)
   }
 }
+
+/** The referents of every unit, and what the decision budget did to the search for them. */
+type ResolvedReferents =
+  | {
+      readonly ok: true
+      readonly units: { readonly [key: string]: UnitReferents }
+      /** Set when a limit of the decision budget stopped the strategy: the best node found so far for each unit, null where there is none. */
+      readonly stop: { readonly best: ReadonlyMap<string, BestNodeFound | null> } | null
+    }
+  | { readonly ok: false; readonly error: ProviderError }
 
 /**
  * Runs the strategy over the answers of the pipeline's request. Further
@@ -712,8 +744,8 @@ async function resolveReferents(
   answers: Answers,
   signals: readonly UnitSignals[],
   record: Record,
-): Promise<ReferentResult> {
-  if (request.units.length === 0) return { ok: true, units: {}, fallback: null }
+): Promise<ResolvedReferents> {
+  if (request.units.length === 0) return { ok: true, units: {}, stop: null }
   const clearlyCorrective = input.settings.thresholds.clearlyCorrective
   const corrective = new Set(signals.filter((s) => (s.corrective ?? 0) >= clearlyCorrective).map((s) => s.key))
   const asker = createReferentAsk({
@@ -727,14 +759,40 @@ async function resolveReferents(
   if (!result.ok) return result
   record.referentNote = referentNote(strategy.name, asker.spent(), result.fallback)
   const known = new Set(request.sections.map((s) => s.section.sectionId))
+  // The budget is a hard stop whoever noticed it: the strategy, which says what it did instead, or the guard, which refused a request.
+  const limit = result.fallback?.limit ?? asker.refused()
+  const best = new Map<string, BestNodeFound | null>()
   const units: { [key: string]: UnitReferents } = {}
   for (const [key, unit] of Object.entries(result.units)) {
-    units[key] = {
-      several: unit.several === null ? null : clamp01(unit.several),
-      sections: unit.sections.filter((s) => known.has(s.sectionId)).map((s) => ({ sectionId: s.sectionId, confidence: clamp01(s.confidence) })),
-    }
+    const sections = unit.sections.filter((s) => known.has(s.sectionId)).map((s) => ({ sectionId: s.sectionId, confidence: clamp01(s.confidence) }))
+    units[key] = { several: unit.several === null ? null : clamp01(unit.several), sections }
+    if (limit) best.set(key, bestOf(unit, sections, request))
   }
-  return { ok: true, units, fallback: result.fallback }
+  if (!limit) return { ok: true, units, stop: null }
+  record.budgetStop = {
+    limit: limit === 'inputTokens' ? tokenBudgetFor(input, request.units.length).limitedBy : limit,
+    fallback: result.fallback?.to ?? 'partial',
+  }
+  return { ok: true, units, stop: { best } }
+}
+
+/**
+ * The best node found so far for one unit: the one the strategy names, as
+ * far as its sections are supplied ones (invariant 9). A strategy that
+ * names none has the highest-scoring section it returned taken, if that is
+ * at least plausible; on equal scores the most recent.
+ */
+function bestOf(unit: UnitReferents, sections: readonly ScoredSection[], request: ReferentRequest): BestNodeFound | null {
+  if (unit.best !== undefined) {
+    const known = new Set(request.sections.map((s) => s.section.sectionId))
+    const sectionIds = unit.best?.sectionIds.filter((id) => known.has(id)) ?? []
+    return unit.best && sectionIds.length > 0 ? { sectionIds, confidence: clamp01(unit.best.confidence) } : null
+  }
+  const position = new Map(request.sections.map((s, i) => [s.section.sectionId, i]))
+  const top = [...sections]
+    .filter((s) => s.confidence >= request.relevance.floor)
+    .sort((x, y) => y.confidence - x.confidence || (position.get(y.sectionId) ?? 0) - (position.get(x.sectionId) ?? 0))[0]
+  return top ? { sectionIds: [top.sectionId], confidence: top.confidence } : null
 }
 
 /**
@@ -779,15 +837,10 @@ function fitWindow<T extends { readonly stateText: string; readonly batch: Batch
   const cost = (built: T): number => estimateRequestTokens(built.stateText, built.batch.questions)
   const full = build(MAX_SECTIONS)
   if (cost(full) <= available) return full
-  // Nothing to leave out: the conversation has no more sections or lines of work than the smallest window lists.
   const listable = Math.max(input.candidates.sections.length, input.candidates.chains.length)
   const limit = budget.limitedBy === 'price-guard' ? 'the price guard on decision cost' : 'the decision token budget'
-  if (listable <= MIN_SECTIONS) {
-    record.windowNote = ` The routing request costs more than ${limit} allows (${Math.max(0, Math.floor(available))} tokens) and could not be made smaller.`
-    return full
-  }
   let fitting: { readonly built: T; readonly window: number } | null = null
-  let low = MIN_SECTIONS
+  let low = MIN_SECTIONS + 1
   let high = Math.min(MAX_SECTIONS, listable) - 1
   while (low <= high) {
     const window = Math.floor((low + high) / 2)
@@ -801,8 +854,15 @@ function fitWindow<T extends { readonly stateText: string; readonly batch: Batch
     record.windowNote = ` The routing request listed the ${fitting.window} most recent answer sections and lines of work, not ${MAX_SECTIONS}, to stay within ${limit}.`
     return fitting.built
   }
-  record.windowNote = ` The routing request listed the ${MIN_SECTIONS} most recent answer sections and lines of work, the fewest it lists, and still costs more than ${limit} allows (${Math.max(0, Math.floor(available))} tokens).`
-  return build(MIN_SECTIONS)
+  // The smallest request: the first-pass sections, which every routing asks about by themselves, and nothing older.
+  const smallest = build(MIN_SECTIONS)
+  const first = firstPassSectionIds(input.candidates).length
+  const sections = `the ${first === 1 ? 'most recent answer section' : `${first} most recent answer sections that no later one of them builds on`}`
+  const left = Math.max(0, Math.floor(available))
+  if (cost(smallest) >= cost(full)) record.windowNote = ` The routing request costs more than ${limit} allows (${left} tokens) and could not be made smaller.`
+  else if (cost(smallest) <= available) record.windowNote = ` The routing request listed only ${sections}, the fewest it lists, to stay within ${limit}.`
+  else record.windowNote = ` The routing request listed only ${sections}, the fewest it lists, and still costs more than ${limit} allows (${left} tokens).`
+  return smallest
 }
 
 function clamp01(value: number): number {
@@ -1043,6 +1103,17 @@ function relationText(relation: string): string {
   }
 }
 
+/** What the hard stop of the decision budget meant for the units that would otherwise have been put to the user. */
+function bestFoundNote(input: RoutingInput, record: Record): string {
+  if (!record.budgetStop || record.bestFound.length === 0) return ''
+  const title = (id: SectionId): string => `"${input.candidates.sections.find((s) => s.sectionId === id)?.title ?? id}"`
+  const placed = record.bestFound.map((b) => {
+    const unit = b.unit === 'message' ? 'the message' : `part F${Number(b.unit.slice(1)) + 1}`
+    return `${unit} on ${b.sectionIds.map(title).join(' and ')} (${b.confidence.toFixed(2)})`
+  })
+  return ` The decision budget is a hard stop, so the user was not asked which section is meant: the best node found so far was used, ${placed.join('; ')}.`
+}
+
 function decisionRecord(
   input: RoutingInput,
   record: Record,
@@ -1056,9 +1127,10 @@ function decisionRecord(
     composition,
     units,
     thresholds: { ...input.settings.thresholds, ambiguityFloor: AMBIGUITY_FLOOR },
-    explanation: `${explanation}${selectionNote(record.selection)}${record.windowNote}${record.referentNote}${record.contextNote}`,
+    explanation: `${explanation}${selectionNote(record.selection)}${record.windowNote}${record.referentNote}${bestFoundNote(input, record)}${record.contextNote}`,
     questions: record.questions,
     ...(record.selection ? { strategySelection: record.selection } : {}),
+    ...(record.budgetStop ? { budgetStop: { ...record.budgetStop, bestFound: record.bestFound } } : {}),
   }
 }
 

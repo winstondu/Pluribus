@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, providerError, type RoutingSettings, type Settings, type StrategyChoice, type StrategySelectionRecord } from '@committee/protocol'
+import { DEFAULT_SETTINGS, providerError, type RoutingSettings, type Settings, type StrategySelectionMode, type StrategyChoice, type StrategySelectionRecord } from '@committee/protocol'
 import { describe, expect, test } from 'vitest'
 import { NEVER_CANCELLED, type DecisionProvider, type DecisionQuestions, type DecisionRequest, type DecisionResult, type RoutingInput, type RoutingOutcome, type RoutingPlan, type StrategySelector } from '../../ports'
 import { compareWithLabel, corpusInput, oracleDecisionProvider, referenceDecomposer, scene, sceneIds, type CorpusExample, type Scene } from '../corpus'
@@ -86,7 +86,10 @@ interface Routed {
 
 const isSelector = (request: DecisionRequest<DecisionQuestions>): boolean => Object.keys(request.questions).some((id) => id.startsWith('sel_'))
 
-/** Routes `text`, which refers to `targets`, with decisions as that label says and the selector's questions as scripted. */
+/**
+ * Routes `text`, which refers to `targets`, with decisions as that label says and the selector's questions as scripted.
+ * Strategy selection is off unless a test turns it on, so that a strategy a test configures is the one that runs.
+ */
 async function route(
   sc: Scene,
   text: string,
@@ -95,7 +98,7 @@ async function route(
   options: { readonly script?: SelectorScript; readonly onRecord?: StrategySelectionRecord | null; readonly inject?: StrategySelector; /** False when the routing is expected to miss the label. */ readonly asLabelled?: boolean } = {},
 ): Promise<Routed> {
   const example: CorpusExample = { id: 'test', covers: ['targets'], note: 'a test scene', scene: sc, text, expect: { parts: [{ kind: 'unit', targets }] } }
-  const settings: Settings = { ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, ...routing } }
+  const settings: Settings = { ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, strategySelection: 'off', ...routing } }
   const input: RoutingInput = { ...corpusInput(example, settings), strategySelectionOnRecord: options.onRecord ?? null }
   const oracle = oracleDecisionProvider(example, input)
   const requests: DecisionRequest<DecisionQuestions>[] = []
@@ -255,15 +258,15 @@ describe('the rules', () => {
 
 describe('strategy selection in the pipeline', () => {
   test('selection · off: the configured strategy is used as before, nothing is asked and nothing is recorded', async () => {
-    const routed = await route(trip(30), J, ['A', 'B'])
-    expect(DEFAULT_SETTINGS.routing.strategySelection).toBe('off')
+    const routed = await route(trip(30), J, ['A', 'B'], { strategySelection: 'off' })
     expect(routed.selector).toEqual([])
     expect(selectionOf(routed)).toBeNull()
     expect(planOf(routed).decision.explanation).not.toContain('Referent strategy chosen')
   })
 
-  test('selection · rules: no request; the choice, the shape signature and the reason are recorded with the routing decision', async () => {
-    const routed = await route(trip(30), J, ['A', 'B'], { strategySelection: 'rules' })
+  test('selection · rules, the default: no request; the choice, the shape signature and the reason are recorded with the routing decision', async () => {
+    expect(DEFAULT_SETTINGS.routing.strategySelection).toBe('rules')
+    const routed = await route(trip(30), J, ['A', 'B'], { strategySelection: DEFAULT_SETTINGS.routing.strategySelection })
     expect(routed.selector).toEqual([])
     expect(selectionOf(routed)).toEqual({
       selector: 'rules',
@@ -280,19 +283,32 @@ describe('strategy selection in the pipeline', () => {
     expect(planOf(small).decision.explanation).toContain('Referent strategy chosen by the rules: one pass.')
   })
 
-  test.each([
-    ['one pass, for a conversation inside the window', trip(0), J, ['A', 'B'], { referentStrategy: 'one-pass' }],
-    ['the tree walk, for answers beyond the window', trip(30), J, ['A', 'B'], { referentStrategy: 'tree-walk' }],
-    ['the tree walk from the trunk base, for a long trunk that has split', trunkThatSplits(30), 'Make the answer to question 3 shorter', ['T3'], { referentStrategy: 'tree-walk', treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, startAtTrunkBase: true } }],
-    ['the tree walk with hops, for a long branch run', longBranches(20), 'Redo press step 2', ['A2'], { referentStrategy: 'tree-walk', treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, hopBetweenBranchPoints: true } }],
-  ] as const)('selection · rules pick %s: the routing is the one that strategy gives when it is configured directly, request for request', async (_name, sc, text, targets, configured) => {
-    // Configured the other way round, so that the result can only come from the selector.
-    const opposite: Partial<RoutingSettings> = configured.referentStrategy === 'one-pass' ? { referentStrategy: 'tree-walk' } : { referentStrategy: 'one-pass' }
-    const selected = await route(sc, text, targets, { ...opposite, strategySelection: 'rules' })
-    const direct = await route(sc, text, targets, configured)
-    expect(selected.requests).toEqual(direct.requests)
-    expect(placed(selected)).toEqual(placed(direct))
-    expect(planOf(selected).decision.questions).toEqual(planOf(direct).decision.questions)
+  test('DA2 · a strategy selector only chooses: the routing is, request for request and in its plan, the one obtained when the same strategy and switches are configured directly', async () => {
+    const cases = [
+      ['one pass, for a conversation inside the window', trip(0), J, ['A', 'B'], { referentStrategy: 'one-pass' }, { strategy: ['one-pass', 0.9] }],
+      ['the tree walk, for answers beyond the window', trip(30), J, ['A', 'B'], { referentStrategy: 'tree-walk' }, { strategy: ['tree-walk', 0.9] }],
+      ['the tree walk from the trunk base, for a long trunk that has split', trunkThatSplits(30), 'Make the answer to question 3 shorter', ['T3'], { referentStrategy: 'tree-walk', treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, startAtTrunkBase: true } }, { strategy: ['tree-walk', 0.9], trunk: 0.9 }],
+      ['the tree walk with hops, for a long branch run', longBranches(20), 'Redo press step 2', ['A2'], { referentStrategy: 'tree-walk', treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, hopBetweenBranchPoints: true } }, { strategy: ['tree-walk', 0.9], hops: 0.9 }],
+    ] as const
+    for (const [name, sc, text, targets, configured, script] of cases) {
+      const direct = await route(sc, text, targets, { ...configured, strategySelection: 'off' })
+      expect(selectionOf(direct), name).toBeNull()
+      // Configured the other way round, so that the result can only come from the selector.
+      const opposite: Partial<RoutingSettings> = configured.referentStrategy === 'one-pass' ? { referentStrategy: 'tree-walk' } : { referentStrategy: 'one-pass' }
+      // By the rules: no request of its own, so every request is the routing's.
+      const byRules = await route(sc, text, targets, { ...opposite, strategySelection: 'rules' })
+      expect(selectionOf(byRules)?.selector, name).toBe('rules')
+      expect(byRules.requests, name).toEqual(direct.requests)
+      expect(placed(byRules), name).toEqual(placed(direct))
+      expect(planOf(byRules).decision.questions, name).toEqual(planOf(direct).decision.questions)
+      // By the decision model: its one request about the shape, and after it the same requests and the same plan.
+      const byModel = await route(sc, text, targets, { ...opposite, strategySelection: 'decision-model' }, { script })
+      expect(selectionOf(byModel), name).toMatchObject({ selector: 'decision-model', fallback: null })
+      expect(byModel.selector, name).toHaveLength(1)
+      expect(byModel.routing, name).toEqual(direct.requests)
+      expect(placed(byModel), name).toEqual(placed(direct))
+      expect(planOf(byModel).decision.questions.filter((q) => !q.id.startsWith('sel_')), name).toEqual(planOf(direct).decision.questions)
+    }
   })
 
   test('selection · decision model: one small request about the shape alone, typed questions, and then the routing of the strategy it chose', async () => {
@@ -372,12 +388,11 @@ describe('strategy selection in the pipeline', () => {
     expect(selectionOf(selected)).toMatchObject({ selector: 'rules', choice: { strategy: 'one-pass' } })
     expect(selectionOf(selected)?.reason).toContain('This routing may use 3,000 decision tokens, too few for a further request')
     expect(new Set(planOf(selected).units[0]?.targets)).toEqual(new Set([sceneIds.section('A'), sceneIds.section('B')]))
-    // The configured tree walk asks about the roots in the pipeline's request and cannot pay for the level below them:
-    // the siblings, though listed, are never asked about.
-    const walked = await route(sc, J, ['A', 'B'], { referentStrategy: 'tree-walk', tokenBudget }, { asLabelled: false })
+    // The configured tree walk cannot pay for a level below the roots either. The siblings are the most recent answers, so the
+    // first pass of every routing asks about them in the pipeline's request, and the walk has nothing left to ask.
+    const walked = await route(sc, J, ['A', 'B'], { referentStrategy: 'tree-walk', tokenBudget })
     expect(walked.requests).toHaveLength(1)
-    expect(planOf(walked).units[0]?.targets).toEqual([])
-    expect(planOf(walked).decision.explanation).toContain('its input-token budget was reached, so it kept what it had scored')
+    expect(new Set(planOf(walked).units[0]?.targets)).toEqual(new Set([sceneIds.section('A'), sceneIds.section('B')]))
   })
 
   test('selection · a choice on record for the same shape signature is reused without a request; a shape that changed materially is asked about again', async () => {
@@ -423,36 +438,50 @@ describe('strategy selection in the pipeline', () => {
     expect(routed.requests).toEqual((await route(trip(0), J, ['A', 'B'], { referentStrategy: 'one-pass' })).requests)
   })
 
-  describe.each(['rules', 'decision-model'] as const)('selected by %s', (strategySelection) => {
-    test('C19 · J builds on the sibling group as a whole whichever strategy is selected: both siblings are referents and J continues from the join-back', async () => {
-      for (const [sc, script] of [[trip(0), { strategy: ['one-pass', 0.9] }], [trip(30), { strategy: ['tree-walk', 0.9] }], [trip(30), { strategy: ['tree-walk', 0.9], trunk: 0.9, hops: 0.9 }]] as const) {
-        const routed = await route(sc, J, ['A', 'B'], { strategySelection }, { script })
-        const unit = planOf(routed).units[0]
-        expect(new Set(unit?.targets)).toEqual(new Set([sceneIds.section('A'), sceneIds.section('B')]))
-        expect(unit?.placement).toEqual({ kind: 'continue', buildsOn: { kind: 'sibling-group', groupId: sceneIds.group('G') } })
-        expect(unit?.prerequisites).toEqual([])
-        expect(selectionOf(routed)?.selector).toBe(strategySelection)
-      }
-    })
-
-    test('C9 · J needs both running siblings whichever strategy is selected: it depends on the whole group, never on a subset', async () => {
-      for (const sc of [trip(0, true), trip(30, true)]) {
-        const example: CorpusExample = { id: 'c9', covers: ['dependencies'], note: 'J while A and B run', scene: sc, text: J, expect: { parts: [{ kind: 'unit', relation: 'result-dependent', targets: ['A', 'B'], prerequisites: ['group:G'] }] } }
-        const input = corpusInput(example, { ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, strategySelection } })
+  test('DA1 · with either referent strategy, and with strategy selection off, by rules or by the decision model, a continuation requiring multiple siblings depends on their full join-back (C9) and J continues on the chain A and B forked from (C19)', async () => {
+    const selectorAnswers = (strategy: 'one-pass' | 'tree-walk', switches: number) =>
+      ({ sel_strategy: { type: 'choice', choice: strategy, confidence: 0.9, probabilities: {} }, sel_trunk: { type: 'noul', probability: switches }, sel_hops: { type: 'noul', probability: switches }, sel_search: { type: 'noul', probability: 0.9 } }) as never
+    // Each strategy as it is reached in each mode: configured, chosen by the rules from the shape, or chosen by the decision model.
+    const runs: (readonly [StrategySelectionMode, 'one-pass' | 'tree-walk', number, number])[] = [
+      ['off', 'one-pass', 0, 0.1],
+      ['off', 'tree-walk', 0, 0.1],
+      ['off', 'tree-walk', 30, 0.1],
+      ['rules', 'one-pass', 0, 0.1],
+      ['rules', 'tree-walk', 30, 0.1],
+      ['decision-model', 'one-pass', 0, 0.1],
+      ['decision-model', 'tree-walk', 0, 0.1],
+      ['decision-model', 'tree-walk', 30, 0.1],
+      ['decision-model', 'tree-walk', 30, 0.9],
+    ]
+    for (const [strategySelection, strategy, before, switches] of runs) {
+      const name = `${strategySelection}, ${strategy}, ${before} earlier answers, switches ${switches}`
+      const routing: RoutingSettings = { ...DEFAULT_SETTINGS.routing, strategySelection, referentStrategy: strategySelection === 'off' ? strategy : strategy === 'one-pass' ? 'tree-walk' : 'one-pass' }
+      const routeJ = async (example: CorpusExample) => {
+        const input = corpusInput(example, { ...DEFAULT_SETTINGS, routing })
         const oracle = oracleDecisionProvider(example, input)
         const provider: DecisionProvider = {
-          decide: async (request, signal) =>
-            isSelector(request)
-              ? ({ ok: true, model: 'scripted', answers: { sel_strategy: { type: 'choice', choice: 'tree-walk', confidence: 0.9, probabilities: {} }, sel_trunk: { type: 'noul', probability: 0.1 }, sel_hops: { type: 'noul', probability: 0.1 }, sel_search: { type: 'noul', probability: 0.9 } } as never, usage: null })
-              : oracle.decide(request, signal),
+          decide: async (request, signal) => (isSelector(request) ? { ok: true, model: 'scripted', answers: selectorAnswers(strategy, switches), usage: null } : oracle.decide(request, signal)),
         }
         const outcome = await createRouter({ decisionProvider: provider, decomposer: referenceDecomposer(example) }).route(input, NEVER_CANCELLED)
-        expect(compareWithLabel(example, outcome)).toEqual([])
-        const unit = outcome.kind === 'plan' ? outcome.plan.units[0] : undefined
-        expect(unit?.prerequisites).toEqual([{ kind: 'sibling-group', groupId: sceneIds.group('G') }])
+        expect(compareWithLabel(example, outcome), name).toEqual([])
+        if (outcome.kind !== 'plan') throw new Error(`Expected a plan, got ${outcome.kind}`)
+        // The strategy under test is the one that ran.
+        if (strategySelection === 'off') expect(outcome.plan.decision.strategySelection ?? null, name).toBeNull()
+        else expect(outcome.plan.decision.strategySelection, name).toMatchObject({ selector: strategySelection, choice: { strategy } })
+        return outcome.plan.units[0]
       }
-    })
+      // C19: the group has closed. Both siblings are referents and J continues from the join-back, on the chain they forked from.
+      const closed = await routeJ({ id: 'c19', covers: ['placement'], note: 'J after A and B', scene: trip(before), text: J, expect: { parts: [{ kind: 'unit', targets: ['A', 'B'] }] } })
+      expect(new Set(closed?.targets), name).toEqual(new Set([sceneIds.section('A'), sceneIds.section('B')]))
+      expect(closed?.placement, name).toEqual({ kind: 'continue', buildsOn: { kind: 'sibling-group', groupId: sceneIds.group('G') } })
+      expect(closed?.prerequisites, name).toEqual([])
+      // C9: both siblings are running. J depends on the whole group, never on a subset.
+      const running = await routeJ({ id: 'c9', covers: ['dependencies'], note: 'J while A and B run', scene: trip(before, true), text: J, expect: { parts: [{ kind: 'unit', relation: 'result-dependent', targets: ['A', 'B'], prerequisites: ['group:G'] }] } })
+      expect(running?.prerequisites, name).toEqual([{ kind: 'sibling-group', groupId: sceneIds.group('G') }])
+    }
+  })
 
+  describe.each(['rules', 'decision-model'] as const)('selected by %s', (strategySelection) => {
     test('guard · with a selector on, every decision request of the routing, the selector\'s included, stays within the routing\'s token budget', async () => {
       for (const tokenBudget of [{ mode: 'absolute', inputTokens: 6_000 }, DEFAULT_SETTINGS.routing.tokenBudget] as const) {
         const sc = flat(300)

@@ -173,7 +173,7 @@ export interface DecisionCostGuard {
  * walk's switches, for each routing from the shape of the conversation's
  * genealogy (docs/build/dependency-decisioning.md · "Strategy selection").
  * - `off`: the strategy and switches set here are used as they are.
- * - `rules`: deterministic rules over the shape. No request.
+ * - `rules` (the default): deterministic rules over the shape. No request.
  * - `decision-model`: one small decision request about the shape, reused
  *   while the shape does not change materially; the rules when it fails, is
  *   not confident, or does not fit the routing's token budget.
@@ -251,9 +251,9 @@ export const DEFAULT_SETTINGS: Settings = {
   routing: {
     // Chosen on the routing corpus and on cost (docs/build/dependency-decisioning.md).
     referentStrategy: 'tree-walk',
-    // Off: on the corpus the rules match the configured tree walk's score at fewer requests, and the decision model does
-    // not beat the rules (docs/build/dependency-decisioning.md · "Strategy selection"). The layer is optional.
-    strategySelection: 'off',
+    // Rules: on the corpus they match the configured tree walk's score at fewer requests, and the decision model does
+    // not beat them (docs/build/dependency-decisioning.md · "Strategy selection"). `off` uses the strategy set above as it is.
+    strategySelection: 'rules',
     referentBudget: { requests: 4, questions: 96 },
     // 2% of the conversation's log, at least what the pipeline's request and a search of a long run cost (16,000) and
     // at most what twice a 1,700-token answer on the cheapest answer model buys (40,000): the budget grows with what

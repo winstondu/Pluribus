@@ -3,7 +3,7 @@ import type { ReferentAsk, ReferentQuestions, ReferentRequest, ReferentResult, R
 import { sectionLine } from '../supply'
 import { STATE_TOKENS_PER_CHARACTER, estimateDecisionTokens } from './ask'
 import { onePassQuestions } from './one-pass'
-import { chunkQuestion, groupQuestion, ownQuestion, questionId, referentsFromScores, severalQuestion, underQuestion } from './shared'
+import { bestNodeFound, chunkQuestion, groupQuestion, ownQuestion, questionId, referentsFromScores, severalQuestion, underQuestion } from './shared'
 import { buildTree, segmentFrom, type ReferentTree, type SectionNode, type TreeNode } from './tree'
 
 /**
@@ -42,14 +42,16 @@ import { buildTree, segmentFrom, type ReferentTree, type SectionNode, type TreeN
  * Roots older than the pipeline's window that nothing was built on are one
  * such run for this purpose: a long flat conversation of unrelated answers.
  * A section is never taken as a referent from a chunk score: it is asked
- * about by itself first, or, when the budget ends the search, reported
- * below the target-choice threshold so that the user is asked.
+ * about by itself first. When the budget ends the search before that, the
+ * sections of the chunk are not candidates at all.
  *
- * Before every further request the walk checks the budget, keeping room for
- * its fallback. When a request does not fit it stops walking and asks the
- * one-pass questions it has not asked yet in one request. When that
- * fallback is what cannot be afforded, the walk goes on for as long as its
- * own requests fit; after that the referents are the relevant nodes reached.
+ * The budget is a hard stop. Before every further request the walk checks
+ * it, keeping room for its fallback. When a request does not fit it stops
+ * walking and asks the one-pass questions it has not asked yet in one
+ * request, if that still fits. When that fallback is what cannot be
+ * afforded, the walk goes on for as long as its own requests fit. Either
+ * way a walk the budget stopped reports, per unit, the best node found so
+ * far (`bestNodeFound`), which routing takes without asking the user.
  */
 export const treeWalkStrategy: ReferentStrategy = {
   name: 'tree-walk',
@@ -73,26 +75,18 @@ export const treeWalkStrategy: ReferentStrategy = {
     const answers = new Map<string, number>()
     const probability = (id: string): number | null => answers.get(id) ?? gate.probability(id)
     const recent = mostRecent(tree)
-    /** Relevant chunks and what was planned for each: resolved once those questions are answered. */
-    const followed = new Map<ReferentUnit, { readonly chunk: Chunk; readonly score: number; readonly step: Refinement }[]>(request.units.map((unit) => [unit, []]))
 
     const done = (fallback: Extract<ReferentResult, { ok: true }>['fallback']): ReferentResult => {
       const units: { [key: string]: UnitReferents } = {}
       for (const unit of request.units) {
-        // A relevant chunk whose search did not finish: its sections stay candidates, below the threshold that would take one.
-        const unresolved = new Map<TreeNode, number>()
-        for (const { chunk, score, step } of followed.get(unit) ?? []) {
-          if (step.kind === 'split' && step.chunks.every((c) => probability(questionId.chunk(unit, c.nodes)) !== null)) continue
-          for (const node of chunk.nodes) {
-            if (probability(questionId.own(unit, node)) === null) unresolved.set(node, Math.max(unresolved.get(node) ?? 0, Math.min(score, clear - UNRESOLVED_MARGIN)))
-          }
-        }
+        // Only what was asked about by itself has a score. The sections of a relevant chunk whose search the budget
+        // ended were never asked about: they are not candidates, and nothing is said about them.
+        const score = (node: TreeNode): number | null => probability(questionId.of(unit, node))
+        const corrective = gate.corrective.has(unit.key)
         units[unit.key] = {
-          sections: referentsFromScores(tree, (node) => probability(questionId.of(unit, node)) ?? unresolved.get(node) ?? null, {
-            corrective: gate.corrective.has(unit.key),
-            clear,
-          }),
+          sections: referentsFromScores(tree, score, { corrective, clear }),
           several: probability(questionId.several(unit)),
+          ...(fallback ? { best: bestNodeFound(tree, score, { corrective, floor }) } : {}),
         }
       }
       return { ok: true, units, fallback }
@@ -167,7 +161,6 @@ export const treeWalkStrategy: ReferentStrategy = {
           const score = probability(questionId.chunk(unit, chunk.nodes))
           if (score === null || score < floor) continue
           const step = refine(unit, chunk, threshold)
-          followed.get(unit)?.push({ chunk, score, step })
           if (step.kind === 'split') chunks.push(...step.chunks)
           else {
             list.push(...chunk.nodes)
@@ -186,8 +179,6 @@ export const treeWalkStrategy: ReferentStrategy = {
 export const MIN_SKIPPED = 2
 /** The most chunks one run is split into in one request. */
 export const SEARCH_FANOUT = 24
-/** How far below the target-choice threshold a section of an unfinished search is reported. */
-const UNRESOLVED_MARGIN = 0.01
 
 /** Sections of one run, in conversation order, asked about in one question. */
 interface Chunk {

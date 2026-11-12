@@ -397,7 +397,7 @@ const REFERENT_STRATEGIES: readonly { value: ReferentStrategyName; label: string
 /** Whether the strategy and the tree walk's switches are chosen for each message from the shape of the conversation. */
 const STRATEGY_SELECTION: readonly { value: StrategySelectionMode; label: string; description: string }[] = [
   { value: 'off', label: 'As set here', description: 'Every message uses the strategy and switches chosen below.' },
-  { value: 'rules', label: 'By rules', description: 'Chosen for each message from the shape of the conversation. No extra request.' },
+  { value: 'rules', label: 'By rules', description: 'Chosen for each message from the shape of the conversation. No extra request. The default.' },
   {
     value: 'decision-model',
     label: 'By the decision model',

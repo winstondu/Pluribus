@@ -35,7 +35,8 @@ const key = process.env['OPENROUTER_KEY'] ?? ''
 const getKey = async () => (key === '' ? null : key)
 const withStrategy = (referentStrategy: ReferentStrategyName, treeWalk: Partial<TreeWalkSettings> = {}): Settings => ({
   ...DEFAULT_SETTINGS,
-  routing: { ...DEFAULT_SETTINGS.routing, referentStrategy, treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, ...treeWalk } },
+  // A configuration that names its strategy runs it as configured: strategy selection is off.
+  routing: { ...DEFAULT_SETTINGS.routing, strategySelection: 'off', referentStrategy, treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, ...treeWalk } },
 })
 
 const withSelection = (strategySelection: StrategySelectionMode): Settings => ({ ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, strategySelection } })
@@ -48,11 +49,11 @@ const withSelection = (strategySelection: StrategySelectionMode): Settings => ({
 const CONFIGURATIONS: readonly (readonly [string, Settings, StrategySelector | null])[] = [
   ['one-pass', withStrategy('one-pass'), null],
   ['tree-walk, runs listed', withStrategy('tree-walk', { searchRunsOverTokens: 1_000_000_000 }), null],
-  ['tree-walk (the default)', withStrategy('tree-walk'), null],
+  ['tree-walk, long runs searched', withStrategy('tree-walk'), null],
   ['tree-walk + trunk base', withStrategy('tree-walk', { startAtTrunkBase: true }), null],
   ['tree-walk + hops', withStrategy('tree-walk', { hopBetweenBranchPoints: true }), null],
   ['tree-walk + trunk base + hops', withStrategy('tree-walk', { startAtTrunkBase: true, hopBetweenBranchPoints: true }), null],
-  ['strategy selected by rules', withSelection('rules'), null],
+  ['strategy selected by rules (the default)', withSelection('rules'), null],
   ['strategy selected by the decision model', withSelection('decision-model'), null],
   ['strategy selected by the decision model, shown the message', withSelection('decision-model'), createDecisionSelector({ includeMessage: true })],
 ]
@@ -82,7 +83,10 @@ describe.skipIf(key === '')('referent strategies, live', () => {
     const report = await evaluateCorpus({ decisionProvider: createOpenRouterDecisionProvider({ getKey }), settings, ...(strategySelector ? { strategySelector } : {}) })
     const long = report.results.filter((r) => LONG.test(r.id)).map((r) => `  ${r.passed ? '✓' : '✗'} ${r.id}: ${r.decisions.requests} requests, ${r.decisions.questions} questions, ${r.decisions.inputTokens} tokens`)
     const tally = selectionTally(report.results)
-    console.log(`referents by ${name}\n${formatCorpusReport(report)}\n${long.join('\n')}${tally ? `\nselections\n${tally}` : ''}`)
+    // The budget is a hard stop: where it was reached, and where the best node found so far stood in for a question to the user.
+    const stops = report.results.filter((r) => r.budgetStop).map((r) => `  ${r.passed ? '✓' : '✗'} ${r.id}: ${r.budgetStop?.limit}, ${r.budgetStop?.fallback}, best node used for ${r.budgetStop?.bestFound.length ?? 0} unit(s)`)
+    const asked = report.results.filter((r) => r.outcome === 'target-ambiguity').map((r) => `  ${r.passed ? '✓' : '✗'} ${r.id}`)
+    console.log(`referents by ${name}\n${formatCorpusReport(report)}\n${long.join('\n')}${tally ? `\nselections\n${tally}` : ''}\nbudget reached: ${stops.length}${stops.length ? `\n${stops.join('\n')}` : ''}\nuser asked which section: ${asked.length}${asked.length ? `\n${asked.join('\n')}` : ''}`)
     expect(report.total).toBe(ROUTING_CORPUS.length)
     expect(report.passed / report.total).toBeGreaterThanOrEqual(CORPUS_FLOOR)
   })

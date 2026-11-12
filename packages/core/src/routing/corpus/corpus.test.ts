@@ -20,7 +20,8 @@ describe('routing corpus', () => {
   })
 
   describe.each(REFERENT_STRATEGY_NAMES)('referents by %s', (referentStrategy) => {
-    const settings = { ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, referentStrategy } }
+    // Strategy selection is off here: each strategy is tested as configured.
+    const settings = { ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, referentStrategy, strategySelection: 'off' as const } }
     test.each(ROUTING_CORPUS.map((e) => [e.id, e] as const))('corpus · with decisions as labelled, the pipeline routes %s as labelled', async (_id, example) => {
       const input = corpusInput(example, settings)
       const router = createRouter({ decisionProvider: oracleDecisionProvider(example, input), decomposer: referenceDecomposer(example) })
@@ -37,7 +38,7 @@ describe('routing corpus', () => {
     ['hops between branch points', { hopBetweenBranchPoints: true }],
     ['trunk base and hops', { startAtTrunkBase: true, hopBetweenBranchPoints: true }],
   ] as const)('referents by tree-walk, %s', (_name, switches) => {
-    const settings = { ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, ...switches } } }
+    const settings = { ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, strategySelection: 'off' as const, treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, ...switches } } }
     test.each(ROUTING_CORPUS.map((e) => [e.id, e] as const))('corpus · with decisions as labelled, the pipeline routes %s as labelled', async (_id, example) => {
       const input = corpusInput(example, settings)
       const router = createRouter({ decisionProvider: oracleDecisionProvider(example, input), decomposer: referenceDecomposer(example) })
@@ -45,9 +46,10 @@ describe('routing corpus', () => {
     })
   })
 
-  // A strategy selector in front, by the rules: every example is routed as labelled, the ones beyond the window included,
+  // A strategy selector in front, by the rules, which is the default: every example is routed as labelled, the ones beyond the window included,
   // because the rules choose the tree walk exactly there. The record names the choice.
-  describe('referents by the strategy the rules select', () => {
+  describe('referents by the strategy the rules select (the default)', () => {
+    test('corpus · the default settings select by rules', () => expect(DEFAULT_SETTINGS.routing.strategySelection).toBe('rules'))
     const settings = { ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, referentStrategy: 'one-pass' as const, strategySelection: 'rules' as const } }
     test.each(ROUTING_CORPUS.map((e) => [e.id, e] as const))('corpus · with decisions as labelled, the pipeline routes %s as labelled', async (_id, example) => {
       const input = corpusInput(example, settings)
