@@ -1,6 +1,6 @@
 # 10 · Front-end interface
 
-Two things live here: what the user sees and can do, and the interface between the client and the Committee backend that makes it possible. The behavior behind each control is specified in documents 02–08; this document is the inventory a front-end builder works from.
+Two things live here: what the user sees and can do, and the interface between the client and the Pluribus backend that makes it possible. The behavior behind each control is specified in documents 02–08; this document is the inventory a front-end builder works from.
 
 The selected chat style is **Sections**, illustrated by the [chat prototype](../../prototypes/ui/chat-directions.html). The prototype shows style only: it predates responding bubbles, first-output placement, and local failure. Visual styling beyond the selected direction is the builder's choice. The inspection views are in [debug views](09-debug-views.md).
 
@@ -32,6 +32,8 @@ The selected chat style is **Sections**, illustrated by the [chat prototype](../
 | Margin rails and Focus | Always-available chain association for each message | [09](09-debug-views.md) |
 | "New output ↓" | Shown when new output arrives while the reader is scrolled away | [03](03-transcript-and-placement.md) |
 
+Opening another conversation does not stop work in the previous one (Q100). A second Pluribus tab shows an already-open state while the first owns execution (Q99).
+
 ### Controls
 
 | Control | Where | Effect |
@@ -42,7 +44,9 @@ The selected chat style is **Sections**, illustrated by the [chat prototype](../
 | Retry | A failed, stopped, or interrupted section; a request | Starts a new attempt; on a request, only its unfinished sections |
 | Regenerate | Completed work with a superseded-input note | Cancels any of that work still in progress and redoes it against the new version |
 | Undo split | Split messages, until one shows answer text or gets a reply | Restores one atomic request |
-| Retry / Continue without / Cancel | A paused queue item | The recovery choice |
+| Debug views | Header, top right | Opens the debug menu: the debug view toggles and Export full logs. Until the menu is first opened in this browser, the button pulses (a ring that grows and fades, then rests); with reduced motion the ring only fades in and out |
+| Export full logs | Header debug menu, available whether or not a debug view is open | Saves one JSON file of the active conversation's complete event log, the settings in force, and derived views. The file contains the full text of the conversation and never a key; it is a local download |
+| Retry / Continue without / Cancel | A dependency-recovery queue item | The recovery choice |
 | Choose section | Target-ambiguity modal above the composer | Picks among candidate sections (Q95) |
 | Choose work to redo | Choice-with-default modal above the composer | Edits the pre-selection until the default runs (Q95) |
 | Answer | Clarification question | Reply to the question through its reply affordance; an untargeted next message may also be recognized as the answer (Q98) |
@@ -74,7 +78,7 @@ Text the specification pins down. Other copy is the builder's choice.
 
 ### States a section can show
 
-Pending (responding bubble), streaming, completed, failed, stopped, interrupted, cancelled, superseded. A request as a whole never shows failed or cancelled.
+Pending (responding bubble), streaming, paused awaiting user input, completed, failed, stopped, interrupted, cancelled, superseded. A request as a whole never shows failed or cancelled.
 
 ### Accessibility and motion
 
@@ -89,10 +93,14 @@ Pending (responding bubble), streaming, completed, failed, stopped, interrupted,
 | Retry policy | Standard | Standard, Persistent, or Manual (Q47) |
 | Wait before a default choice runs | 30 seconds | (Q45) |
 | Concurrency limit | 4 | (Q60) |
-| Model per role | — | Answers (including work continuing from a join-back), decomposition, synthesis for join chains, decisions (Q65, Q90) |
-| Decision confidence thresholds | Tuned on the routing corpus | Sent to the backend (Q74) |
+| Model per role | Every role on OpenRouter; with an Anthropic key, the Claude API for answers, synthesis and decomposition unless the user chose their provider | Answers (including work continuing from a join-back), decomposition, synthesis for join chains, decisions (Q65, Q90); MVP answer, decomposition, and synthesis choices come from the tested compatibility list (Q107). With both keys configured, answers, synthesis and decomposition each show a provider choice first (OpenRouter or the Claude API) and the model list follows it; decisions are fixed to OpenRouter. The backend reports what can be chosen; where the server sets the models they are shown and cannot be changed ([architecture](11-architecture.md#models)) |
+| Ordered-message decomposition | Implementation default | Decomposer option: decompose ordered requests or keep them atomic; combined total limits remain atomic (Q102, Q104) |
+| Decision confidence thresholds, the join threshold among them | Tuned on the routing corpus | Sent to the backend (Q74). The join threshold decides when a reply joins several lines of work instead of asking which section it means; at 1 Pluribus always asks ([reply targets](05-reply-targets-and-routing.md#joining-instead-of-asking)) |
+| Dependency attachment | Strategy selection by rules; configured strategy, used when selection is off: tree walk, long unbranched runs searched; hop between branch points off; candidate sections from the lexical index; decision budget 3% of the conversation's log; context summaries off | The referent strategy and start at the trunk base, both used when selection is off; hop between branch points, used whenever the tree walk runs: a message about a section inside an unbranched run continues from the run's last section, which saves decision tokens and makes the answer read everything after the relevant part of the run; strategy selection (off, rules, or decision model); the candidate source (none, or the lexical index); the decision budget (absolute, or a share of the conversation's log); whether context summaries are used and generated ([architecture](11-architecture.md#dependency-attachment)) |
 | OpenRouter key | None | Pasted by the user; settings show only whether a key is configured (Q64, Q73) |
+| Anthropic key | None | Optional. Pasted by the user in a section of the key prompt that is closed by default, or from settings; checked before it is saved; settings show only whether it is configured. Adding it moves to the Claude API, on the same model, every answer, synthesis and decomposition role whose provider the user has not chosen. Removing it returns the roles that used the Claude API to OpenRouter, and says so |
 | Debug view toggles | — | Mini-map, operation graph, run inspector, Compare for independent composites (Q87, Q94) |
+| Where Compare is shown | Side panel | Side panel, or a card on the decomposed message in the transcript, opened from the message header (or, for split messages, from the “split from one message” link). With the card, the side panel has no Compare tab |
 
 Retry policy, models, and keys apply to the whole app. Session-wide requirements belong to one conversation (Q70).
 
@@ -105,6 +113,7 @@ The backend owns all coordination: routing, scheduling, context assembly, and re
 - The client sends **commands**.
 - The backend sends an ordered stream of **domain events and projection updates**.
 - The client can request the backend's **current state** (a projection snapshot) at any time, for example on load or reconnect.
+- The client can request a conversation's **log export** from the backend. It is read-only and records no event. The client obtains it through one interface and does not assemble it: the embedded backend returns the document itself, and a server deployment may return a download ([architecture](11-architecture.md#inspection)).
 - In the embedded deployment the backend runs in a Web Worker; closing the tab interrupts running work. A server deployment uses WebSocket, or SSE with POST.
 
 ### Commands
@@ -115,11 +124,11 @@ The backend owns all coordination: routing, scheduling, context assembly, and re
 | Stop | A section, or a whole request | [08](08-failure-and-recovery.md) |
 | Retry | A section, or a whole request | [08](08-failure-and-recovery.md) |
 | Regenerate | An item with a superseded-input note | [06](06-revisions.md) |
-| Continue without | A paused request | [08](08-failure-and-recovery.md) |
-| Cancel | A paused request | [08](08-failure-and-recovery.md) |
+| Continue without | A request paused for dependency recovery | [08](08-failure-and-recovery.md) |
+| Cancel | A request paused for dependency recovery. Work paused awaiting user input is ended with Stop | [08](08-failure-and-recovery.md) |
 | Answer elicitation | The elicitation and the user's choice | [07](07-elicitation.md) |
 | Undo split | A set of split messages | [02](02-messages-and-decomposition.md) |
-| Change settings | The settings above | — |
+| Change settings | The settings above, except the keys: a key is never part of a command and is provided through the deployment's key provision ([architecture](11-architecture.md#keys)) | — |
 | Create, list, delete conversation | — | (Q70) |
 
 The list is as corrected by Q79. Revision is not a command.

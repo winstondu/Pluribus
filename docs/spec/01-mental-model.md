@@ -1,6 +1,6 @@
 # 01 · Mental model
 
-How to think about a Committee conversation. The later documents are detailed rules; this one is the picture they all assume. Terms in bold are defined in the [glossary](glossary.md).
+How to think about a Pluribus conversation. The later documents are detailed rules; this one is the picture they all assume. Terms in bold are defined in the [glossary](glossary.md).
 
 ## One chat, many lines of work
 
@@ -86,13 +86,13 @@ A directive is, at any moment, in one of these situations:
 | State | Meaning |
 |---|---|
 | Dependency-queued | Waiting for a result it needs |
-| Paused | The result it needs failed, was stopped, or was interrupted; waiting for the user's recovery choice |
+| Paused | Waiting for user action: an answer to a clarification question, before it starts or after partial output; or a recovery choice after the result it needs failed, was stopped, or was interrupted. Its pause reason determines how it resumes ([elicitation](07-elicitation.md), [failure and recovery](08-failure-and-recovery.md)) |
 | Waiting for capacity | Ready, held back by a provider's rate limit |
 | Running | An attempt is in flight (status only, or streaming answer text) |
 | Completed | Finished successfully; only this releases dependents |
 | Failed | Ended in an error after any automatic retries |
-| Stopped | An attempt ended deliberately by the user. An attempt Committee ends in order to replace it is superseded, not stopped |
-| Cancelled | Work cancelled by the user before it started: queued work inside a stopped request, or a paused request the user chose to cancel (Q91) |
+| Stopped | An attempt ended deliberately by the user. An attempt Pluribus ends in order to replace it is superseded, not stopped |
+| Cancelled | Work cancelled by the user before it started: queued work inside a stopped request, or a request paused for dependency recovery that the user chose to cancel (Q91) |
 | Interrupted | Lost because whatever was executing it stopped unexpectedly |
 | Superseded | Replaced by a revision; kept as history |
 
@@ -103,5 +103,5 @@ A directive is, at any moment, in one of these situations:
 3. **Only success releases a dependency.** Streaming text never does.
 4. **A fresh attempt starts clean.** Replacements and retries never read an earlier attempt's partial text.
 5. **Failure is local.** There is no failed or cancelled status for a request as a whole; those states belong to individual directives.
-6. **Committee does not guess silently.** When a choice is the user's, it asks; it acts on a default only when the action is reasonable and reversible.
-7. **The decision model selects, it does not write.** Routing chooses among candidates Committee supplies.
+6. **Pluribus does not guess silently.** When a choice is the user's, it asks; it acts on a default only when the action is reasonable and reversible.
+7. **The decision model selects, it does not write.** Routing chooses among candidates Pluribus supplies.

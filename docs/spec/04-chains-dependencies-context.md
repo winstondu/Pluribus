@@ -64,6 +64,7 @@ And these hold:
 - **Unrelated history is excluded** because unrelated work is on a different chain.
 - **Exact record.** Each attempt records exactly what it received. Later join-backs, revisions, and retries never rewrite that record (Q31, Q39).
 - **Clean restart.** A replacement or retry never receives an earlier attempt's partial text (Q38, Q47).
+- **No summaries.** A run's context never contains a summary of earlier work. A context summary, where one exists, is shown only to the decision model while routing ([architecture](11-architecture.md#context-summaries-for-decisions)).
 - **Context limit.** Tokens are counted before each run. Near the limit the user is warned; over it, the directive fails as non-retryable. Context is never silently truncated (Q67, Q82).
 
 ## Work that draws on several results

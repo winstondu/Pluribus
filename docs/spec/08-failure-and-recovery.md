@@ -15,6 +15,8 @@ Running example. A (neighborhoods) has finished. B (activities) streams part of 
 
 These are distinct states and are labeled distinctly.
 
+A directive waiting on clarification can also be **paused**, including after partial output. This is a wait for user input, not an execution failure; see [elicitation](07-elicitation.md). Dependency-recovery pauses below retain their distinct recovery choices.
+
 ## Failure is local
 
 - Only the affected directive fails. Its siblings keep running, and successful output stays (Q24, Q27).
@@ -52,7 +54,7 @@ Retry behavior is a user setting (Q47):
   - **Retry activities.** A successful retry unpauses J.
   - **Continue without activities.** J consumes the full join-back with B recorded as failed or stopped.
   - **Cancel itinerary.**
-- There is no default. Committee waits.
+- There is no default. Pluribus waits.
 
 ## Join-back with a member that did not finish
 

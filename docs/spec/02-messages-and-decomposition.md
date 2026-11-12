@@ -8,6 +8,7 @@ How a submitted message becomes one or more directives.
 - A message is **composite** only when it contains independent intents that can be answered separately. Split conservatively: several topics are not evidence of several intents. Tightly related topics, a requested contrast, or one integrated output stay **atomic** (Q4).
   - Atomic: "Explain caching and indexes for beginners."
   - Composite: "Explain why the sky is blue, and separately translate this menu into French. Keep both accessible to a beginner."
+- A combined total output limit makes the request **atomic**, even if its subjects could otherwise be answered separately: “Explain X and translate Y, under 100 words total” is not decomposed (Q102). A per-part limit such as “each answer under 100 words” does not make independent intents atomic.
 - Each **fragment** of a composite carries the requirements that apply to it and a link to its source text. Both the source span and any rewritten fragment text are recorded, so a lost requirement can be traced to decomposition.
 - Fragments are not joined afterwards merely because they came from one message (Q3).
 
@@ -29,10 +30,12 @@ How a submitted message becomes one or more directives.
 
 **Undo split** restores one atomic request. It is offered only until any split message shows answer text or receives a reply. Using it stops any running attempts, drops their status-only bubbles, and restarts the work as one atomic request (Q53, Q85).
 
+For messages with an explicit output order, decomposition versus atomic handling is configurable through a decomposer setting (Q104). When decomposed, the ordering and barrier rules below apply. Combined total output limits remain atomic (Q102).
+
 ## Ready and blocked parts
 
 - A fragment that needs nothing unavailable proceeds at once. Only a fragment that needs an unavailable result is dependency-queued; its queue item names the waiting part and what it waits for (Q19).
-- **Whole-request barrier.** If the message relates its outputs to one another (an explicit order, a combined limit, an integrated presentation) and any part is blocked, the whole request waits. This is a deliberate scheduling constraint, not buffering of an answer already generated (Q19, Q25).
+- **Whole-request barrier.** If the message relates its outputs to one another (for example, an explicit output order) and any part is blocked, the whole request waits. This is a deliberate scheduling constraint, not buffering of an answer already generated (Q19, Q25).
 - A requirement that can be applied to each part separately, such as "each answer under 100 words", creates no barrier (Q25).
 - Clarification questions are never held back by the barrier (Q26). See [elicitation](07-elicitation.md).
 
@@ -41,14 +44,16 @@ How a submitted message becomes one or more directives.
 | Situation | Behavior |
 |---|---|
 | A recommendation is in flight; the user sends "Summarize that recommendation and separately translate this menu" | The translation runs now; the summary is dependency-queued |
-| Same, plus "but put the translation first" | The whole request is queued until the recommendation finishes |
+| Same, plus "but put the translation first" | The decomposer setting controls atomic versus decomposed handling; when decomposed, the whole request is queued until the recommendation finishes |
 | "Translate this menu and explain what happened yesterday" (which event is unclear) | The translation is answered in the initial response; the clarification question and the eventual explanation appear as additional responses |
-| "Keep both answers under 100 words total" | A combined limit relates the outputs, so the whole-request barrier applies if a part is blocked |
+| "Keep both answers under 100 words total" | Atomic: one directive handles the combined limit; do not decompose (Q102) |
 | A split message has started streaming | Undo split is no longer offered |
 
 ## Acceptance conditions
 
 - **D1.** A local brevity instruction does not silently become a session-wide preference.
 - **D2.** With a recommendation A in flight, an unrelated translation requested alongside a summary of A can run before A completes.
-- **D3.** With an output-order qualifier on that request, the translation does not start before A completes.
+- **D3.** With ordered-message decomposition enabled and an output-order qualifier on that request, the translation does not start before A completes.
 - **D4.** Undo split is unavailable once any split message shows answer text or has a reply; before that, it stops running attempts and restarts one atomic request.
+
+- **D5.** A combined total output limit keeps otherwise separable work atomic; independent per-part limits still permit decomposition (Q102).

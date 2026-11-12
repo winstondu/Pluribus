@@ -4,6 +4,7 @@
 # Secrets
 .env
 .env.*
+!.env.example
 
 # Node / build output
 node_modules/
@@ -15,3 +16,10 @@ dist/
 # Large local-only docs
 docs/examples/
 docs/presentation/
+
+# Tooling
+*.tsbuildinfo
+.vite/
+test-results/
+playwright-report/
+.claude/worktrees/
