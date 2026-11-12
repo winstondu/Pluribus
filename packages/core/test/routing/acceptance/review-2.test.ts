@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'vitest'
 import { WORDING, providerError } from '@pluribus/protocol'
-import { answer, createTestBackend } from '../../../testing'
+import { answer, createTestBackend, say } from '../../../testing'
 import { engineModule } from '../../../src/engine'
+import { recoveryModule } from '../../../src/recovery/module'
 import { routingModule } from '../../../src/routing/module'
 import { decomposition, routingScenario as baseScenario } from '../../../testing/acceptance/routing'
 
@@ -11,7 +12,7 @@ import { decomposition, routingScenario as baseScenario } from '../../../testing
  * each one breaks. They run on all three slices, as the app does.
  */
 
-const routingScenario = () => baseScenario({ modules: [engineModule, routingModule] })
+const routingScenario = () => baseScenario({ modules: [engineModule, routingModule, recoveryModule] })
 
 describe('second review: barrier, Undo split, targets', () => {
   test('D3 (review) · a whole-request barrier on a sequential composite does not make its first part wait for itself', async () => {
@@ -47,6 +48,25 @@ describe('second review: barrier, Undo split, targets', () => {
     ])
     // The question itself is never held (E1).
     expect(s.d('question about yesterday').state).toBe('completed')
+  })
+
+  test('D4 (review) · an inferred revision of a split message ends Undo split', async () => {
+    const s = await routingScenario()
+    const text = 'Find three good neighborhoods in Kyoto, then make a two-day plan around the best one'
+    s.t.model.script('Find three good neighborhoods in Kyoto', answer('Gion, Higashiyama, Arashiyama.', 3_000, 4_000))
+    const original = await s.send(text, { composite: 0.9, parts: [{ relation: 'new' }, { relation: 'dependent', after: { 1: 0.9 } }] }, {
+      decompose: [
+        { part: 'Find three good neighborhoods in Kyoto', label: 'neighborhoods' },
+        { part: 'make a two-day plan around the best one', label: 'two-day plan', after: [0] },
+      ],
+    })
+    expect((await s.t.snapshot(s.c)).transcript.splits[original]?.undoAvailable).toBe(true)
+    // An untargeted correction of the queued second split message.
+    await s.send('Actually, make it a three-day plan', { message: { corrective: 0.95, relation: 'addition', targets: { 'two-day plan': 0.9 } } })
+    expect(s.d('two-day plan').revised).toBe(true)
+    expect((await s.t.snapshot(s.c)).transcript.splits[original]?.undoAvailable).toBe(false)
+    const undone = await s.t.send({ type: 'undo-split', conversationId: s.c, originalMessageId: original })
+    expect(undone.ok).toBe(false)
   })
 
   test("D4 (review) · answering a split message's clarification question ends Undo split", async () => {
@@ -122,6 +142,74 @@ describe('second review: barrier, Undo split, targets', () => {
 })
 
 describe('second review: session-wide requirements', () => {
+  const FIRST = 'From now on, keep every answer under 100 words. Why is the sky blue?'
+  const requirementFirst = async () => {
+    const s = await routingScenario()
+    s.t.model.script('Why is the sky blue', answer('Rayleigh scattering.', 10, 20))
+    await s.send(FIRST, { sessionwide: 0.95 }, {
+      decompose: [{ part: 'Why is the sky blue?', label: 'sky', requirements: [{ text: 'Keep every answer under 100 words', part: 'keep every answer under 100 words', scope: 'session-wide' }] }],
+    })
+    await s.t.advance(50)
+    return s
+  }
+
+  test('requirement · a message that changes a session-wide requirement and asks a question keeps the question', async () => {
+    const s = await requirementFirst()
+    const text = 'From now on, keep answers under 50 words instead. What causes tides?'
+    s.t.model.script('What causes tides', answer('The moon.', 10, 20))
+    await s.send(text, { sessionwide: 0.95, message: { corrective: 0.9, relation: 'new', requirements: { 1: 0.95 }, asks: 0.95 } }, {
+      decompose: [{ part: 'What causes tides?', label: 'tides', requirements: [{ text: 'Keep answers under 50 words', part: 'keep answers under 50 words', scope: 'session-wide' }] }],
+    })
+    await s.t.advance(50)
+    const st = s.state()
+    const message = Object.values(st.messages).find((m) => m.text === text)
+    expect(message?.directiveIds).toHaveLength(1)
+    const question = s.directive(message?.directiveIds[0] ?? ('' as never))
+    expect(question.state).toBe('completed')
+    expect(st.revisions.at(-1)?.scope).toBe('shared-requirement')
+    // The old requirement is replaced, and the question is answered under the new one only.
+    const run = st.attempts[question.attemptIds[0] ?? '']
+    const texts = run?.context.messages.map((m) => m.content).join('\n') ?? ''
+    expect(texts).toContain('Keep answers under 50 words')
+    expect(texts).not.toContain('Keep every answer under 100 words')
+  })
+
+  test('E3 (requirement) · revising a session-wide requirement raises the choice over its consumers; an affected running consumer stops and is redone', async () => {
+    const s = await requirementFirst()
+    s.t.model.script('Explain how tides work', [say(10, 'The moon'), say(60_000, ' pulls.')])
+    await s.send('Explain how tides work in detail')
+    await s.t.advance(50)
+    const tides = s.d('Explain how tides work in detail')
+    const first = tides.attemptIds[0] ?? ''
+    expect(s.state().attempts[first]?.context.sessionRequirementIds).toHaveLength(1)
+    const text = 'Actually, change that: keep answers under 50 words from now on'
+    await s.send(text, { sessionwide: 0.95, affected: { 'Explain how tides work in detail': 0.9 }, message: { corrective: 0.95, relation: 'addition', requirements: { 1: 0.95 } } }, {
+      decompose: [{ part: 'keep answers under 50 words from now on', label: 'req', requirements: [{ text: 'Keep answers under 50 words', part: 'keep answers under 50 words', scope: 'session-wide' }] }],
+    })
+    const snap = await s.t.snapshot(s.c)
+    const choice = snap.queue.elicitations.find((e) => e.kind === 'choice-with-default')
+    // Both consumers of the replaced requirement: the finished one is the user's choice.
+    expect(choice && 'options' in choice ? choice.options.map((o) => ({ state: o.state, locked: o.locked })) : null).toEqual([
+      { state: 'finished', locked: false },
+      { state: 'running', locked: true },
+    ])
+    expect(s.state().attempts[first]?.state).toBe('superseded')
+  })
+
+  test('E4 (unaffected) · a running consumer the router judged unaffected by a requirement revision keeps running and is not offered', async () => {
+    const s = await requirementFirst()
+    s.t.model.script('Explain how tides work', [say(10, 'The moon'), say(60_000, ' pulls.')])
+    await s.send('Explain how tides work in detail')
+    await s.t.advance(50)
+    const first = s.d('Explain how tides work in detail').attemptIds[0] ?? ''
+    await s.send('Actually, change that: keep answers under 50 words from now on', { sessionwide: 0.95, message: { corrective: 0.95, relation: 'addition', requirements: { 1: 0.95 } } }, {
+      decompose: [{ part: 'keep answers under 50 words from now on', label: 'req', requirements: [{ text: 'Keep answers under 50 words', part: 'keep answers under 50 words', scope: 'session-wide' }] }],
+    })
+    const choice = (await s.t.snapshot(s.c)).queue.elicitations.find((e) => e.kind === 'choice-with-default')
+    expect(choice && 'options' in choice ? choice.options.map((o) => o.state) : null).toEqual(['finished'])
+    expect(s.state().attempts[first]?.state).toBe('streaming')
+  })
+
   test('T2 (requirement) · without corrective wording a new session-wide requirement is added beside the ones in force, replacing nothing', async () => {
     const s = await routingScenario()
     s.t.model.script('Why is the sky blue', answer('Diffusion de Rayleigh.', 10, 20))
@@ -142,8 +230,45 @@ describe('second review: session-wide requirements', () => {
 })
 
 describe('second review: routing failures', () => {
+  test('F3 (routing) · a transient Decisions failure is retried automatically under Standard, honouring Retry-After, with the routing status kept', async () => {
+    const t = await createTestBackend({ modules: [engineModule, routingModule, recoveryModule], useScriptedRouter: false })
+    let calls = 0
+    t.decisions.answerWith(() => {
+      calls += 1
+      if (calls === 1) return { ok: false, error: providerError('rate-limited', 'Too many requests', { httpStatus: 429, retryAfterMs: 1_000 }) }
+      return { ok: true, model: 'typesafe/jev-1.13-20260917', answers: { composite: { type: 'noul', probability: 0.05 }, sessionwide: { type: 'noul', probability: 0.05 }, m_clarify: { type: 'noul', probability: 0.05 }, m_why: { type: 'choice', choice: 'missing', confidence: 0.9, probabilities: {} } } as never, usage: null }
+    })
+    const c = await t.createConversation()
+    await t.submit(c, 'Why is the sky blue?')
+    const message = () => Object.values(t.state(c).messages)[0]
+    expect(message()?.routing).toBe('routing')
+    const pending = (await t.snapshot(c)).transcript.responses[message()?.initialResponseId ?? '']
+    expect(pending?.routing?.state).toBe('routing')
+    await t.advance(999)
+    expect(t.decisions.requests).toHaveLength(1)
+    await t.advance(1)
+    expect(t.decisions.requests).toHaveLength(2)
+    await t.advance(100)
+    expect(message()?.routing).toBe('routed')
+    expect((await t.backend.snapshot({ kind: 'events', conversationId: c, afterSeq: 0 })).ok).toBe(true)
+  })
+
+  test('F3 (routing) · retries used up, the routing failure is recorded and Retry routes again', async () => {
+    const t = await createTestBackend({ modules: [engineModule, routingModule, recoveryModule], useScriptedRouter: false })
+    t.decisions.answerWith(() => ({ ok: false, error: providerError('bad-gateway', 'Bad gateway', { httpStatus: 502 }) }))
+    const c = await t.createConversation()
+    await t.submit(c, 'Why is the sky blue?')
+    await t.advance(60_000)
+    // One call and three automatic retries (Standard), then the failure.
+    expect(t.decisions.requests).toHaveLength(4)
+    const message = Object.values(t.state(c).messages)[0]
+    expect(message?.routing).toBe('failed')
+    const response = (await t.snapshot(c)).transcript.responses[message?.initialResponseId ?? '']
+    expect(response?.routing?.state).toBe('failed')
+  })
+
   test('F3 (routing) · under Manual a transient routing failure goes straight to Retry', async () => {
-    const t = await createTestBackend({ modules: [engineModule, routingModule], useScriptedRouter: false, settings: { retryPolicy: 'manual' } })
+    const t = await createTestBackend({ modules: [engineModule, routingModule, recoveryModule], useScriptedRouter: false, settings: { retryPolicy: 'manual' } })
     t.decisions.answerWith(() => ({ ok: false, error: providerError('rate-limited', 'Too many requests', { httpStatus: 429, retryAfterMs: 1_000 }) }))
     const c = await t.createConversation()
     await t.submit(c, 'Why is the sky blue?')
