@@ -114,7 +114,7 @@
 <line x1="409" y1="726" x2="409" y2="774" stroke="#6b7785" stroke-width="1.4" marker-end="url(#a)"/>
 <line x1="687" y1="726" x2="687" y2="774" stroke="#6b7785" stroke-width="1.4" marker-end="url(#a)"/>
 <line x1="826" y1="726" x2="826" y2="774" stroke="#6b7785" stroke-width="1.4" marker-end="url(#a)"/>
-<line x1="548" y1="726" x2="548" y2="774" stroke="#6b7785" stroke-width="1.4" marker-end="url(#a)"/>
+<line x1="548" y1="726" x2="648" y2="774" stroke="#6b7785" stroke-width="1.4" marker-end="url(#a)"/>
 <rect x="52" y="906" width="560" height="60" rx="10" fill="#ffffff" stroke="#6b7785" stroke-width="1.2"/>
 <text x="64" y="928" font-size="13" font-weight="600" fill="#26303a" text-anchor="start">OpenRouter API</text>
 <text x="64" y="948" font-size="12" font-weight="400" fill="#4a5562" text-anchor="start">/api/v1/chat/completions (answers, decomposition) · /api/alpha/decisions</text>
