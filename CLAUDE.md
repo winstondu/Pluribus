@@ -2,7 +2,7 @@
 
 One visible chat that runs many model calls at once. The specification in `docs/spec/` is authoritative; read `docs/spec/README.md` first and use the glossary's terms with no synonyms. Where a prototype and the spec disagree, the spec wins (`docs/spec/09-debug-views.md` lists the differences).
 
-- `docs/spec/` — behavior (01–08), debug views (09), front end (10), architecture (11), build plan (12). Every acceptance condition (D1–D4, P1–P13, C1–C20, T1–T3, R1–R8, E1–E4, F1–F9) becomes one deterministic test named after its ID.
+- `docs/spec/` — behavior (01–08), debug views (09), front end (10), architecture (11), build plan (12). Every acceptance condition (D1–D4, P1–P13, C1–C20, T1–T3, R1–R8, E1–E4, F1–F9, DA1–DA5) becomes one deterministic test named after its ID.
 - `docs/build/` — build-time decisions made while implementing (contracts, ownership, choices the spec leaves to the build).
 - `prototypes/react/` — style reference for the five views (Sections chat, Compare, Genealogy, margin rails + Focus, operation graph). Not production code; do not import from it.
 
