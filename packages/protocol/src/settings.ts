@@ -1,4 +1,4 @@
-import type { ModelRole } from './model'
+import { MODEL_PROVIDER_NAMES, PROVIDER_SELECTABLE_ROLES, type ModelProviderName, type ModelRole, type ProviderSelectableRole } from './model'
 import { LISTED_MODEL_ROLES, compatibleModels, isCompatibleModel, isListedModelRole } from './models'
 
 /**
@@ -11,8 +11,65 @@ import { LISTED_MODEL_ROLES, compatibleModels, isCompatibleModel, isListedModelR
 /** Q47. */
 export type RetryPolicy = 'standard' | 'persistent' | 'manual'
 
-/** OpenRouter model IDs, one per role (Q65). */
+/** Model IDs, one per role (Q65), as the role's provider names them. */
 export type ModelSettings = { readonly [R in ModelRole]: string }
+
+/**
+ * The provider each role's model is reached through. Every role has the
+ * field; `decision` is always `openrouter` (the Claude API has no Decisions
+ * endpoint), which `validateSettingsPatch` and `normalizeSettings` enforce.
+ */
+export type ModelProviderSettings = { readonly [R in ModelRole]: ModelProviderName }
+
+/**
+ * The model a role gets when its provider is chosen: OpenRouter IDs for
+ * OpenRouter, Claude API IDs for Anthropic. Decisions have no Anthropic
+ * default.
+ */
+export const PROVIDER_DEFAULT_MODELS: {
+  readonly openrouter: ModelSettings
+  readonly anthropic: { readonly [R in ProviderSelectableRole]: string }
+} = {
+  openrouter: {
+    answer: 'anthropic/claude-sonnet-5.5',
+    decomposition: 'anthropic/claude-haiku-5.5',
+    synthesis: 'anthropic/claude-sonnet-5.5',
+    // Pinned to a versioned model, never a moving alias (Q74).
+    decision: 'typesafe/jev-1.13',
+  },
+  anthropic: {
+    answer: 'claude-sonnet-5-5',
+    decomposition: 'claude-haiku-5-5',
+    synthesis: 'claude-sonnet-5-5',
+  },
+}
+
+/** The patch that moves `role` to `provider` with that provider's default model. */
+export function providerChoicePatch(role: ProviderSelectableRole, provider: ModelProviderName): SettingsPatch {
+  return { modelProviders: { [role]: provider }, models: { [role]: PROVIDER_DEFAULT_MODELS[provider][role] } }
+}
+
+/** The roles whose runs go to the Claude API under these settings. */
+export function rolesOnAnthropic(settings: Pick<Settings, 'modelProviders'>): readonly ProviderSelectableRole[] {
+  return PROVIDER_SELECTABLE_ROLES.filter((role) => settings.modelProviders[role] === 'anthropic')
+}
+
+/**
+ * The patch that returns every role on the Claude API to OpenRouter and its
+ * default model there, applied when the Anthropic key is removed. Null when
+ * no role uses the Claude API.
+ */
+export function anthropicFallbackPatch(settings: Pick<Settings, 'modelProviders'>): SettingsPatch | null {
+  const roles = rolesOnAnthropic(settings)
+  if (roles.length === 0) return null
+  const modelProviders: { [R in ProviderSelectableRole]?: ModelProviderName } = {}
+  const models: { [R in ProviderSelectableRole]?: string } = {}
+  for (const role of roles) {
+    modelProviders[role] = 'openrouter'
+    models[role] = PROVIDER_DEFAULT_MODELS.openrouter[role]
+  }
+  return { modelProviders, models }
+}
 
 /**
  * Decision confidence thresholds (Q74). The defaults are tuned on the
@@ -271,6 +328,7 @@ export interface Settings {
   /** Answer and synthesis runs in flight at once, app-wide: one pool for every conversation (Q60, Q100). Integer ≥ 1. */
   readonly concurrencyLimit: number
   readonly models: ModelSettings
+  readonly modelProviders: ModelProviderSettings
   readonly thresholds: DecisionThresholds
   readonly routing: RoutingSettings
   readonly debug: DebugToggles
@@ -285,13 +343,9 @@ export const DEFAULT_SETTINGS: Settings = {
   retryPolicy: 'standard',
   defaultChoiceWaitMs: 30_000,
   concurrencyLimit: 4,
-  models: {
-    answer: 'anthropic/claude-sonnet-5.5',
-    decomposition: 'anthropic/claude-haiku-5.5',
-    synthesis: 'anthropic/claude-sonnet-5.5',
-    // Pinned to a versioned model, never a moving alias (Q74).
-    decision: 'typesafe/jev-1.13',
-  },
+  models: PROVIDER_DEFAULT_MODELS.openrouter,
+  // Everything on OpenRouter unless the user chooses the Claude API for a role.
+  modelProviders: { answer: 'openrouter', decomposition: 'openrouter', synthesis: 'openrouter', decision: 'openrouter' },
   thresholds: {
     targetChoice: 0.7,
     clearlyCorrective: 0.8,
@@ -340,6 +394,7 @@ export interface SettingsPatch {
   readonly defaultChoiceWaitMs?: number
   readonly concurrencyLimit?: number
   readonly models?: Partial<ModelSettings>
+  readonly modelProviders?: Partial<ModelProviderSettings>
   readonly thresholds?: Partial<DecisionThresholds>
   readonly routing?: {
     readonly referentStrategy?: ReferentStrategyName
@@ -364,6 +419,7 @@ export function applySettingsPatch(settings: Settings, patch: SettingsPatch): Se
     defaultChoiceWaitMs: patch.defaultChoiceWaitMs ?? settings.defaultChoiceWaitMs,
     concurrencyLimit: patch.concurrencyLimit ?? settings.concurrencyLimit,
     models: { ...settings.models, ...definedOnly(patch.models) },
+    modelProviders: { ...settings.modelProviders, ...definedOnly(patch.modelProviders) },
     thresholds: { ...settings.thresholds, ...definedOnly(patch.thresholds) },
     routing: {
       referentStrategy: patch.routing?.referentStrategy ?? settings.routing.referentStrategy,
@@ -382,8 +438,31 @@ export function applySettingsPatch(settings: Settings, patch: SettingsPatch): Se
   return JSON.stringify(next) === JSON.stringify(settings) ? settings : next
 }
 
-/** Returns a message for the first invalid value in a patch, or null when it is acceptable. */
-export function validateSettingsPatch(patch: SettingsPatch): string | null {
+/**
+ * A patch with the model filled in for every role whose provider it changes
+ * without naming a model: that provider's default for the role. So a client
+ * can send the provider alone, and a role is never left with one provider's
+ * model ID on the other.
+ */
+export function completeSettingsPatch(settings: Pick<Settings, 'modelProviders'>, patch: SettingsPatch): SettingsPatch {
+  const models: { [R in ModelRole]?: string } = { ...definedOnly(patch.models) }
+  let filled = false
+  for (const role of PROVIDER_SELECTABLE_ROLES) {
+    const provider = patch.modelProviders?.[role]
+    if (provider === undefined || provider === settings.modelProviders[role] || models[role] !== undefined) continue
+    if (!MODEL_PROVIDER_NAMES.includes(provider)) continue
+    models[role] = PROVIDER_DEFAULT_MODELS[provider][role]
+    filled = true
+  }
+  return filled ? { ...patch, models } : patch
+}
+
+/**
+ * Returns a message for the first invalid value in a patch, or null when it
+ * is acceptable. `current` is the settings the patch applies to: with it, a
+ * model is checked against the list of the provider its role will have.
+ */
+export function validateSettingsPatch(patch: SettingsPatch, current?: Pick<Settings, 'modelProviders' | 'models'>): string | null {
   if (patch.concurrencyLimit !== undefined) {
     if (!Number.isInteger(patch.concurrencyLimit) || patch.concurrencyLimit < 1) {
       return 'Concurrency limit must be a whole number of at least 1'
@@ -441,11 +520,20 @@ export function validateSettingsPatch(patch: SettingsPatch): string | null {
   if (patch.debug?.comparePlacement !== undefined && !COMPARE_PLACEMENTS.includes(patch.debug.comparePlacement)) {
     return `Unknown Compare placement "${String(patch.debug.comparePlacement)}"`
   }
+  for (const [role, provider] of Object.entries(patch.modelProviders ?? {})) {
+    if (provider === undefined) continue
+    if (!MODEL_PROVIDER_NAMES.includes(provider)) return `Unknown model provider "${String(provider)}"`
+    if (role === 'decision' && provider !== 'openrouter') return 'Decisions run on OpenRouter only'
+  }
   for (const [role, model] of Object.entries(patch.models ?? {})) {
     if (typeof model === 'string' && model.trim() === '') return `Model for "${role}" cannot be empty`
-    // MVP answer and decomposition choices come from the tested compatibility list (Q107).
-    if (typeof model === 'string' && isListedModelRole(role) && !isCompatibleModel(role, model)) {
-      return `Model for "${role}" must be one of the tested models: ${compatibleModels(role).map((m) => m.id).join(', ')}`
+  }
+  // MVP answer, decomposition and synthesis choices come from the tested compatibility list of the role's provider (Q107).
+  for (const role of LISTED_MODEL_ROLES) {
+    const provider = patch.modelProviders?.[role] ?? current?.modelProviders[role] ?? 'openrouter'
+    const model = patch.models?.[role] ?? (patch.modelProviders?.[role] !== undefined ? current?.models[role] : undefined)
+    if (typeof model === 'string' && isListedModelRole(role) && !isCompatibleModel(role, model, provider)) {
+      return `Model for "${role}" must be one of the tested models: ${compatibleModels(role, provider).map((m) => m.id).join(', ')}`
     }
   }
   return null
@@ -460,7 +548,8 @@ export function normalizeSettings(stored: Partial<Settings>): Settings {
   return {
     ...DEFAULT_SETTINGS,
     ...stored,
-    models: normalizeModels({ ...DEFAULT_SETTINGS.models, ...stored.models }),
+    modelProviders: normalizeModelProviders(stored.modelProviders),
+    models: normalizeModels({ ...DEFAULT_SETTINGS.models, ...stored.models }, normalizeModelProviders(stored.modelProviders)),
     thresholds: { ...DEFAULT_SETTINGS.thresholds, ...stored.thresholds },
     routing: {
       referentStrategy: stored.routing?.referentStrategy ?? DEFAULT_SETTINGS.routing.referentStrategy,
@@ -487,15 +576,22 @@ export function normalizeSettings(stored: Partial<Settings>): Settings {
 
 /**
  * Stored models, with an answer, decomposition or synthesis model that is
- * not on the tested compatibility list replaced by that role's default
- * (Q107). The decision model is kept as stored.
+ * not on the tested compatibility list of the role's provider replaced by
+ * that provider's default for the role (Q107). The decision model is kept
+ * as stored.
  */
-export function normalizeModels(models: ModelSettings): ModelSettings {
+export function normalizeModels(models: ModelSettings, providers: ModelProviderSettings = DEFAULT_SETTINGS.modelProviders): ModelSettings {
   let next = models
   for (const role of LISTED_MODEL_ROLES) {
-    if (!isCompatibleModel(role, next[role])) next = { ...next, [role]: DEFAULT_SETTINGS.models[role] }
+    if (!isCompatibleModel(role, next[role], providers[role])) next = { ...next, [role]: PROVIDER_DEFAULT_MODELS[providers[role]][role] }
   }
   return next
+}
+
+/** Stored providers, with OpenRouter for every role an earlier version did not store one for, and for decisions always. */
+function normalizeModelProviders(stored: Partial<ModelProviderSettings> | undefined): ModelProviderSettings {
+  const of = (role: ProviderSelectableRole): ModelProviderName => MODEL_PROVIDER_NAMES.find((name) => name === stored?.[role]) ?? 'openrouter'
+  return { answer: of('answer'), decomposition: of('decomposition'), synthesis: of('synthesis'), decision: 'openrouter' }
 }
 
 /** What `referentBudget.inputTokens` was before the token budget became a setting of its own. */
@@ -531,7 +627,7 @@ function definedOnly<T extends object>(value: T | undefined): Partial<T> {
   return out
 }
 
-/** Settings show only whether a key is configured (Q64). */
+/** Settings show only whether a key is configured (Q64). One per provider: the OpenRouter key, and the optional Anthropic key. */
 export interface KeyStatus {
   readonly configured: boolean
 }

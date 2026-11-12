@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.8.0",
     "@committee/core": "workspace:*",
     "@committee/protocol": "workspace:*",
     "eventsource-parser": "^4.1.3",

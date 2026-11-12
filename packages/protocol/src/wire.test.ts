@@ -112,7 +112,7 @@ describe('port transport', () => {
     const seen: string[] = []
     const unsubscribe = client.subscribe((frame) => seen.push(frame.kind))
     await settle()
-    const app: StreamFrame = { kind: 'app', events: [], app: { conversations: [], settings: DEFAULT_SETTINGS, key: { configured: false } } }
+    const app: StreamFrame = { kind: 'app', events: [], app: { conversations: [], settings: DEFAULT_SETTINGS, key: { configured: false }, anthropicKey: { configured: false }, modelRoles: [] } }
     backend.emit(app)
     backend.emit({ kind: 'conversation', conversationId, fromSeq: 1, throughSeq: 1, events: [], patches: [] })
     await settle()

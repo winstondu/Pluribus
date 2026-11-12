@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AppEnvironmentProvider, OFFLINE_ENVIRONMENT, createLiveEnvironment } from '@/app/environment'
+import { AppEnvironmentProvider, OFFLINE_ENVIRONMENT, createEnvironment } from '@/app/environment'
 import { Shell } from '@/app/shell'
 import { UiStateProvider, createUiStore } from '@/app/ui-state'
 import { BackendProvider, connect, type Connection } from '@/backend'
@@ -37,8 +37,8 @@ export function App() {
   }, [])
 
   const environment = useMemo(
-    () => (connection?.mode === 'worker' ? createLiveEnvironment() : OFFLINE_ENVIRONMENT),
-    [connection?.mode],
+    () => (connection ? createEnvironment(connection.keys, connection.mode === 'worker') : OFFLINE_ENVIRONMENT),
+    [connection],
   )
 
   if (!connection) return <div className="h-dvh bg-background" />

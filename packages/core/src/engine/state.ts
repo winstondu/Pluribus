@@ -1,4 +1,5 @@
 import type {
+  ModelProviderName,
   AttemptId,
   AttemptOrigin,
   AttemptState,
@@ -272,6 +273,7 @@ export interface AttemptRow {
   readonly origin: AttemptOrigin
   readonly modelRole: Extract<ModelRole, 'answer' | 'synthesis'>
   readonly model: string
+  readonly provider: ModelProviderName
   readonly parents: readonly NodeId[]
   readonly context: ConsumedContext
   readonly state: AttemptState

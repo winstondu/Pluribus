@@ -1,4 +1,4 @@
-import type { ClarificationReason, ProviderError, TokenUsage } from '@committee/protocol'
+import type { ClarificationReason, ModelProviderName, ProviderError, TokenUsage } from '@committee/protocol'
 import type { CancelSignal } from './cancel'
 import type { ModelMessage } from './model-provider'
 
@@ -15,8 +15,10 @@ import type { ModelMessage } from './model-provider'
  */
 
 export interface PreparationRequest {
-  /** OpenRouter model ID: the decomposition role's model, which the compatibility list tests for structured preparation (Q107). */
+  /** The decomposition role's model, which the compatibility list tests for structured preparation (Q107). */
   readonly model: string
+  /** The provider the decomposition role is set to. Absent means OpenRouter. */
+  readonly provider?: ModelProviderName
   /** The exact input of the answer run this prepares, in order. */
   readonly messages: readonly ModelMessage[]
 }

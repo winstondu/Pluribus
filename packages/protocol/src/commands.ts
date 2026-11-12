@@ -111,14 +111,13 @@ export interface UndoSplit {
 /** Change settings (10 · "User settings"). */
 export interface ChangeSettings {
   readonly type: 'change-settings'
-  /** Omit to leave the settings as they are (for example when only the key changes). */
-  readonly changes?: SettingsPatch
   /**
-   * Store or remove the OpenRouter key. The key goes to the secrets store
-   * and nowhere else: it is never written to an event, a projection or a
-   * log, and is never sent back to the client (Q64, Q73).
+   * The settings to change. A key is never part of a command (Q64, Q73):
+   * keys are provided by the deployment (the embedded backend's key
+   * service, or a server's environment), and the backend reports only
+   * whether each is configured.
    */
-  readonly openRouterKey?: { readonly action: 'set'; readonly key: string } | { readonly action: 'clear' }
+  readonly changes?: SettingsPatch
 }
 
 export interface CreateConversation {

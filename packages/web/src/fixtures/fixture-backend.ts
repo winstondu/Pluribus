@@ -5,6 +5,10 @@ import {
   PROTOCOL_VERSION,
   applySettingsPatch,
   diffSnapshots,
+  anthropicFallbackPatch,
+  completeSettingsPatch,
+  describeModelRoles,
+  rolesOnAnthropic,
   validateSettingsPatch,
   type AppSnapshot,
   type Command,
@@ -22,13 +26,6 @@ import { fx, isBuilt, withThroughSeq } from './builder'
 import type { Fixture, FixtureBackend, FixtureResponse, FixtureStep } from './types'
 
 const BASE_TIME = Date.UTC(2026, 10, 11, 9, 0, 0)
-
-function redact(command: Command): Command {
-  if (command.type === 'change-settings' && command.openRouterKey?.action === 'set') {
-    return { ...command, openRouterKey: { action: 'set', key: '[redacted]' } }
-  }
-  return command
-}
 
 function ok<T extends Command['type']>(output: object = {}): CommandResult<T> {
   return { ok: true, output } as CommandResult<T>
@@ -63,12 +60,19 @@ export function createFixtureBackend(fixture: Fixture, options: { timers?: boole
     title: fixture.titles?.[snapshot.conversationId] ?? (index === 0 ? fixture.title : `Conversation ${index + 1}`),
     createdAt: BASE_TIME - index * 3_600_000,
   }))
-  let app: AppSnapshot = {
+  const modelsEditable = fixture.modelsEditable ?? true
+  /** The app state with the description of each role's model choice, which follows from the rest. */
+  const described = (state: Omit<AppSnapshot, 'modelRoles'>): AppSnapshot => ({
+    ...state,
+    modelRoles: describeModelRoles(state.settings, { anthropicKeyConfigured: state.anthropicKey.configured, editable: modelsEditable }),
+  })
+  let app: AppSnapshot = described({
     conversations: summaries,
     settings: DEFAULT_SETTINGS,
     key: { configured: true },
+    anthropicKey: { configured: false },
     ...fixture.app,
-  }
+  })
 
   let queue: FixtureStep[] = [...(fixture.steps ?? [])]
   let played = 0
@@ -191,13 +195,19 @@ export function createFixtureBackend(fixture: Fixture, options: { timers?: boole
   function builtIn(command: Command): CommandResult {
     switch (command.type) {
       case 'change-settings': {
-        if (command.changes) {
-          const invalid = validateSettingsPatch(command.changes)
-          if (invalid) return { ok: false, error: { code: 'invalid', message: invalid } }
+        // The same rules as core's backend: the configuration is the backend's to validate.
+        if (!command.changes) return ok()
+        if (!modelsEditable && (command.changes.models || command.changes.modelProviders)) {
+          return { ok: false, error: { code: 'not-allowed', message: 'Models are set by the server' } }
         }
-        const settings = command.changes ? applySettingsPatch(app.settings, command.changes) : app.settings
-        const key = command.openRouterKey ? { configured: command.openRouterKey.action === 'set' } : app.key
-        app = { ...app, settings, key }
+        const changes = completeSettingsPatch(app.settings, command.changes)
+        const invalid = validateSettingsPatch(changes, app.settings)
+        if (invalid) return { ok: false, error: { code: 'invalid', message: invalid } }
+        const settings = applySettingsPatch(app.settings, changes)
+        if (!app.anthropicKey.configured && rolesOnAnthropic(settings).length > 0) {
+          return { ok: false, error: { code: 'invalid', message: 'Add an Anthropic key before choosing the Claude API for a role' } }
+        }
+        app = described({ ...app, settings })
         emitApp()
         return ok()
       }
@@ -273,6 +283,15 @@ export function createFixtureBackend(fixture: Fixture, options: { timers?: boole
         progressListeners.delete(listener)
       }
     },
+    setKeyConfigured(provider, configured) {
+      let settings = app.settings
+      if (provider === 'anthropic' && !configured) {
+        const fallback = anthropicFallbackPatch(settings)
+        if (fallback) settings = applySettingsPatch(settings, fallback)
+      }
+      app = described({ ...app, settings, ...(provider === 'anthropic' ? { anthropicKey: { configured } } : { key: { configured } }) })
+      emitApp()
+    },
     dispose() {
       disposed = true
       if (timer !== null) clearTimeout(timer)
@@ -282,8 +301,8 @@ export function createFixtureBackend(fixture: Fixture, options: { timers?: boole
     },
 
     async send<C extends Command>(command: C): Promise<CommandResult<C['type']>> {
-      sent.push(redact(command))
-      const response = fixture.respond?.(redact(command), current()) ?? null
+      sent.push(command)
+      const response = fixture.respond?.(command, current()) ?? null
       const result = response ? applyResponse(response) : builtIn(command)
       return result as CommandResult<C['type']>
     },

@@ -14,6 +14,7 @@ import { emptyConversationState } from './state'
  */
 
 const REAL_LOOKING_KEY = 'sk-or-v1-0123456789abcdef0123456789abcdef0123456789abcdef'
+const REAL_LOOKING_ANTHROPIC_KEY = 'sk-ant-api03-0123456789abcdef0123456789abcdef0123456789'
 
 async function exportOf(t: TestBackend, conversationId: ConversationId): Promise<LogExportFile> {
   const result = await t.backend.snapshot({ kind: 'log-export', conversationId })
@@ -27,7 +28,10 @@ const parse = (file: LogExportFile): LogExportDocument => JSON.parse(textOf(file
 /** A trip conversation through the real routing pipeline: a brief, a composite of two parts, a continuation. */
 async function trip(): Promise<RoutingScenario> {
   const s = await routingScenario()
-  await s.t.send({ type: 'change-settings', openRouterKey: { action: 'set', key: REAL_LOOKING_KEY } })
+  // Keys are provided by the deployment, never by a command: both the OpenRouter key and the optional Anthropic key.
+  await s.t.secretsStore.set('openrouter-key', REAL_LOOKING_KEY)
+  await s.t.secretsStore.set('anthropic-key', REAL_LOOKING_ANTHROPIC_KEY)
+  await s.t.backend.refreshKeyStatus()
   s.t.model.script('Plan a trip to Kyoto', answer('Five days in Kyoto, noted.', 10, 20))
   await s.send('Plan a trip to Kyoto')
   await s.t.advance(50)
@@ -138,6 +142,7 @@ describe('log export', () => {
     const s = await trip()
     const text = textOf(await exportOf(s.t, s.c))
     expect(text).not.toContain(REAL_LOOKING_KEY)
+    expect(text).not.toContain(REAL_LOOKING_ANTHROPIC_KEY)
     expect(text).not.toContain('sk-or-')
     expect(text).not.toMatch(/authorization/i)
     expect(text).not.toMatch(/bearer\s/i)

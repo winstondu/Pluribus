@@ -1,8 +1,9 @@
 import type { BackendClient } from '@committee/protocol'
 import { render, type RenderResult } from '@testing-library/react'
 import type { ReactElement, ReactNode } from 'react'
+import { AppEnvironmentProvider, createEnvironment } from '@/app/environment'
 import { UiStateProvider, createUiStore, type UiStore } from '@/app/ui-state'
-import { BackendProvider, createBackendStore, type BackendStore } from '@/backend'
+import { BackendProvider, createBackendStore, createScriptedKeyProvision, type BackendStore, type KeyProvision } from '@/backend'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { createFixtureBackend, getFixture, type Fixture, type FixtureBackend } from '@/fixtures'
 
@@ -28,7 +29,7 @@ export interface RenderWithBackendResult extends RenderResult {
  */
 export function renderWithBackend(
   ui: ReactElement,
-  options: { fixture?: Fixture; client?: BackendClient } = {},
+  options: { fixture?: Fixture; client?: BackendClient; keys?: KeyProvision } = {},
 ): RenderWithBackendResult {
   let backend: FixtureBackend | null = null
   let client = options.client
@@ -40,6 +41,8 @@ export function renderWithBackend(
   }
   const store = createBackendStore(client)
   const uiStore = createUiStore()
+  // The deployment's key provision: scripted over the fixture backend unless a test supplies one (a server's, say).
+  const environment = createEnvironment(options.keys ?? createScriptedKeyProvision(backend, 0), false)
 
   const ready = new Promise<void>((resolve) => {
     const settled = (): boolean => {
@@ -61,7 +64,9 @@ export function renderWithBackend(
     return (
       <BackendProvider store={store}>
         <UiStateProvider store={uiStore}>
-          <TooltipProvider>{props.children}</TooltipProvider>
+          <AppEnvironmentProvider environment={environment}>
+            <TooltipProvider>{props.children}</TooltipProvider>
+          </AppEnvironmentProvider>
         </UiStateProvider>
       </BackendProvider>
     )

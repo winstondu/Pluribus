@@ -1,25 +1,27 @@
 import { createContext, useContext, type ReactNode } from 'react'
-import { createKeyValidator, scriptedKeyValidator, type KeyValidator } from './key-validation'
+import { createScriptedKeyProvision, type KeyProvision } from '@/backend'
 import { builtInModelLoader, createModelLoader, type ModelLoader } from './models'
 
 /**
- * The two things the shell does on the network by itself: checking a pasted
- * key and loading the model list. Both are injected so that fixtures and
- * tests never leave the page. The default is the offline pair; the app
- * provides the live pair when it runs on the Worker backend.
+ * What the shell needs besides the backend: the deployment's key provision,
+ * and OpenRouter's public model catalog for roles whose model is not
+ * restricted to a list. Both are injected so that fixtures and tests never
+ * leave the page. The default is the offline pair; the app provides the
+ * connection's key provision and the live catalog when it runs on the
+ * Worker backend.
  */
 export interface AppEnvironment {
-  readonly validateKey: KeyValidator
+  readonly keys: KeyProvision
   readonly loadModels: ModelLoader
 }
 
 export const OFFLINE_ENVIRONMENT: AppEnvironment = {
-  validateKey: scriptedKeyValidator,
+  keys: createScriptedKeyProvision(null),
   loadModels: builtInModelLoader,
 }
 
-export function createLiveEnvironment(): AppEnvironment {
-  return { validateKey: createKeyValidator(), loadModels: createModelLoader() }
+export function createEnvironment(keys: KeyProvision, live: boolean): AppEnvironment {
+  return { keys, loadModels: live ? createModelLoader() : builtInModelLoader }
 }
 
 const EnvironmentContext = createContext<AppEnvironment>(OFFLINE_ENVIRONMENT)
@@ -30,4 +32,9 @@ export function AppEnvironmentProvider(props: { environment: AppEnvironment; chi
 
 export function useAppEnvironment(): AppEnvironment {
   return useContext(EnvironmentContext)
+}
+
+/** How this deployment provides provider keys. */
+export function useKeyProvision(): KeyProvision {
+  return useContext(EnvironmentContext).keys
 }

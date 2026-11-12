@@ -1,5 +1,6 @@
 import type { BackendClient, PortClient, StandbyReason } from '@committee/protocol'
 import type { FixtureBackend } from '@/fixtures'
+import { createScriptedKeyProvision, type KeyProvision } from './key-provision'
 import { createBackendStore, type BackendStore } from './store'
 
 export type ConnectionMode = 'fixture' | 'worker'
@@ -9,12 +10,14 @@ export interface Connection {
   readonly store: BackendStore
   /** Set in fixture mode. */
   readonly fixture: FixtureBackend | null
+  /** How this deployment provides provider keys: the Worker's key service, or the scripted one with fixtures. */
+  readonly keys: KeyProvision
 }
 
 /** Fixtures are available on the dev server, and in a build made with `VITE_FIXTURES=1`. */
 export const FIXTURES_ENABLED: boolean = import.meta.env.DEV || import.meta.env.VITE_FIXTURES === '1'
 
-type ConnectWorker = (hooks: { onStandby(reason: StandbyReason): void }) => PortClient
+type ConnectWorker = (hooks: { onStandby(reason: StandbyReason): void }) => { readonly client: PortClient; readonly keys: KeyProvision }
 
 /** `src/worker/client.ts` is integration's; the glob matches nothing until it exists. */
 const workerModules = import.meta.glob<{ default: ConnectWorker }>('../worker/client.ts')
@@ -41,21 +44,21 @@ async function connectFixture(id: string, manual: boolean): Promise<Connection> 
   const fixture = getFixture(id)
   if (!fixture) {
     const known = fixtures.map((candidate) => candidate.id).join(', ')
-    return { mode: 'fixture', store: failedStore(`No fixture "${id}". Known fixtures: ${known}`), fixture: null }
+    return { mode: 'fixture', store: failedStore(`No fixture "${id}". Known fixtures: ${known}`), fixture: null, keys: createScriptedKeyProvision(null) }
   }
   // `manual` leaves the steps to whoever holds the handle (the fixture gallery's stepper, an e2e test).
   const backend = createFixtureBackend(fixture, { timers: !manual })
-  return { mode: 'fixture', store: createBackendStore(backend), fixture: backend }
+  return { mode: 'fixture', store: createBackendStore(backend), fixture: backend, keys: createScriptedKeyProvision(backend) }
 }
 
 async function connectWorker(): Promise<Connection> {
   const load = workerModules['../worker/client.ts']
-  if (!load) return { mode: 'worker', store: failedStore(WORKER_NOT_WIRED), fixture: null }
+  if (!load) return { mode: 'worker', store: failedStore(WORKER_NOT_WIRED), fixture: null, keys: createScriptedKeyProvision(null) }
   let store: BackendStore | null = null
   let standby: StandbyReason | null = null
   try {
     const module = await load()
-    const client = module.default({
+    const { client, keys } = module.default({
       onStandby(reason) {
         standby = reason
         store?.setStatus('standby', reason)
@@ -63,10 +66,10 @@ async function connectWorker(): Promise<Connection> {
     })
     store = createBackendStore(client, { ready: client.ready })
     if (standby !== null && store.getState().status === 'connecting') store.setStatus('standby', standby)
-    return { mode: 'worker', store, fixture: null }
+    return { mode: 'worker', store, fixture: null, keys }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    return { mode: 'worker', store: failedStore(message), fixture: null }
+    return { mode: 'worker', store: failedStore(message), fixture: null, keys: createScriptedKeyProvision(null) }
   }
 }
 

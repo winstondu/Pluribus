@@ -80,7 +80,7 @@ export interface ProjectionCache {
   delete(log: LogId): Promise<void>
 }
 
-export type SecretName = 'openrouter-key'
+export type SecretName = 'openrouter-key' | 'anthropic-key'
 
 /**
  * Local secrets, kept apart from the event log and the projection cache

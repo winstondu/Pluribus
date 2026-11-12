@@ -1,4 +1,4 @@
-import type { AttemptId, ChainId, DirectiveId, MessageId, OperationId, SectionId } from '@committee/protocol'
+import type { AttemptId, ChainId, DirectiveId, MessageId, OperationId, SectionId, KeyProviderName } from '@committee/protocol'
 import { createContext, createElement, useContext, type ReactNode } from 'react'
 import { useStore } from 'zustand'
 import { createStore, type StoreApi } from 'zustand/vanilla'
@@ -28,6 +28,8 @@ export interface UiState {
   /** Asks the transcript to scroll a section into view (Q81). `nonce` changes on every request. */
   readonly reveal: { readonly sectionId: SectionId; readonly nonce: number } | null
   readonly keyPromptOpen: boolean
+  /** The key the prompt was opened for: the OpenRouter key (with the optional Anthropic section), or the Anthropic key alone. */
+  readonly keyPromptSubject: KeyProviderName
   readonly settingsOpen: boolean
   /** The conversation list as a sheet, under 900 px. */
   readonly sidebarOpen: boolean
@@ -41,7 +43,7 @@ export interface UiState {
   toggleInlineCompare(messageId: MessageId): void
   selectOperation(id: OperationId | null): void
   revealSection(sectionId: SectionId): void
-  openKeyPrompt(): void
+  openKeyPrompt(subject?: KeyProviderName): void
   closeKeyPrompt(): void
   openSettings(): void
   closeSettings(): void
@@ -62,6 +64,7 @@ export function createUiStore(): UiStore {
     selectedOperation: null,
     reveal: null,
     keyPromptOpen: false,
+    keyPromptSubject: 'openrouter',
     settingsOpen: false,
     sidebarOpen: false,
 
@@ -87,7 +90,7 @@ export function createUiStore(): UiStore {
     selectOperation: (id) => set({ selectedOperation: id }),
     revealSection: (sectionId) =>
       set((state) => ({ reveal: { sectionId, nonce: (state.reveal?.nonce ?? 0) + 1 } })),
-    openKeyPrompt: () => set({ keyPromptOpen: true }),
+    openKeyPrompt: (subject = 'openrouter') => set({ keyPromptOpen: true, keyPromptSubject: subject }),
     closeKeyPrompt: () => set({ keyPromptOpen: false }),
     openSettings: () => set({ settingsOpen: true }),
     closeSettings: () => set({ settingsOpen: false }),

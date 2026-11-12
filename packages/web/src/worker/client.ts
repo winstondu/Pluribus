@@ -1,8 +1,11 @@
 import { createPortClient, type PortClient, type StandbyReason } from '@committee/protocol'
+import type { KeyProvision } from '@/backend/key-provision'
+import { createWorkerKeyProvision, type KeyPort } from './key-channel'
 
 /**
  * The page's side of the embedded backend: starts the backend Worker and
- * returns a {@link PortClient} over it. `src/backend/connect.ts` finds this
+ * returns a {@link PortClient} over it, with the embedded deployment's
+ * {@link KeyProvision} on the same Worker. `src/backend/connect.ts` finds this
  * file by glob and calls the default export.
  *
  * One Worker per page. React's StrictMode runs the app's connect effect
@@ -18,6 +21,7 @@ interface Hooks {
 
 interface Connection {
   readonly client: PortClient
+  readonly keys: KeyProvision
   readonly hooks: Set<Hooks>
   standby: StandbyReason | null
 }
@@ -30,6 +34,7 @@ function open(): Connection {
   const opened: Connection = {
     hooks,
     standby: null,
+    keys: createWorkerKeyProvision(worker as unknown as KeyPort),
     client: createPortClient(worker, {
       onStandby(reason) {
         opened.standby = reason
@@ -52,9 +57,9 @@ function open(): Connection {
   return opened
 }
 
-export default function connectWorker(hooks: Hooks): PortClient {
+export default function connectWorker(hooks: Hooks): { readonly client: PortClient; readonly keys: KeyProvision } {
   connection ??= open()
   connection.hooks.add(hooks)
   if (connection.standby !== null) hooks.onStandby(connection.standby)
-  return connection.client
+  return { client: connection.client, keys: connection.keys }
 }

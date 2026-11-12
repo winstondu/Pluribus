@@ -38,7 +38,7 @@ export const READINESS_JSON_SCHEMA = {
   },
 } as const
 
-const resultSchema = z.object({
+export const readinessResultSchema = z.object({
   readiness: z.enum(['ready', 'clarification-needed']),
   reason: z.enum(REASONS).nullable(),
   question: z.string().nullable(),
@@ -112,7 +112,7 @@ export function parseReadiness(content: string): PreparedReadiness | null {
   } catch {
     return null
   }
-  const parsed = resultSchema.safeParse(value)
+  const parsed = readinessResultSchema.safeParse(value)
   if (!parsed.success) return null
   if (parsed.data.readiness === 'ready') return { kind: 'ready' }
   const question = parsed.data.question?.trim() ?? ''

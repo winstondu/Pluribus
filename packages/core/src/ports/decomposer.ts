@@ -1,4 +1,4 @@
-import type { ProviderError, RequirementScope, TextSpan, WholeRequestBarrier } from '@committee/protocol'
+import type { ModelProviderName, ProviderError, RequirementScope, TextSpan, WholeRequestBarrier } from '@committee/protocol'
 import type { CancelSignal } from './cancel'
 
 /**
@@ -20,6 +20,8 @@ export interface DecompositionCandidate {
 export interface DecomposeRequest {
   /** The decomposition model, from settings (Q65). */
   readonly model: string
+  /** The provider the decomposition role is set to. Absent means OpenRouter. */
+  readonly provider?: ModelProviderName
   /** The original message, exactly as typed. Spans index into this string. */
   readonly text: string
   readonly candidates: readonly DecompositionCandidate[]
@@ -81,6 +83,13 @@ export type DecomposeResult =
 
 export type LabelResult = { readonly ok: true; readonly label: string } | { readonly ok: false; readonly error: ProviderError }
 
+export interface LabelRequest {
+  readonly model: string
+  /** The provider the decomposition role is set to. Absent means OpenRouter. */
+  readonly provider?: ModelProviderName
+  readonly text: string
+}
+
 export interface Decomposer {
   /**
    * Proposes fragments for a composite message. Never rejects. Output that
@@ -94,5 +103,5 @@ export interface Decomposer {
    * core's provisional one (the request's first words). When absent, or
    * when it fails, the provisional label stays.
    */
-  label?(request: { readonly model: string; readonly text: string }, signal: CancelSignal): Promise<LabelResult>
+  label?(request: LabelRequest, signal: CancelSignal): Promise<LabelResult>
 }

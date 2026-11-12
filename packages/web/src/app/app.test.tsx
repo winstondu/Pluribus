@@ -2,7 +2,9 @@ import { DEFAULT_SETTINGS, WORDING } from '@committee/protocol'
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, test } from 'vitest'
-import { createKeyValidator, keyFormatProblem, type KeyValidator } from '@/app/key-validation'
+import type { KeyCheck } from '@committee/protocol'
+import { keyFormatProblem } from '@/app/key-validation'
+import { createScriptedKeyProvision, type KeyProvision } from '@/backend'
 import { KeyPrompt } from '@/app/key-prompt'
 import { Shell } from '@/app/shell'
 import { CHAIN_COLOR_LIMIT, chainColor, chainSegments, chainTint } from '@/design/chains'
@@ -10,7 +12,11 @@ import { getFixture } from '@/fixtures'
 import { renderWithBackend } from '@/test/render'
 
 const KEY = 'sk-or-v1-0123456789abcdef0123456789abcdef'
-const valid: KeyValidator = async () => ({ status: 'valid', label: null, remaining: 12.4 })
+
+/** The fixture's key provision with the check answered by `check`: nothing is ever sent anywhere. */
+function provision(backend: Parameters<typeof createScriptedKeyProvision>[0], check: () => KeyCheck): KeyProvision {
+  return { ...createScriptedKeyProvision(backend, 0), check: async () => check() }
+}
 
 function fixture(id: string) {
   const found = getFixture(id)
@@ -31,7 +37,7 @@ describe('key prompt', () => {
 
   test('checks the format, validates live, saves, and never keeps or records the key', async () => {
     const user = userEvent.setup()
-    const { ready, backend, ui, store } = renderWithBackend(<KeyPrompt validate={valid} />, { fixture: fixture('no-key') })
+    const { ready, backend, ui, store } = renderWithBackend(<KeyPrompt />, { fixture: fixture('no-key') })
     await act(() => ready)
     act(() => ui.getState().openKeyPrompt())
     const input = await screen.findByLabelText('API key')
@@ -55,7 +61,9 @@ describe('key prompt', () => {
     expect(screen.getByRole('dialog', { name: 'Bring your own OpenRouter key' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Not now' })).toBeInTheDocument()
     expect(input).toHaveValue('')
-    expect(backend?.sent.at(-1)).toEqual({ type: 'change-settings', openRouterKey: { action: 'set', key: '[redacted]' } })
+    // The key went to the deployment's key provision: no backend command carries one.
+    expect(JSON.stringify(backend?.sent)).not.toContain(KEY)
+    expect(backend?.sent.some((command) => command.type === 'change-settings')).toBe(false)
     expect(JSON.stringify(store.getState())).not.toContain(KEY)
     expect(JSON.stringify(ui.getState())).not.toContain(KEY)
     expect(document.body.innerHTML).not.toContain(KEY)
@@ -64,8 +72,8 @@ describe('key prompt', () => {
 
   test('an invalid key cannot be saved; an unreachable OpenRouter can', async () => {
     const user = userEvent.setup()
-    let result: Awaited<ReturnType<KeyValidator>> = { status: 'invalid' }
-    const { ready, ui } = renderWithBackend(<KeyPrompt validate={async () => result} />, { fixture: fixture('no-key') })
+    let result: KeyCheck = { status: 'invalid' }
+    const { ready, ui } = renderWithBackend(<KeyPrompt keys={provision(null, () => result)} />, { fixture: fixture('no-key') })
     await act(() => ready)
     act(() => ui.getState().openKeyPrompt())
     const input = await screen.findByLabelText('API key')
@@ -78,26 +86,12 @@ describe('key prompt', () => {
     expect(screen.getByRole('button', { name: 'Save key' })).toBeEnabled()
   })
 
-  test('the live validator maps OpenRouter answers and sends the key only as a bearer header', async () => {
-    const calls: { url: string; auth: string | null }[] = []
-    const answer = (status: number, body: unknown) =>
-      createKeyValidator(async (input, init) => {
-        calls.push({ url: String(input), auth: new Headers(init?.headers).get('Authorization') })
-        return new Response(JSON.stringify(body), { status })
-      })
-    const signal = new AbortController().signal
-    expect(await answer(200, { data: { label: 'k', limit_remaining: 3.5 } })(KEY, signal)).toEqual({ status: 'valid', label: 'k', remaining: 3.5 })
-    expect(await answer(200, { data: { label: 'k', limit_remaining: null } })(KEY, signal)).toEqual({ status: 'valid', label: 'k', remaining: null })
-    expect(await answer(401, { error: { message: 'User not found.' } })(KEY, signal)).toEqual({ status: 'invalid' })
-    expect(await answer(503, {})(KEY, signal)).toEqual({ status: 'unverified', httpStatus: 503 })
-    const offline = createKeyValidator(async () => {
-      throw new TypeError('Failed to fetch')
-    })
-    expect(await offline(KEY, signal)).toEqual({ status: 'offline' })
-    expect(calls[0]).toEqual({ url: 'https://openrouter.ai/api/v1/key', auth: `Bearer ${KEY}` })
+  test('the format check knows each provider\'s keys', () => {
     expect(keyFormatProblem(KEY)).toBeNull()
     expect(keyFormatProblem('sk-or-short')).toMatch(/too short/)
     expect(keyFormatProblem('sk-or-v1 0123456789abcdef0123')).toMatch(/no spaces/)
+    expect(keyFormatProblem(KEY, 'anthropic')).toMatch(/start with “sk-ant-”/)
+    expect(keyFormatProblem('sk-ant-api03-0123456789abcdef0123', 'anthropic')).toBeNull()
   })
 })
 
@@ -239,12 +233,14 @@ describe('shell', () => {
     await user.click(within(dialog).getByRole('switch', { name: 'Mini-map' }))
     await waitFor(() => expect(store.getState().app?.settings.debug.miniMap).toBe(true))
 
-    await user.click(within(dialog).getByRole('tab', { name: 'Key' }))
+    await user.click(within(dialog).getByRole('tab', { name: 'Keys' }))
     expect(within(dialog).getByTestId('key-status')).toHaveTextContent('Key configured')
+    const sentBefore = backend?.sent.length
     await user.click(within(dialog).getByRole('button', { name: 'Remove' }))
     await user.click(within(dialog).getByRole('button', { name: 'Remove' }))
     await waitFor(() => expect(within(dialog).getByTestId('key-status')).toHaveTextContent('No key'))
-    expect(backend?.sent.at(-1)).toEqual({ type: 'change-settings', openRouterKey: { action: 'clear' } })
+    // Removing a key is the key provision's: no backend command is sent for it.
+    expect(backend?.sent.length).toBe(sentBefore)
   })
 
   test('shows the standby notice while another tab runs the backend, then the app', async () => {

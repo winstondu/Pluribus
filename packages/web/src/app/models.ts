@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, compatibleModels, isListedModelRole, type ModelRole } from '@committee/protocol'
+import type { ModelProviderName, ModelRole, ProviderChoice } from '@committee/protocol'
 
 /** One model offered in the per-role model selector. */
 export interface ModelOption {
@@ -8,6 +8,8 @@ export interface ModelOption {
   /** The part of the ID before the slash. */
   readonly provider: string
   readonly contextLength: number | null
+  /** False for a listed model whose live smoke run is still outstanding. Absent means tested. */
+  readonly tested?: boolean
 }
 
 export type ModelLoader = () => Promise<readonly ModelOption[]>
@@ -80,24 +82,30 @@ export const MODEL_ROLES: readonly { role: ModelRole; label: string; description
 ]
 
 /**
- * Models offered for a role. Answers and decomposition are chosen from the
- * tested compatibility list and nowhere else (Q107): each listed model, with
- * the context length the loaded list knows for it. Decisions run on a
- * decision model only.
+ * The models to show for one provider of a role, from what the backend
+ * reports (`ProviderChoice`). The backend decides the list: a restricted
+ * role (answers and decomposition, Q107) offers exactly its models; an
+ * unrestricted one offers the backend's suggestions, or, when the backend
+ * names none, the provider's public catalog as loaded. `loaded` only adds
+ * what the catalog knows about a model (its context length).
  */
-export function modelsForRole(role: ModelRole, models: readonly ModelOption[]): readonly ModelOption[] {
-  if (isListedModelRole(role)) {
-    return compatibleModels(role).map((listed) => option(listed.id, listed.name, models.find((model) => model.id === listed.id)?.contextLength ?? null))
+export function optionsFor(choice: ProviderChoice, loaded: readonly ModelOption[]): readonly ModelOption[] {
+  const known = (id: string): number | null => loaded.find((model) => model.id === id)?.contextLength ?? null
+  if (choice.models.length > 0 || choice.restricted) {
+    return choice.models.map((model) => ({ id: model.id, name: model.name, provider: groupOf(model.id, choice.provider), contextLength: known(model.id), tested: model.tested }))
   }
-  const decisionProvider = DEFAULT_SETTINGS.models.decision.slice(0, DEFAULT_SETTINGS.models.decision.indexOf('/'))
-  return role === 'decision'
-    ? models.filter((model) => model.provider === decisionProvider)
-    : models.filter((model) => model.provider !== decisionProvider)
+  return choice.provider === 'openrouter' ? loaded : []
 }
 
-/** True when a role's model must come from the tested compatibility list: no other ID can be typed in. */
-export function roleIsListed(role: ModelRole): boolean {
-  return isListedModelRole(role)
+/** The heading a model is listed under: the part of an OpenRouter ID before the slash, or the provider's name. */
+function groupOf(id: string, provider: ModelProviderName): string {
+  return provider === 'openrouter' && id.includes('/') ? id.slice(0, id.indexOf('/')) : PROVIDER_LABELS[provider]
+}
+
+/** What each provider is called in the settings and the run inspector. */
+export const PROVIDER_LABELS: { readonly [P in ModelProviderName]: string } = {
+  openrouter: 'OpenRouter',
+  anthropic: 'Claude API',
 }
 
 /** "200K", "1M". */

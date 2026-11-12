@@ -3,6 +3,7 @@ import type {
   BackendClient,
   Command,
   CommandResult,
+  KeyProviderName,
   ConversationSnapshot,
   RunInspection,
 } from '@committee/protocol'
@@ -19,7 +20,9 @@ export interface Fixture {
   /** States and acceptance IDs it shows: `['P1', 'P2', 'overtaking']`. */
   readonly covers: readonly string[]
   /** Default: the fixture's conversations, `DEFAULT_SETTINGS`, key configured. */
-  readonly app?: Partial<AppSnapshot>
+  readonly app?: Partial<Omit<AppSnapshot, 'modelRoles'>>
+  /** False to show a deployment whose models are set by the server: no role is editable. Default true. */
+  readonly modelsEditable?: boolean
   /** The open conversation. */
   readonly initial: ConversationSnapshot
   /** Further conversations in the list. */
@@ -59,8 +62,10 @@ export interface FixtureResponse {
 /** An in-memory `BackendClient` that replays a {@link Fixture}. */
 export interface FixtureBackend extends BackendClient {
   readonly fixture: Fixture
-  /** Every command received, with any OpenRouter key replaced by `'[redacted]'`. */
+  /** Every command received. A key is never part of one. */
   readonly sent: readonly Command[]
+  /** What the deployment's key provision tells the backend: a key was stored or removed. Only its presence is known here. */
+  setKeyConfigured(provider: KeyProviderName, configured: boolean): void
   /** The fixture conversation as it stands. */
   readonly current: ConversationSnapshot
   readonly app: AppSnapshot

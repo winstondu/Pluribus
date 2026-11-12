@@ -77,7 +77,7 @@ export function ComposerInput() {
       ) : (
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-3.5 pb-1">
           <p className="text-sm text-muted-foreground">Add an OpenRouter key to send messages</p>
-          <Button type="button" variant="outline" size="sm" onClick={openKeyPrompt}>
+          <Button type="button" variant="outline" size="sm" onClick={() => openKeyPrompt()}>
             Add key
           </Button>
         </div>

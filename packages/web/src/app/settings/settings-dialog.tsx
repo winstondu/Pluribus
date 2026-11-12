@@ -8,8 +8,11 @@ import {
   type DebugViewToggle,
   type DecisionThresholds,
   type DecisionTokenBudget,
+  type KeyProviderName,
+  type ModelRoleChoice,
   type OrderedMessageHandling,
   type ReferentStrategyName,
+  type ProviderSelectableRole,
   type RetryPolicy,
   type Settings,
   type SettingsPatch,
@@ -19,13 +22,14 @@ import { CheckIcon, KeyRoundIcon, MinusIcon, PlusIcon } from 'lucide-react'
 import { useEffect, useId, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import { useApp, useSend } from '@/backend'
+import { useKeyProvision } from '../environment'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
-import { MODEL_ROLES } from '../models'
+import { MODEL_ROLES, PROVIDER_LABELS } from '../models'
 import { useUiState } from '../ui-state'
 import { ModelPicker } from './model-picker'
 
@@ -39,7 +43,7 @@ const TABS = [
   { id: 'general', label: 'General' },
   { id: 'models', label: 'Models' },
   { id: 'routing', label: 'Routing' },
-  { id: 'key', label: 'Key' },
+  { id: 'key', label: 'Keys' },
   { id: 'debug', label: 'Debug views' },
 ] as const
 
@@ -87,7 +91,7 @@ export function SettingsDialog() {
                 <GeneralSettings settings={app.settings} />
               </TabsContent>
               <TabsContent value="models">
-                <ModelSettingsPanel settings={app.settings} />
+                <ModelSettingsPanel settings={app.settings} roles={app.modelRoles} />
               </TabsContent>
               <TabsContent value="routing">
                 <div className="grid gap-8">
@@ -97,7 +101,7 @@ export function SettingsDialog() {
                 </div>
               </TabsContent>
               <TabsContent value="key">
-                <KeySettings configured={app.key.configured} />
+                <KeySettings openRouter={app.key.configured} anthropic={app.anthropicKey.configured} roles={app.modelRoles} />
               </TabsContent>
               <TabsContent value="debug">
                 <DebugSettings settings={app.settings} />
@@ -354,21 +358,44 @@ const ORDERED_MESSAGES: readonly { value: OrderedMessageHandling; label: string;
   },
 ]
 
-function ModelSettingsPanel({ settings }: { settings: Settings }) {
+/**
+ * The Models section renders what the backend reports for each role
+ * (`AppSnapshot.modelRoles`): the providers the role can run on and which
+ * of them are usable now, the models each offers, and whether this client
+ * may change anything. It decides none of that itself; a change is a
+ * `change-settings` command the backend validates.
+ *
+ * The provider choice is shown only when the backend reports more than one
+ * usable provider for the role, which is when both keys are configured.
+ * With the OpenRouter key alone the section looks as it always did, and one
+ * line at the end says how to get the choice: a disabled control on every
+ * role would be three copies of the same hint.
+ */
+function ModelSettingsPanel({ settings, roles }: { settings: Settings; roles: readonly ModelRoleChoice[] }) {
   const change = useChangeSettings()
+  const { canProvideKeys } = useKeyProvision()
   const orderedLabel = useId()
+  const hint = roles.flatMap((role) => role.providers).find((provider) => !provider.available)?.unavailableReason ?? null
+  const serverSet = roles.length > 0 && roles.every((role) => !role.editable)
   return (
-    <Panel title="Models" description="One OpenRouter model per role. A change applies to runs that start after it.">
-      {MODEL_ROLES.map((entry) => (
-        <Row key={entry.role} label={entry.label} description={entry.description} stacked>
-          <ModelPicker
-            role={entry.role}
-            label={entry.label}
-            value={settings.models[entry.role]}
-            onChange={(model) => void change({ models: { [entry.role]: model } })}
-          />
-        </Row>
-      ))}
+    <Panel
+      title="Models"
+      description={
+        serverSet
+          ? 'One model per role, set by the server. They cannot be changed from here.'
+          : 'One model per role. A change applies to runs that start after it.'
+      }
+    >
+      {roles.map((choice) => {
+        const entry = MODEL_ROLES.find((role) => role.role === choice.role)
+        if (!entry) return null
+        return <ModelRoleRow key={choice.role} choice={choice} label={entry.label} description={entry.description} change={change} />
+      })}
+      {hint !== null && canProvideKeys && !serverSet ? (
+        <p data-slot="provider-hint" className="py-3.5 text-xs leading-relaxed text-muted-foreground">
+          Answers, synthesis and decomposition can also run on the Claude API. {hint} You can add one under Keys.
+        </p>
+      ) : null}
       <Row
         label="Ordered-message decomposition"
         labelId={orderedLabel}
@@ -384,6 +411,65 @@ function ModelSettingsPanel({ settings }: { settings: Settings }) {
         />
       </Row>
     </Panel>
+  )
+}
+
+function ModelRoleRow(props: {
+  choice: ModelRoleChoice
+  label: string
+  description: string
+  change: (changes: SettingsPatch) => Promise<boolean>
+}) {
+  const { choice, label } = props
+  const providerLabel = useId()
+  const usable = choice.providers.filter((provider) => provider.available)
+  const current = choice.providers.find((provider) => provider.provider === choice.provider) ?? choice.providers[0]
+  if (!current) return null
+  return (
+    <Row label={label} description={props.description} stacked>
+      <div className="flex flex-col gap-2" data-model-role={choice.role}>
+        {choice.editable && usable.length > 1 ? (
+          <div role="radiogroup" aria-labelledby={providerLabel} className="inline-flex w-fit rounded-lg border border-border bg-muted/60 p-0.5">
+            <span id={providerLabel} className="sr-only">
+              {label} provider
+            </span>
+            {usable.map((provider) => {
+              const selected = provider.provider === choice.provider
+              return (
+                <button
+                  key={provider.provider}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  onClick={() => {
+                    // The provider alone: the backend gives the role that provider's default model.
+                    if (!selected) void props.change({ modelProviders: { [choice.role as ProviderSelectableRole]: provider.provider } })
+                  }}
+                  className={cn(
+                    'pressable h-7 rounded-md px-3 text-xs font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/30',
+                    selected ? 'bg-surface text-foreground shadow-raised' : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {PROVIDER_LABELS[provider.provider]}
+                </button>
+              )
+            })}
+          </div>
+        ) : null}
+        <ModelPicker
+          label={label}
+          value={choice.model}
+          choice={current}
+          disabled={!choice.editable}
+          onChange={(model) => void props.change({ models: { [choice.role]: model } })}
+        />
+        {choice.note !== null ? (
+          <p data-slot="model-role-note" className="text-xs leading-relaxed text-muted-foreground">
+            {choice.note}
+          </p>
+        ) : null}
+      </div>
+    </Row>
   )
 }
 
@@ -683,30 +769,100 @@ function ThresholdRow(props: {
 
 // ───────────────────────── key ─────────────────────────
 
-function KeySettings({ configured }: { configured: boolean }) {
-  const send = useSend()
+/** "Answers", "Answers and Synthesis", "Answers, Synthesis and Decomposition". */
+function listed(words: readonly string[]): string {
+  return words.length <= 1 ? (words[0] ?? '') : `${words.slice(0, -1).join(', ')} and ${words[words.length - 1] ?? ''}`
+}
+
+const ROLE_WORDS: { readonly [R in ModelRoleChoice['role']]: string } = {
+  answer: 'Answers',
+  synthesis: 'Synthesis',
+  decomposition: 'Decomposition',
+  decision: 'Decisions',
+}
+
+/**
+ * The keys this deployment uses. What is shown is what the backend reports
+ * (configured or not, never a value); adding, replacing and removing go
+ * through the deployment's key provision. Where keys are not the client's
+ * to provide, the cards only say whether the server has each.
+ */
+function KeySettings({ openRouter, anthropic, roles }: { openRouter: boolean; anthropic: boolean; roles: readonly ModelRoleChoice[] }) {
+  const keys = useKeyProvision()
+  // Roles the backend returned to OpenRouter when the Anthropic key was removed here.
+  const [returned, setReturned] = useState<readonly string[]>([])
+  const onAnthropic = roles.filter((role) => role.provider === 'anthropic').map((role) => ROLE_WORDS[role.role])
+  return (
+    <Panel
+      title="Keys"
+      description={
+        keys.canProvideKeys
+          ? "Keys are kept in this browser's local secrets store, apart from your conversations, and each is sent only to its own provider. A key is never shown again after it is saved."
+          : 'Keys are configured on the server. They cannot be seen or changed from here.'
+      }
+    >
+      <KeyCard
+        provider="openrouter"
+        configured={openRouter}
+        testId="key-status"
+        configuredNote="Messages are sent with this key."
+        missingNote="Messages cannot be sent until a key is added."
+      />
+      <KeyCard
+        provider="anthropic"
+        configured={anthropic}
+        testId="anthropic-key-status"
+        configuredNote={
+          onAnthropic.length > 0
+            ? `Used from this browser for ${listed(onAnthropic).toLowerCase()}, on the Claude API.`
+            : 'Optional. Choose the Claude API for a role under Models.'
+        }
+        missingNote="Optional. Lets a role run on the Claude API."
+        removeNote={onAnthropic.length > 0 ? `${listed(onAnthropic)} will return to OpenRouter.` : null}
+        onRemoved={() => setReturned(onAnthropic)}
+      />
+      {returned.length > 0 && !anthropic ? (
+        <p role="status" data-slot="provider-fallback" className="py-3.5 text-xs leading-relaxed text-warning">
+          {listed(returned)} {returned.length > 1 ? 'were' : 'was'} running on the Claude API and now {returned.length > 1 ? 'run' : 'runs'} on
+          OpenRouter with the default model.
+        </p>
+      ) : null}
+    </Panel>
+  )
+}
+
+function KeyCard(props: {
+  provider: KeyProviderName
+  configured: boolean
+  testId: string
+  configuredNote: string
+  missingNote: string
+  removeNote?: string | null
+  onRemoved?: () => void
+}) {
+  const keys = useKeyProvision()
   const openKeyPrompt = useUiState((state) => state.openKeyPrompt)
   const closeSettings = useUiState((state) => state.closeSettings)
   const [confirming, setConfirming] = useState(false)
+  const name = props.provider === 'anthropic' ? 'Anthropic' : 'OpenRouter'
+  const { configured } = props
 
   function replace(): void {
     // One dialog at a time: the key prompt takes over from the settings.
     closeSettings()
-    openKeyPrompt()
+    openKeyPrompt(props.provider)
   }
 
   function remove(): void {
     setConfirming(false)
-    void send({ type: 'change-settings', openRouterKey: { action: 'clear' } }).then((result) => {
-      if (!result.ok) toast.error('The key was not removed', { description: result.error.message })
+    void keys.remove(props.provider).then((result) => {
+      if (!result.ok) toast.error('The key was not removed', { description: result.message })
+      else props.onRemoved?.()
     })
   }
 
   return (
-    <Panel
-      title="OpenRouter key"
-      description="The key is kept in this browser's local secrets store, apart from your conversations, and sent only to OpenRouter. It is never shown again after it is saved."
-    >
+    <div className="py-3.5 first:pt-0 last:pb-0" data-key-card={props.provider}>
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-surface p-3.5">
         <div className="flex items-center gap-3">
           <span
@@ -718,44 +874,45 @@ function KeySettings({ configured }: { configured: boolean }) {
             <KeyRoundIcon aria-hidden className="size-4" />
           </span>
           <div>
-            <p data-testid="key-status" className="text-[0.8125rem] font-medium">
-              {configured ? 'Key configured' : 'No key'}
+            <p className="text-2xs font-medium tracking-wide text-muted-foreground uppercase">{name}</p>
+            <p data-testid={props.testId} className="text-[0.8125rem] font-medium">
+              {keys.canProvideKeys ? (configured ? 'Key configured' : 'No key') : configured ? 'Configured on the server' : 'Not configured on the server'}
             </p>
-            <p className="text-xs text-muted-foreground">
-              {configured ? 'Messages are sent with this key.' : 'Messages cannot be sent until a key is added.'}
-            </p>
+            <p className="text-xs text-muted-foreground">{configured ? props.configuredNote : props.missingNote}</p>
           </div>
         </div>
-        <div className="ml-auto flex items-center gap-2">
-          {configured ? (
-            confirming ? (
-              <>
-                <span className="text-xs text-muted-foreground">Remove the key?</span>
-                <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
-                  Keep
-                </Button>
-                <Button variant="destructive" size="sm" onClick={remove}>
-                  Remove
-                </Button>
-              </>
+        {keys.canProvideKeys ? (
+          <div className="ml-auto flex items-center gap-2">
+            {configured ? (
+              confirming ? (
+                <>
+                  <span className="text-xs text-muted-foreground">Remove the key?{props.removeNote ? ` ${props.removeNote}` : ''}</span>
+                  <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
+                    Keep
+                  </Button>
+                  <Button variant="destructive" size="sm" onClick={remove}>
+                    Remove
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button variant="ghost" size="sm" onClick={() => setConfirming(true)}>
+                    Remove
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={replace}>
+                    Replace
+                  </Button>
+                </>
+              )
             ) : (
-              <>
-                <Button variant="ghost" size="sm" onClick={() => setConfirming(true)}>
-                  Remove
-                </Button>
-                <Button variant="outline" size="sm" onClick={replace}>
-                  Replace
-                </Button>
-              </>
-            )
-          ) : (
-            <Button size="sm" onClick={replace}>
-              Add key
-            </Button>
-          )}
-        </div>
+              <Button size="sm" variant={props.provider === 'openrouter' ? 'default' : 'outline'} onClick={replace}>
+                Add key
+              </Button>
+            )}
+          </div>
+        ) : null}
       </div>
-    </Panel>
+    </div>
   )
 }
 

@@ -333,6 +333,23 @@ export function describeSecretsStore(name: string, make: Make<SecretsStore>): vo
       expect(await secrets.get('openrouter-key')).toBe(`${KEY}-2`)
     })
 
+    test('the OpenRouter key and the Anthropic key are held apart: each reads back, is replaced and is removed by itself', async () => {
+      const secrets = await make()
+      const anthropic = 'sk-ant-api03-conformance-0123456789'
+      expect(await secrets.get('anthropic-key')).toBeNull()
+      await secrets.set('openrouter-key', KEY)
+      await secrets.set('anthropic-key', anthropic)
+      expect(await secrets.get('openrouter-key')).toBe(KEY)
+      expect(await secrets.get('anthropic-key')).toBe(anthropic)
+      await secrets.set('anthropic-key', `${anthropic}-2`)
+      expect(await secrets.get('openrouter-key')).toBe(KEY)
+      await secrets.delete('anthropic-key')
+      expect(await secrets.get('anthropic-key')).toBeNull()
+      expect(await secrets.get('openrouter-key')).toBe(KEY)
+      await secrets.delete('openrouter-key')
+      expect(await secrets.get('openrouter-key')).toBeNull()
+    })
+
     test('delete removes the key, and deleting a missing key is harmless', async () => {
       const secrets = await make()
       await secrets.set('openrouter-key', KEY)

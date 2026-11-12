@@ -644,6 +644,7 @@ const REDUCERS: ReducerTable = {
       origin: e.origin,
       modelRole: e.modelRole,
       model: e.model,
+      provider: e.provider ?? 'openrouter',
       parents: e.parents,
       context: e.context,
       state: 'running',

@@ -13,11 +13,13 @@ import {
 /** The tested compatibility list (Q107). */
 describe('model compatibility list', () => {
   test('the defaults of the answer and decomposition roles are on the list, each tested for what its role needs', () => {
-    expect(MODEL_COMPATIBILITY.map((m) => m.id)).toEqual(['anthropic/claude-sonnet-5.5', 'anthropic/claude-haiku-5.5'])
+    expect(MODEL_COMPATIBILITY.filter((m) => m.provider === 'openrouter').map((m) => m.id)).toEqual(['anthropic/claude-sonnet-5.5', 'anthropic/claude-haiku-5.5'])
+    // The same two models through the Claude API, under its IDs; their live run needs an Anthropic key and is recorded when made.
+    expect(MODEL_COMPATIBILITY.filter((m) => m.provider === 'anthropic').map((m) => [m.id, m.testedOn])).toEqual([['claude-sonnet-5-5', null], ['claude-haiku-5-5', null]])
     expect(compatibleModel(DEFAULT_SETTINGS.models.answer)?.streamedClarificationSignal).toBe(true)
     expect(compatibleModel(DEFAULT_SETTINGS.models.decomposition)?.structuredPreparation).toBe(true)
     for (const model of MODEL_COMPATIBILITY) {
-      expect(model.testedOn).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+      if (model.provider === 'openrouter') expect(model.testedOn).toMatch(/^\d{4}-\d{2}-\d{2}$/)
       expect(model.roles.length).toBeGreaterThan(0)
     }
     expect(compatibleModels('answer').every((m) => m.streamedClarificationSignal)).toBe(true)

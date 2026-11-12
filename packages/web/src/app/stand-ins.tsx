@@ -17,6 +17,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { chainColor, chainSegments } from '@/design/chains'
 import { cn } from '@/lib/utils'
+import { useKeyProvision } from './environment'
 import { useUiState } from './ui-state'
 
 /**
@@ -160,6 +161,7 @@ export function ComposerStandIn() {
   const conversationId = useActiveConversationId()
   const queue = useQueue()
   const openKeyPrompt = useUiState((state) => state.openKeyPrompt)
+  const { canProvideKeys } = useKeyProvision()
   const [text, setText] = useState('')
   const hasKey = app?.key.configured === true
 
@@ -204,10 +206,14 @@ export function ComposerStandIn() {
             />
           ) : (
             <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-3.5 pb-1">
-              <p className="text-sm text-muted-foreground">Add an OpenRouter key to send messages</p>
-              <Button type="button" variant="outline" size="sm" onClick={openKeyPrompt}>
-                Add key
-              </Button>
+              <p className="text-sm text-muted-foreground">
+                {canProvideKeys ? 'Add an OpenRouter key to send messages' : 'No OpenRouter key is configured on the server'}
+              </p>
+              {canProvideKeys ? (
+                <Button type="button" variant="outline" size="sm" onClick={() => openKeyPrompt()}>
+                  Add key
+                </Button>
+              ) : null}
             </div>
           )}
           <div className="flex items-center justify-end px-2.5 pb-2.5">

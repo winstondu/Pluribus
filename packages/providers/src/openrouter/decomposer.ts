@@ -7,6 +7,7 @@ import type {
   DecomposedRequirement,
   Decomposer,
   Decomposition,
+  LabelRequest,
   LabelResult,
 } from '@committee/core/ports'
 import { z } from 'zod'
@@ -93,7 +94,7 @@ export const DECOMPOSITION_JSON_SCHEMA = {
   },
 } as const
 
-const proposalSchema = z.object({
+export const proposalSchema = z.object({
   fragments: z.array(
     z.object({
       key: z.string(),
@@ -120,7 +121,7 @@ type Proposal = z.infer<typeof proposalSchema>
 
 // ───────────────────────────── prompt ─────────────────────────────
 
-const SYSTEM_PROMPT = `You split a chat message into fragments for Committee, an assistant that answers independent parts of a message in parallel.
+export const DECOMPOSITION_SYSTEM_PROMPT = `You split a chat message into fragments for Committee, an assistant that answers independent parts of a message in parallel.
 
 The message has already been judged composite. Split conservatively anyway:
 - A fragment is one independent intent that can be answered on its own.
@@ -144,7 +145,7 @@ For each fragment:
 
 List fragments in the order they appear in the message. Answer with the JSON object only.`
 
-function userPrompt(request: DecomposeRequest): string {
+export function decompositionUserPrompt(request: DecomposeRequest): string {
   const candidates =
     request.candidates.length === 0
       ? 'None.'
@@ -337,8 +338,8 @@ const DECOMPOSITION_MAX_TOKENS = 4096
 
 async function decompose(options: ResolvedOptions, request: DecomposeRequest, signal: CancelSignal): Promise<DecomposeResult> {
   const messages: ChatMessage[] = [
-    { role: 'system', content: SYSTEM_PROMPT },
-    { role: 'user', content: userPrompt(request) },
+    { role: 'system', content: DECOMPOSITION_SYSTEM_PROMPT },
+    { role: 'user', content: decompositionUserPrompt(request) },
   ]
   let lastProblems: readonly string[] = []
   for (let round = 0; round < 2; round += 1) {
@@ -378,7 +379,7 @@ async function decompose(options: ResolvedOptions, request: DecomposeRequest, si
   }
 }
 
-const LABEL_PROMPT = `Name the request below with a short noun phrase of 1 to 4 words, lower case unless a proper noun, with no punctuation at the end. Examples: "neighborhoods", "menu translation", "sky color". Answer with the phrase only.`
+export const LABEL_PROMPT = `Name the request below with a short noun phrase of 1 to 4 words, lower case unless a proper noun, with no punctuation at the end. Examples: "neighborhoods", "menu translation", "sky color". Answer with the phrase only.`
 
 const LABEL_MAX_LENGTH = 48
 
@@ -397,7 +398,7 @@ export function cleanLabel(raw: string): string {
 
 async function label(
   options: ResolvedOptions,
-  request: { readonly model: string; readonly text: string },
+  request: LabelRequest,
   signal: CancelSignal,
 ): Promise<LabelResult> {
   const result = await complete(

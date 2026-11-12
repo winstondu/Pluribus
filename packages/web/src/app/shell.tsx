@@ -6,6 +6,7 @@ import { useMediaQuery } from '@/hooks/use-media-query'
 import { cn } from '@/lib/utils'
 import { featureComponent } from './features'
 import { Header } from './header'
+import { useKeyProvision } from './environment'
 import { KeyPrompt } from './key-prompt'
 import { SettingsDialog } from './settings/settings-dialog'
 import { Sidebar } from './sidebar'
@@ -58,13 +59,14 @@ function ShellLayout() {
 
   // First run: no key yet, so the key prompt opens by itself, once per load.
   const keyConfigured = app?.key.configured
+  const { canProvideKeys } = useKeyProvision()
   const [prompted, setPrompted] = useState(false)
   useEffect(() => {
-    if (keyConfigured === false && !prompted) {
+    if (keyConfigured === false && !prompted && canProvideKeys) {
       setPrompted(true)
       openKeyPrompt()
     }
-  }, [keyConfigured, prompted, openKeyPrompt])
+  }, [keyConfigured, prompted, openKeyPrompt, canProvideKeys])
 
   // What points into a conversation (reply targets, Focus, the inspected run) does not outlive it.
   useEffect(() => resetForConversation(), [activeId, resetForConversation])

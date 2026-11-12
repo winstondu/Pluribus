@@ -28,6 +28,7 @@ import type {
   PauseCause,
   PointRef,
   PrerequisiteRef,
+  ModelProviderName,
   ProviderError,
   ReadinessRecord,
   ClarificationReason,
@@ -635,8 +636,10 @@ export interface AttemptStarted extends ConversationEnvelope<'attempt-started'> 
   readonly origin: AttemptOrigin
   /** `synthesis` on a join chain, `answer` otherwise (Q65, Q90). */
   readonly modelRole: Extract<ModelRole, 'answer' | 'synthesis'>
-  /** The OpenRouter model ID used (Q65). */
+  /** The model ID used (Q65), as `provider` names it. */
   readonly model: string
+  /** The provider the run went to. Absent on events written before providers were a setting: OpenRouter. */
+  readonly provider?: ModelProviderName
   /**
    * The exact nodes this run's context descends from: its planned parents
    * with every `sibling-group` point resolved as it stood at start.
@@ -999,6 +1002,8 @@ export interface SettingsChanged extends AppEnvelope<'settings-changed'> {
 /** A key was stored in, or removed from, the secrets store. Only its presence is recorded (Q64). */
 export interface KeyStatusChanged extends AppEnvelope<'key-status-changed'> {
   readonly configured: boolean
+  /** Whose key. Absent on events written before the Anthropic key existed: OpenRouter. */
+  readonly provider?: ModelProviderName
 }
 
 // ═══════════════════════════ unions ═══════════════════════════

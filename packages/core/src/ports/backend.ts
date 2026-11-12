@@ -78,11 +78,18 @@ export interface CoreOptions {
   readonly outputChunk: { readonly maxChars: number; readonly maxDelayMs: number }
   /** The projection cache is saved after this many events, and whenever a conversation goes idle. */
   readonly cacheEveryEvents: number
+  /**
+   * Whether a client may change the per-role providers and models. False in
+   * a deployment whose models are set by its environment (Q65): the backend
+   * then rejects such a change and reports every role as not editable.
+   */
+  readonly modelsEditable: boolean
 }
 
 export const DEFAULT_CORE_OPTIONS: CoreOptions = {
   outputChunk: { maxChars: 96, maxDelayMs: 80 },
   cacheEveryEvents: 200,
+  modelsEditable: true,
 }
 
 /**
@@ -110,6 +117,16 @@ export interface Backend extends BackendClient {
    * one's live attempts as interrupted.
    */
   start(): Promise<void>
+
+  /**
+   * Tells the backend that the deployment stored or removed a provider key.
+   * Keys never travel in a command: the deployment's key service writes the
+   * secrets store and then calls this. The backend reads which keys are
+   * present (never their values), records a `key-status-changed` for each
+   * change, and, when the Anthropic key is gone, returns every role on the
+   * Claude API to OpenRouter and its default model there.
+   */
+  refreshKeyStatus(): Promise<void>
 
   /**
    * Stops accepting calls, aborts in-flight runs without recording an

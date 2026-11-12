@@ -47,3 +47,4 @@ export {
   type SaveEnvironment,
 } from './log-export'
 export { LogExportSourceProvider } from './log-export-provider'
+export { createScriptedKeyProvision, serverKeyProvision, type KeyProvision, type KeyProvisionResult, type ScriptedKeyTarget } from './key-provision'

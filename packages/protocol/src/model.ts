@@ -226,6 +226,20 @@ export type ModelRole =
   | 'synthesis'
   | 'decision'
 
+/**
+ * Where a role's model is reached: OpenRouter, or the Claude API with the
+ * user's own Anthropic key. Decisions run on OpenRouter only: the Claude API
+ * has no Decisions endpoint.
+ */
+export type ModelProviderName = 'openrouter' | 'anthropic'
+
+export const MODEL_PROVIDER_NAMES: readonly ModelProviderName[] = ['openrouter', 'anthropic']
+
+/** The roles whose provider the user can choose. */
+export type ProviderSelectableRole = Exclude<ModelRole, 'decision'>
+
+export const PROVIDER_SELECTABLE_ROLES: readonly ProviderSelectableRole[] = ['answer', 'synthesis', 'decomposition']
+
 export interface TokenUsage {
   readonly inputTokens: number
   readonly outputTokens: number
@@ -235,7 +249,8 @@ export interface TokenUsage {
 
 /**
  * Typed provider failure, mapped from OpenRouter per 11 · "OpenRouter error
- * mapping". The class decides whether the retry setting applies.
+ * mapping" and from the Claude API per 11 · "Claude API error mapping". The
+ * class decides whether the retry setting applies.
  */
 export type ProviderErrorCode =
   // transient: retried automatically under Standard and Persistent
@@ -256,7 +271,7 @@ export type ProviderErrorCode =
   /** An SSE chunk with `finish_reason: "error"` under HTTP 200. */
   | 'mid-stream-error'
   // non-retryable: straight to failed
-  /** HTTP 402. Message is exactly "Out of OpenRouter credits". */
+  /** HTTP 402. Message is exactly "Out of OpenRouter credits", or "Out of Anthropic credits" from the Claude API. */
   | 'out-of-credits'
   /** HTTP 403, with the provider's reason. */
   | 'moderation'
@@ -266,7 +281,7 @@ export type ProviderErrorCode =
   | 'invalid-request'
   /** HTTP 401, with the provider's message. */
   | 'unauthorized'
-  /** No OpenRouter key is configured. */
+  /** No key is configured for the provider the run uses. */
   | 'no-key'
   /** Provider error code `context_length_exceeded`, or the pre-run token count is over the limit (Q67, Q82). */
   | 'context-length-exceeded'
@@ -299,7 +314,7 @@ export interface ProviderError {
   readonly code: ProviderErrorCode
   /** Always `PROVIDER_ERROR_CLASS[code]`; stored so a record reads on its own. */
   readonly class: ProviderErrorClass
-  /** Text for the user. For `out-of-credits` exactly "Out of OpenRouter credits". Never contains the key. */
+  /** Text for the user. For `out-of-credits` exactly "Out of OpenRouter credits" or "Out of Anthropic credits". Never contains a key. */
   readonly message: string
   readonly httpStatus: number | null
   /** From `Retry-After` on 429 and 503, in milliseconds. */

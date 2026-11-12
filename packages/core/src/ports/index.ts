@@ -42,6 +42,7 @@ export type {
   Decomposer,
   Decomposition,
   DecompositionCandidate,
+  LabelRequest,
   LabelResult,
 } from './decomposer'
 export type { CachedState, EventStore, JsonValue, ProjectionCache, SecretName, SecretsStore } from './stores'

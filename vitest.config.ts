@@ -14,7 +14,7 @@ export default defineConfig({
       },
       {
         resolve: { alias: { '@': path.resolve(import.meta.dirname, 'packages/web/src') } },
-        define: { __DEV_OPENROUTER_KEY__: '""' },
+        define: { __DEV_OPENROUTER_KEY__: '""', __DEV_ANTHROPIC_KEY__: '""' },
         test: {
           name: 'web',
           environment: 'jsdom',

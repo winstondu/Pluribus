@@ -22,6 +22,7 @@ import { formatRelativeTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { BrandMark, Wordmark } from './brand'
 import { ThemeToggle } from './theme-toggle'
+import { useKeyProvision } from './environment'
 import { useUiState } from './ui-state'
 import { useCreateConversation } from './use-create-conversation'
 
@@ -37,6 +38,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const openConversation = useOpenConversation()
   const openSettings = useUiState((state) => state.openSettings)
   const openKeyPrompt = useUiState((state) => state.openKeyPrompt)
+  const { canProvideKeys } = useKeyProvision()
   const resetForConversation = useUiState((state) => state.resetForConversation)
   const createConversation = useCreateConversation()
   const [deleting, setDeleting] = useState<ConversationSummary | null>(null)
@@ -130,7 +132,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       </nav>
 
       <div className="shrink-0 border-t border-sidebar-border p-3">
-        {app && !app.key.configured ? (
+        {app && !app.key.configured && canProvideKeys ? (
           <button
             type="button"
             onClick={() => {

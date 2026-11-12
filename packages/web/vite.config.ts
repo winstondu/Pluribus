@@ -16,5 +16,9 @@ export default defineConfig(({ command }) => ({
     __DEV_OPENROUTER_KEY__: JSON.stringify(
       command === 'serve' ? (process.env.OPENROUTER_KEY ?? '') : '',
     ),
+    // The same for the optional Anthropic key.
+    __DEV_ANTHROPIC_KEY__: JSON.stringify(
+      command === 'serve' ? (process.env.ANTHROPIC_API_KEY ?? '') : '',
+    ),
   },
 }))

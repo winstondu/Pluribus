@@ -1,5 +1,6 @@
 /** OpenRouter key from the dev server's environment (`OPENROUTER_KEY`). Empty in production builds. */
 declare const __DEV_OPENROUTER_KEY__: string
+declare const __DEV_ANTHROPIC_KEY__: string
 
 interface ImportMetaEnv {
   /** `1` keeps `?fixture=<id>` and `?fixtures` available in a production build. */
