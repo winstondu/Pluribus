@@ -1,6 +1,6 @@
 # 12 · Build plan
 
-What has to exist to meet this specification, in what order, and how it is verified. This is the scope and sequence, not a task breakdown. Implementation starts only on the user's go-ahead (Q71). No production code exists.
+What has to exist to meet this specification, in what order, and how it is verified. This is the scope and sequence, not a task breakdown. Implementation started on the user's go-ahead (Q71), and the first version now exists in `packages/`. This document remains the statement of scope, order, and verification; what has been built and verified against it is in [the build status](../build/STATUS.md).
 
 ## Packages
 

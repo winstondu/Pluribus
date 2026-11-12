@@ -251,7 +251,7 @@ Three changes, one commit each: the decision token budget as a setting, with the
 
 The e2e flows were not rerun. Settings → Routing gained "Choosing the strategy" and "Decision budget"; both were opened and switched in Chromium, light and dark, at desktop width only.
 
-The specification's own status lines ("No production code exists", README, 11 and 12) were written before the build and were left as they are.
+The specification's own status lines (README and 12) said "No production code exists" until 2026-11-12; they now say the first version is implemented and point here.
 
 ## How to run
 

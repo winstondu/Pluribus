@@ -86,7 +86,7 @@ On top of this, Committee splits a message that contains several independent req
 
 The first version is text and read-only (no tools, no edits to outside resources). It runs entirely in the browser, calls models through OpenRouter with the user's own key, and keeps its records in an append-only event log. No LangChain or LangGraph.
 
-**Status:** behavior and technical design are settled through question Q98, with no open questions. No production code exists. Implementation planning waits for the user's go-ahead.
+**Status:** behavior and technical design are settled through question Q98, with no open questions. The first version is implemented in `packages/`; what is built, what was verified, and where it falls short of this specification are in [the build status](../build/STATUS.md). Where the code and this specification disagree, the specification wins.
 
 ## Documents
 
