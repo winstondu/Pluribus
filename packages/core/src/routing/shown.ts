@@ -62,6 +62,33 @@ export function renderLine(line: Line): string {
   return line.pieces.map((p) => (p.kind === 'answer' ? collapseShownText(p.source.text.slice(p.start, p.end)) : p.text)).join('')
 }
 
+/**
+ * A request's whole state text as recorded: every section line it lists by
+ * reference (as `recordLine` records it), the text between them as text. A
+ * line is found where its rendered text stands in the state, in order; one
+ * that is not found is left as the state's own text.
+ */
+export function recordState(state: string, lines: readonly { readonly sectionId: SectionId; readonly line: Line }[]): ShownPiece[] {
+  const out: ShownPiece[] = []
+  const text = (t: string): void => {
+    if (!t) return
+    const last = out[out.length - 1]
+    if (last?.kind === 'text') out[out.length - 1] = { kind: 'text', text: last.text + t }
+    else out.push({ kind: 'text', text: t })
+  }
+  let at = 0
+  for (const { sectionId, line } of lines) {
+    const rendered = renderLine(line)
+    const found = rendered ? state.indexOf(rendered, at) : -1
+    if (found < 0) continue
+    text(state.slice(at, found))
+    for (const piece of recordLine(sectionId, line).line) piece.kind === 'text' ? text(piece.text) : out.push(piece)
+    at = found + rendered.length
+  }
+  text(state.slice(at))
+  return out
+}
+
 /** The line as recorded: answer text by reference where the attempt is known, adjacent text merged. */
 export function recordLine(sectionId: SectionId, line: Line): ShownSection {
   const out: ShownPiece[] = []

@@ -1,4 +1,4 @@
-import type { DecisionBudget, ProviderError, ReferentStrategyName, SectionId, ShownSection, TreeWalkSettings } from '@pluribus/protocol'
+import type { DecisionBudget, ProviderError, ReferentStrategyName, SectionId, ShownPiece, ShownSection, TreeWalkSettings } from '@pluribus/protocol'
 import type { DecisionContext } from './context-summary'
 import type { NoulQuestion } from './decision-provider'
 import type { AnswerSource, CandidateSection, RoutingCandidates } from './router'
@@ -141,8 +141,11 @@ export type ReferentAskResult =
 export type ShownSubjects = { readonly [id: string]: readonly ShownSection[] }
 
 export interface ReferentAsk {
-  /** `shown`: what each question showed of its sections, recorded with its answer. */
-  (stateText: string, questions: ReferentQuestions, shown?: ShownSubjects): Promise<ReferentAskResult>
+  /**
+   * `shown`: what each question showed of its sections, recorded with its answer. `state`: the state text as
+   * recorded, with answer text by reference; left out, it is recorded as plain text.
+   */
+  (stateText: string, questions: ReferentQuestions, shown?: ShownSubjects, state?: readonly ShownPiece[]): Promise<ReferentAskResult>
   /** What the budget still allows. */
   remaining(): DecisionBudget
   /** The input tokens a request is counted as. Deterministic: an estimate from its size, not the provider's usage. */

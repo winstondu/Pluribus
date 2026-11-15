@@ -20,11 +20,12 @@ const SHOWN_FORM_NOTE: { readonly [F in ShownAnswerForm]: string } = {
 
 /**
  * Item 5's questions: each card shows the question as asked. Where the
- * decision recorded what the question showed of its sections, a button opens
- * it in a dialog, so a long answer does not crowd the side panel.
+ * decision recorded what was sent (the request's whole state text, or what
+ * the question showed of its sections), a button opens it in a dialog, so a
+ * long state does not crowd the side panel.
  */
 export function DecisionQuestions({ routing }: { routing: NonNullable<RunInspection['routing']> }) {
-  const { decision, shown } = routing
+  const { decision, shown, requests } = routing
   if (decision.questions.length === 0) return null
   return (
     <details className="mt-1.5 text-xs">
@@ -45,7 +46,14 @@ export function DecisionQuestions({ routing }: { routing: NonNullable<RunInspect
               <span className="text-foreground">{answerWord(question)}</span>
               {question.confidence !== null ? ` · confidence ${question.confidence.toFixed(2)}` : ''}
             </p>
-            {shown[i] ? <ShownDialog question={question} sections={shown[i]} /> : null}
+            {shown[i] || stateOf(question, requests) !== null ? (
+              <ShownDialog
+                question={question}
+                sections={shown[i] ?? []}
+                state={stateOf(question, requests)}
+                asked={question.request === undefined ? 1 : decision.questions.filter((q) => q.request === question.request).length}
+              />
+            ) : null}
           </li>
         ))}
       </ul>
@@ -57,7 +65,25 @@ function answerWord(question: DecisionQuestionRecord): string {
   return typeof question.answer === 'number' ? question.answer.toFixed(2) : question.answer
 }
 
-function ShownDialog({ question, sections }: { question: DecisionQuestionRecord; sections: readonly ShownSectionView[] }) {
+/** The state text of the request a question was sent in, when the decision recorded it. */
+function stateOf(question: DecisionQuestionRecord, requests: readonly string[]): string | null {
+  return question.request === undefined ? null : (requests[question.request] ?? null)
+}
+
+function ShownDialog({
+  question,
+  sections,
+  state,
+  asked,
+}: {
+  question: DecisionQuestionRecord
+  sections: readonly ShownSectionView[]
+  /** The request's whole state text, exactly as sent; null when not recorded. */
+  state: string | null
+  /** How many questions the request asked about that state, this one included. */
+  asked: number
+}) {
+  const options = Object.entries(question.candidates)
   return (
     <Dialog>
       <DialogTrigger asChild>
@@ -69,8 +95,9 @@ function ShownDialog({ question, sections }: { question: DecisionQuestionRecord;
         <DialogHeader className="pr-8">
           <DialogTitle>What the decision model was given</DialogTitle>
           <DialogDescription className="text-xs leading-relaxed">
-            The question, and the line the request’s state showed for {sections.length === 1 ? 'the section it is about' : 'the sections it is about'},
-            exactly as sent. The same state also listed the other sections and the new message.
+            {state !== null
+              ? `The question and the state text it was asked about, exactly as sent${sections.length > 0 ? ', with the line the state showed for the section it is about' : ''}.`
+              : `The question, and the line the request’s state showed for ${sections.length === 1 ? 'the section it is about' : 'the sections it is about'}, exactly as sent. The same state also listed the other sections and the new message.`}
           </DialogDescription>
         </DialogHeader>
         <div className="-mx-5 flex min-h-0 flex-col gap-3 overflow-y-auto px-5 text-xs">
@@ -81,6 +108,16 @@ function ShownDialog({ question, sections }: { question: DecisionQuestionRecord;
               <span className="font-mono text-2xs">{question.id}</span> · <span className="font-mono text-2xs">{question.type}</span> · answered{' '}
               <span className="text-foreground">{answerWord(question)}</span>
             </p>
+            {options.length > 0 ? (
+              <dl className="mt-1.5 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5" aria-label={question.type === 'choice' ? 'Options sent' : 'Criteria sent'}>
+                {options.map(([option, text]) => (
+                  <div key={option} className="contents">
+                    <dt className="font-mono text-2xs text-muted-foreground">{option}</dt>
+                    <dd>{text}</dd>
+                  </div>
+                ))}
+              </dl>
+            ) : null}
           </section>
           {sections.map((section) => (
             <section key={section.sectionId} aria-label={`Shown for the section: ${SHOWN_FORM_WORD[section.form]}`} data-form={section.form}>
@@ -94,6 +131,17 @@ function ShownDialog({ question, sections }: { question: DecisionQuestionRecord;
               </Verbatim>
             </section>
           ))}
+          {state !== null ? (
+            <section aria-label="State sent">
+              <h3 className="text-2xs font-medium text-muted-foreground">State sent</h3>
+              <p className="mt-1 text-2xs leading-relaxed text-muted-foreground">
+                {asked === 1 ? 'The only question of its request was asked about this text.' : `All ${asked} questions of its request were asked about this text.`}
+              </p>
+              <Verbatim className="mt-1 max-h-[45vh] overflow-y-auto font-mono text-2xs" label="State text sent">
+                {state}
+              </Verbatim>
+            </section>
+          ) : null}
         </div>
         <DialogFooter showCloseButton />
       </DialogContent>

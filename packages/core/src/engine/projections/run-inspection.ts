@@ -55,7 +55,7 @@ export function runInspection(s: ConversationState, directiveId: DirectiveId, at
       const label = node?.kind === 'join-back' ? 'join-back' : node?.directiveId ? (s.directives[node.directiveId]?.label ?? '') : ''
       return { nodeId, chainId: node?.chainId ?? d.chainId, label }
     }),
-    routing: decision ? { decision, unit, shown: shownOf(s, decision) } : null,
+    routing: decision ? { decision, unit, shown: shownOf(s, decision), requests: requestsOf(s, decision) } : null,
     attempt: attempt
       ? {
           number: attempt.number,
@@ -91,6 +91,16 @@ function shownOf(s: ConversationState, decision: RoutingDecision): (readonly Sho
   return decision.questions.map((question) =>
     question.shown ? question.shown.map((shown) => ({ sectionId: shown.sectionId, form: shown.form, text: renderShownLine(shown.line, text) })) : null,
   )
+}
+
+/**
+ * The state text of each decision request, exactly as sent, by the
+ * request's position in `decision.requests`: answer spans read from the
+ * attempts' recorded text, a stored summary named by its ID.
+ */
+function requestsOf(s: ConversationState, decision: RoutingDecision): readonly string[] {
+  const text = (attemptId: AttemptId): string => s.attemptText[attemptId] ?? ''
+  return (decision.requests ?? []).map((request) => renderShownLine(request.state, text))
 }
 
 /**

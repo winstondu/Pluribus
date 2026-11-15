@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, providerError, type RoutingSettings, type Settings, type StrategySelectionMode, type StrategyChoice, type StrategySelectionRecord } from '@pluribus/protocol'
+import { DEFAULT_SETTINGS, providerError, type DecisionQuestionRecord, type RoutingSettings, type Settings, type StrategySelectionMode, type StrategyChoice, type StrategySelectionRecord } from '@pluribus/protocol'
 import { describe, expect, test } from 'vitest'
 import { NEVER_CANCELLED, type DecisionProvider, type DecisionQuestions, type DecisionRequest, type DecisionResult, type RoutingInput, type RoutingOutcome, type RoutingPlan, type StrategySelector } from '../../../src/ports'
 import { compareWithLabel, corpusInput, oracleDecisionProvider, referenceDecomposer, scene, sceneIds, type CorpusExample, type Scene } from '../../../testing/routing/corpus'
@@ -312,7 +312,9 @@ describe('strategy selection in the pipeline', () => {
       expect(byModel.selector, name).toHaveLength(1)
       expect(byModel.routing, name).toEqual(direct.requests)
       expect(placed(byModel), name).toEqual(placed(direct))
-      expect(planOf(byModel).decision.questions.filter((q) => !q.id.startsWith('sel_')), name).toEqual(planOf(direct).decision.questions)
+      // The selector's request comes first, so each of the routing's own questions names the request one place later.
+      const later = (q: DecisionQuestionRecord): DecisionQuestionRecord => ({ ...q, ...(q.request === undefined ? {} : { request: q.request + 1 }) })
+      expect(planOf(byModel).decision.questions.filter((q) => !q.id.startsWith('sel_')), name).toEqual(planOf(direct).decision.questions.map(later))
     }
   })
 

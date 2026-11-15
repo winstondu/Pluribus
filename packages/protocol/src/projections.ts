@@ -876,6 +876,12 @@ export interface RunInspection {
      * text). Null for a question that recorded none.
      */
     readonly shown: readonly (readonly ShownSectionView[] | null)[]
+    /**
+     * The state text of each decision request, exactly as sent, by the
+     * request's position in `decision.requests` (`DecisionQuestionRecord.request`
+     * names a question's). Empty for a decision recorded before it was kept.
+     */
+    readonly requests: readonly string[]
   } | null
   /** Item 6: the attempt version and whether its result is current. */
   readonly attempt: {

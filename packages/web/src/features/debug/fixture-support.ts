@@ -41,15 +41,17 @@ export function consumed(
 /**
  * A routing decision as a scripted router would have supplied it, or as the decision model recorded it. `shown`: what
  * each question showed of its sections, resolved as the projection resolves it, by the question's position; left out,
- * none of them recorded any.
+ * none of them recorded any. `requests`: each request's state text, resolved, by its position in `decision.requests`.
  */
 export function decision(
   unit: UnitRoutingDecision,
   rest: Partial<RoutingDecision> = {},
   shown: NonNullable<RunInspection['routing']>['shown'] = (rest.questions ?? []).map(() => null),
+  requests: NonNullable<RunInspection['routing']>['requests'] = [],
 ): NonNullable<RunInspection['routing']> {
   return {
     shown,
+    requests,
     decision: {
       source: 'decision-model',
       model: DEFAULT_SETTINGS.models.decision,

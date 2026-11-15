@@ -474,8 +474,6 @@ describe('run inspector', () => {
     // The card still shows the question header as asked, and nothing of the answer.
     expect(card).toHaveTextContent('Does the new message refer to answer section S3 ("seafood places")')
     expect(card).not.toHaveTextContent('Walking between them')
-    // Questions that recorded nothing have no button.
-    expect(within(one(document.body, '[data-question="q-composite"]') as HTMLElement).queryByRole('button')).toBeNull()
     expect(screen.queryByTestId('shown-not-recorded')).toBeNull()
 
     const trigger = within(card).getByRole('button', { name: 'Show what was sent' })
@@ -487,6 +485,11 @@ describe('run inspector', () => {
     const text = within(dialog).getByLabelText('Text shown: Opening and matching passages')
     expect(text.textContent).toContain('S3. "seafood places": request "Which seafood places should we try?"; answer, its opening and the passages')
     expect(text.textContent).toContain('## Walking between them')
+    // The whole state the request was asked about, exactly as sent.
+    const state = within(dialog).getByLabelText('State text sent')
+    expect(state.textContent).toContain('L1. "trip brief" (root): S1, S2, S3; latest "seafood places"')
+    expect(state.textContent).toContain('The new message: "Use both to plan the four days.')
+    expect(within(dialog).getByText('All 5 questions of its request were asked about this text.')).toBeInTheDocument()
     await user.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(trigger).toHaveFocus()
@@ -496,6 +499,16 @@ describe('run inspector', () => {
     const whole = await screen.findByRole('dialog')
     expect(within(whole).getByText('Whole answer')).toBeInTheDocument()
     await user.click(within(whole).getAllByRole('button', { name: 'Close' })[0] as HTMLElement)
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    // A question about no section, here a choice: the question with the options sent, and the state, nothing per section.
+    await user.click(within(one(document.body, '[data-question="q-target"]') as HTMLElement).getByRole('button', { name: 'Show what was sent' }))
+    const choice = await screen.findByRole('dialog')
+    expect(within(choice).getByLabelText('Options sent')).toHaveTextContent('where to stay')
+    expect(within(choice).getByLabelText('Options sent')).toHaveTextContent('seafood places')
+    expect(within(choice).queryByText('Shown for the section')).toBeNull()
+    expect(within(choice).getByLabelText('State text sent')).toHaveTextContent('Lines of work')
+    await user.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 

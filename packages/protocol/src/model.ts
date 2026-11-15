@@ -531,6 +531,21 @@ export interface DecisionQuestionRecord {
    * kept (`RoutingDecision.shownRecorded`).
    */
   readonly shown?: readonly ShownSection[]
+  /**
+   * The request the question was sent in, by its position in
+   * `RoutingDecision.requests`. Left out on decisions recorded before the
+   * requests' state was kept.
+   */
+  readonly request?: number
+}
+
+/**
+ * One decision request as it was sent: the state text every one of its
+ * questions was asked about, exactly as sent, in pieces (answer text by
+ * reference, a stored summary by its ID only, as in `ShownSection`).
+ */
+export interface DecisionRequestRecord {
+  readonly state: readonly ShownPiece[]
 }
 
 /**
@@ -762,6 +777,12 @@ export interface RoutingDecision {
    * records, whose questions carry only their wording.
    */
   readonly shownRecorded?: boolean
+  /**
+   * Every decision request of the routing, in the order sent, with its state
+   * text. Each question names its request (`DecisionQuestionRecord.request`).
+   * Left out on decisions recorded before it was kept.
+   */
+  readonly requests?: readonly DecisionRequestRecord[]
   /** How the referent strategy was chosen, when a strategy selector was on (`settings.routing.strategySelection`). */
   readonly strategySelection?: StrategySelectionRecord | null
   /** Set when a limit of the decision budget stopped the referent strategy, with the best node found so far where one was used. */

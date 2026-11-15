@@ -4,7 +4,8 @@ import { emptyConversationState, fold, runInspection } from '../../src/engine'
 import { NEVER_CANCELLED, type DecisionContext, type DecisionProvider, type DecisionQuestions, type DecisionRequest, type DecisionResult, type RoutingInput } from '../../src/ports'
 import { answer } from '../../testing'
 import { answerFrom, routingScenario } from '../../testing/acceptance/routing'
-import { corpusInput, referenceDecomposer } from '../../testing/routing/corpus/evaluate'
+import { corpusInput, oracleDecisionProvider, referenceDecomposer } from '../../testing/routing/corpus/evaluate'
+import { ROUTING_CORPUS } from '../../testing'
 import { ids, scene } from '../../testing/routing/corpus/scene'
 import type { CorpusExample } from '../../testing/routing/corpus/types'
 import { createRouter } from '../../src/routing/pipeline'
@@ -267,6 +268,48 @@ describe('the record of what was shown', () => {
     }
     const text = (id: AttemptId): string => replayed.attemptText[id] ?? ''
     expect(renderShownLine(question?.shown?.[0]?.line ?? [], text)).toBe(line)
+  })
+
+  test('shown · every request’s whole state is recorded, answer text by reference, and reads back exactly as sent; each question names its request', async () => {
+    const s = await routingScenario({ settings: { routing: { referentStrategy: 'one-pass', strategySelection: 'off', candidateSource: 'none' } } })
+    s.t.model.script('Give me the history of Kyoto', answer(historyAnswer(6), 10, 40))
+    await s.send('Give me the history of Kyoto')
+    await s.t.advance(100)
+    s.t.model.script(MESSAGE, answer('A modern city.', 10, 20))
+    s.rules[MESSAGE] = {}
+    s.t.decisions.answerWith(answerFrom(s.rules))
+    const before = s.t.decisions.requests.length
+    await s.send(MESSAGE)
+    await s.t.advance(100)
+
+    const sent = s.t.decisions.requests.slice(before).map((r) => r.state)
+    const directive = s.d('What is modern Kyoto like')
+    const decision = s.state().messages[directive.originalMessageId]?.decision
+    expect(decision?.requests).toHaveLength(sent.length)
+    expect(decision?.questions.every((q) => q.request !== undefined && q.request < sent.length)).toBe(true)
+    expect(decision?.requests?.some((r) => r.state.some((p) => p.kind === 'answer'))).toBe(true)
+    expect(JSON.stringify(decision?.requests)).not.toContain('university city')
+    const replayed = fold(emptyConversationState(s.c), JSON.parse(JSON.stringify(await s.events())))
+    for (const state of [s.state(), replayed]) expect(runInspection(state, directive.id, null)?.routing?.requests).toEqual(sent)
+  })
+
+  test('shown · across the corpus with the tree walk, every request is recorded with the state it sent, further requests included', async () => {
+    const routing = { ...DEFAULT_SETTINGS.routing, referentStrategy: 'tree-walk' as const, strategySelection: 'off' as const }
+    let further = 0
+    for (const example of ROUTING_CORPUS) {
+      const input = corpusInput(example, { ...DEFAULT_SETTINGS, routing })
+      const oracle = oracleDecisionProvider(example, input)
+      const sent: string[] = []
+      const provider: DecisionProvider = { decide: (request, signal) => (sent.push(request.state), oracle.decide(request, signal)) }
+      const outcome = await createRouter({ decisionProvider: provider, decomposer: referenceDecomposer(example) }).route(input, NEVER_CANCELLED)
+      const decision = outcome.kind === 'plan' ? outcome.plan.decision : 'decision' in outcome ? outcome.decision : null
+      if (!decision || decision.source !== 'decision-model') continue
+      // The corpus's sections name no attempt, so answer text is copied and renders with no attempt text.
+      expect(decision.requests?.map((r) => renderShownLine(r.state, () => '')), example.id).toEqual(sent)
+      expect(decision.questions.every((q) => q.request !== undefined && q.request < sent.length), example.id).toBe(true)
+      if (sent.length > 1) further += 1
+    }
+    expect(further).toBeGreaterThan(0)
   })
 
   test('shown · a decision recorded before the shown text was kept projects every question as showing nothing', () => {
