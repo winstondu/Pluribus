@@ -128,8 +128,23 @@ export function listedLine(input: RoutingInput, s: CandidateSection, n: number, 
   return (shown?.showing ?? PLAIN).line(s, n, decisionContextOf(input, s), shown?.choices.get(s.sectionId))
 }
 
-function chainLine(chain: CandidateChain, n: number): string {
-  return `L${n}. "${chain.label}" (${chain.kind}${chain.busy ? ', work in progress' : ''})`
+/**
+ * A line of work's entry in the state text: its label (its first answer's),
+ * then the listed sections on it by number and the title of its latest
+ * answer section, so that a question about a line can judge what the line
+ * is about now, not only by how it began. A line whose sections are all
+ * outside the listed window shows its latest section's title alone.
+ */
+function chainLine(chain: CandidateChain, n: number, input: RoutingInput, numbers: ReadonlyMap<SectionId, number>): string {
+  const head = `L${n}. "${chain.label}" (${chain.kind}${chain.busy ? ', work in progress' : ''})`
+  const own = input.candidates.sections.filter((s) => s.chainId === chain.chainId && !s.asksElicitationId)
+  const latest = own[own.length - 1]
+  if (!latest) return head
+  const listed = own.flatMap((s) => {
+    const number = numbers.get(s.sectionId)
+    return number === undefined ? [] : [`S${number}`]
+  })
+  return `${head}: ${listed.length > 0 ? `${listed.join(', ')}; ` : ''}latest "${latest.title}"`
 }
 
 /**
@@ -147,7 +162,8 @@ export function describeState(input: RoutingInput, supplied: Supplied, subject: 
   }
   if (supplied.chains.length > 0) {
     lines.push('', 'Lines of work (each reads only its own history):')
-    supplied.chains.forEach((c, i) => lines.push(chainLine(c, i + 1)))
+    const numbers = new Map(supplied.sections.map((s, i) => [s.sectionId, i + 1]))
+    supplied.chains.forEach((c, i) => lines.push(chainLine(c, i + 1, input, numbers)))
   }
   if (supplied.inFlight.length > 0 || supplied.openGroups.length > 0) {
     lines.push('', 'Work whose result is not available yet:')
