@@ -313,19 +313,6 @@ const itineraryRouting = decision(
     shownRecorded: true,
     requests: [{ state: [{ kind: 'text', text: ITINERARY_STATE }] }],
   },
-  [
-    null,
-    null,
-    [{ sectionId: id('section', 'brief'), form: 'opening', text: `S1. "trip brief": request "Trip brief: Lisbon, four days, in May"; answer "${SHOWN_BRIEF_OPENING}"` }],
-    [{ sectionId: id('section', 'stay'), form: 'full', text: `S2. "where to stay": request "${STAY}"; answer "${STAY_ANSWER}"` }],
-    [
-      {
-        sectionId: id('section', 'food'),
-        form: 'passages',
-        text: `S3. "seafood places": request "Which seafood places should we try?"; answer, its opening and the passages that share the most words with the message: "${SHOWN_FOOD_OPENING}" … "${SHOWN_FOOD_PASSAGE}"`,
-      },
-    ],
-  ],
   [ITINERARY_STATE],
 )
 

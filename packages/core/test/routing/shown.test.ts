@@ -262,9 +262,9 @@ describe('the record of what was shown', () => {
     const events = await s.events()
     const replayed = fold(emptyConversationState(s.c), JSON.parse(JSON.stringify(events)))
     for (const state of [s.state(), replayed]) {
-      const inspection = runInspection(state, directive.id, null)
-      const index = inspection?.routing?.decision.questions.findIndex((q) => q.id === 'm_s1') ?? -1
-      expect(inspection?.routing?.shown[index]).toEqual([{ sectionId: s.d('Give me the history of Kyoto').sectionId, form: 'full', text: line }])
+      const question = state.messages[directive.originalMessageId]?.decision?.questions.find((q) => q.id === 'm_s1')
+      expect(question?.shown?.[0]?.form).toBe('full')
+      expect(renderShownLine(question?.shown?.[0]?.line ?? [], (id) => state.attemptText[id] ?? '')).toBe(line)
     }
     const text = (id: AttemptId): string => replayed.attemptText[id] ?? ''
     expect(renderShownLine(question?.shown?.[0]?.line ?? [], text)).toBe(line)

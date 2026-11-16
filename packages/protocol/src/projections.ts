@@ -34,7 +34,6 @@ import type {
   Requirement,
   RoutingDecision,
   SectionState,
-  ShownAnswerForm,
   SupersededInput,
   TextSpan,
   UnitRoutingDecision,
@@ -801,14 +800,6 @@ export interface OperationGraphProjection {
 
 // ═══════════════════════════ run inspector ═══════════════════════════
 
-/** One answer section as a decision request showed it, resolved for the run inspector. */
-export interface ShownSectionView {
-  readonly sectionId: SectionId
-  readonly form: ShownAnswerForm
-  /** The section's line of the request's state text, exactly as sent. */
-  readonly text: string
-}
-
 /**
  * What the run inspector shows for one directive and one of its attempts
  * (09 §5). Fetched on demand with a `run` snapshot query, because the exact
@@ -869,13 +860,6 @@ export interface RunInspection {
     readonly decision: RoutingDecision
     /** The entry of `decision.units` for this directive. */
     readonly unit: UnitRoutingDecision | null
-    /**
-     * What the decision model was shown for the sections each question is
-     * about, by the question's position in `decision.questions`, resolved to
-     * the exact text sent (`renderShownLine` over the recorded attempt
-     * text). Null for a question that recorded none.
-     */
-    readonly shown: readonly (readonly ShownSectionView[] | null)[]
     /**
      * The state text of each decision request, exactly as sent, by the
      * request's position in `decision.requests` (`DecisionQuestionRecord.request`
