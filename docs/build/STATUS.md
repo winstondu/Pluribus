@@ -423,6 +423,19 @@ From an exported conversation (`cnv_01M78JH41T1Y9GQB9ZBBXNF43Q`): after separate
 - **The questions behind an ask are recorded.** A target-ambiguity `elicitation-raised` carries `decision`: the questions put to the decision model, their answers and the thresholds, with no units (`askRecord` in `routing/pipeline.ts`). Before, the routing decision was written only once a plan existed, so the export of the conversation above did not say why it had asked; `derived.routingDecisions[].routingAsks` now points at these events (log-export.md). Events recorded earlier have no `decision`.
 - **Not done.** The run inspector shows the join in the decision's explanation, with no row of its own, and does not show the decision behind an ask.
 
+### The join through the whole backend, live (2026-11-15)
+
+`providers/test/smoke/join-lines.smoke.test.ts` replays the export's first four messages, as typed, through `createBackend` with the live decision model and Haiku for every generative role. The fourth must join without asking: on a join chain over each line's leaf, run by the synthesis role, with `joinedLines` recorded. A control in the same scene, "Make that shorter", must never be joined.
+
+| Run | `m_lines` | `m_several` | Kyoto / sky / ocean | Outcome |
+|---|---|---|---|---|
+| 1 | 0.86 | 0.71 | 0.61 / 0.40 / 0.41 | Joined, two lines |
+| 2 | 0.87 | 0.71 | 0.65 / 0.48 / 0.45 | Joined, two lines |
+| 3 | 0.86 | 0.69 | 0.56 / 0.40 / 0.41 | Joined, two lines |
+| Control | 0.22 | 0.10 | 0.42 / 0.49 / 0.42 | Asked which answer |
+
+The suite was run twice: 6 of 6 joins across both runs (the first run's scores were not captured). Every join passed all its checks. The margin over `joinChoice` (0.8) is 0.06 to 0.07. The follow-up plan, including the per-line questions that would widen this margin and the speculative fan-out of decision requests, is [join-and-speculation-plan.md](join-and-speculation-plan.md).
+
 ## How to run
 
 ```sh
