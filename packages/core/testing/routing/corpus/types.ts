@@ -77,6 +77,14 @@ export interface CorpusExpectation {
    * plausible lines only.
    */
   readonly context?: readonly Handle[]
+  /**
+   * The message brings several lines of work together and names no one
+   * section clearly (05 · "Joining instead of asking"): the oracle answers
+   * that it does, and scores each target as it scores an ambiguous section,
+   * below what makes a target. Routing joins the lines; with
+   * `thresholds.joinChoice` off it asks which section is meant.
+   */
+  readonly joinsLines?: true
 }
 
 /** A reference decomposition, so the decision model can be evaluated on its own. Parts are quoted from the message. */

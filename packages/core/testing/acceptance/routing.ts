@@ -18,6 +18,8 @@ export interface UnitRules {
   readonly targets?: { readonly [title: string]: number }
   /** Probability that the unit refers to several sections at once. */
   readonly several?: number
+  /** Probability that the unit brings several lines of work together (`thresholds.joinChoice`). */
+  readonly lines?: number
   /** Section title → probability that the unit builds on the sibling group it is a member of, as a whole (the join-back as a candidate). */
   readonly together?: { readonly [memberTitle: string]: number }
   /** Line label the unit continues. */
@@ -107,6 +109,7 @@ export function answerFrom(rules: { readonly [text: string]: MessageRules }) {
         if (question === 'corrective') answers[id] = noul(u.corrective)
         else if (question === 'shared') answers[id] = noul(u.shared)
         else if (question === 'several') answers[id] = noul(u.several)
+        else if (question === 'lines') answers[id] = noul(u.lines)
         else if (question === 'relation') answers[id] = choice(options, u.relation ?? 'new')
         else if (question === 'clarify') answers[id] = noul(u.clarify)
         else if (question === 'asks') answers[id] = noul(u.asks)

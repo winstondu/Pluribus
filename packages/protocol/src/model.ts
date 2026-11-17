@@ -770,6 +770,21 @@ export interface RoutingDecision {
   readonly candidateSource?: CandidateSourceRecord | null
   /** Set when hop between branch points took the last section of a run as a referent without a search inside the run. */
   readonly runEnds?: readonly RunEndRecord[]
+  /** Set when a unit whose target was ambiguous joined several lines of work instead of asking the user (`thresholds.joinChoice`). */
+  readonly joinedLines?: readonly JoinedLinesRecord[]
+}
+
+/**
+ * A unit that joined several lines of work where routing would otherwise
+ * have asked which section it means (05 · "Joining instead of asking").
+ */
+export interface JoinedLinesRecord {
+  /** `message`, or the fragment's key (`f0`, `f1`, …). */
+  readonly unit: string
+  /** The targets taken: the clear ones, and every other answer section at the ambiguity floor. */
+  readonly sectionIds: readonly SectionId[]
+  /** The decision model's confidence that the unit brings several lines of work together. */
+  readonly confidence: number
 }
 
 // ─────────────────────────── decomposition ───────────────────────────

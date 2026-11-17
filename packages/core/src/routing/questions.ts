@@ -46,6 +46,8 @@ export interface UnitScope {
   readonly corrective: boolean
   readonly relation: boolean
   readonly chain: boolean
+  /** Whether to ask if the unit brings several lines of work together (`thresholds.joinChoice`); asked only when two or more lines are listed. */
+  readonly lines: boolean
   readonly dependencies: boolean
   readonly sessionRequirements: boolean
   readonly clarify: boolean
@@ -68,6 +70,8 @@ export interface UnitSignals {
   /** Probability that the unit refers to several sections at once. */
   readonly several: number | null
   readonly chain: Scored<ChainId> | null
+  /** Probability that the unit brings several lines of work together, so that its answer needs the context of each. Null when not asked. */
+  readonly lines: number | null
   readonly needsWork: readonly Scored<DirectiveId>[]
   readonly needsGroups: readonly Scored<SiblingGroupId>[]
   readonly sessionRequirements: readonly Scored<RequirementId>[]
@@ -107,6 +111,9 @@ export function askUnit(batch: Batch, supplied: Supplied, input: RoutingInput, s
     supplied.chains.forEach((c, i) => (options[`L${i + 1}`] = `Continue line L${i + 1}, "${c.label}"`))
     batch.choice(`${k}_chain`, `Which line of work's context does ${it} build on?`, options)
   }
+  // The line question above has one answer. Whether the unit needs several lines at once is asked on its own:
+  // a unit that draws on two lines scores low on each line and on each of their sections (05 · "Joining instead of asking").
+  if (scope.lines && supplied.chains.length >= 2) batch.noul(`${k}_lines`, linesQuestion(it))
   if (scope.dependencies) {
     supplied.inFlight.forEach((w, i) => {
       batch.noul(
@@ -142,6 +149,11 @@ export function askUnit(batch: Batch, supplied: Supplied, input: RoutingInput, s
   }
 }
 
+/** Whether the unit needs the context of several lines of work together, as opposed to one of them it does not name clearly. */
+export function linesQuestion(name: string): string {
+  return `Does ${name} bring together the subjects of more than one line of work (for example line L1 and line L2), so that its answer needs the context of each of them?`
+}
+
 export function readUnit(answers: Answers, supplied: Supplied, input: RoutingInput, scope: UnitScope): UnitSignals {
   const k = scope.key
   const relation = answers.choice(`${k}_relation`)
@@ -166,6 +178,7 @@ export function readUnit(answers: Answers, supplied: Supplied, input: RoutingInp
     targets: scope.sections.flatMap(({ n, section }) => (section.asksElicitationId ? scored(section.sectionId, `${k}_s${n}`) : [])),
     several: null,
     chain: chain && chainCandidate ? { id: chainCandidate.chainId, confidence: chain.confidence } : null,
+    lines: answers.noul(`${k}_lines`),
     needsWork: supplied.inFlight.flatMap((w, i) => scored(w.directiveId, `${k}_w${i + 1}`)),
     needsGroups: supplied.openGroups.flatMap((g, i) => scored(g.groupId, `${k}_g${i + 1}`)),
     sessionRequirements: input.sessionRequirements.flatMap((r, i) => scored(r.id, `${k}_r${i + 1}`)),

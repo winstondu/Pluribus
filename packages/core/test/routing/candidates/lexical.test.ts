@@ -5,6 +5,7 @@ import { ROUTING_CORPUS } from '../../../testing/routing/corpus/examples'
 import { compare, corpusInput, oracleDecisionProvider, referenceDecomposer } from '../../../testing/routing/corpus/evaluate'
 import { ids as sceneIds, scene, type Scene } from '../../../testing/routing/corpus/scene'
 import type { CorpusExample } from '../../../testing/routing/corpus/types'
+import { AMBIGUITY_FLOOR } from '../../../src/routing/derive'
 import { createRouter } from '../../../src/routing/pipeline'
 import { ancestorsOf, buildTree, firstPassSectionIds, reduceToNonAncestors, startSet } from '../../../src/routing/referents'
 import { numberedAnswerSections, supply } from '../../../src/routing/supply'
@@ -319,6 +320,9 @@ describe('the lexical candidate source in a routing', () => {
       const { outcome, decision } = await routeExample(example, withSource('lexical'))
       if (outcome.kind !== 'plan' || !decision) continue
       const yes = new Set(decision.questions.filter((q) => q.type === 'noul' && typeof q.answer === 'number' && q.answer >= DEFAULT_SETTINGS.thresholds.targetChoice).map((q) => q.id))
+      // A unit that joined several lines instead of asking takes its targets at the ambiguity floor, on a yes to the question about the lines (05).
+      const plausible = new Set(decision.questions.filter((q) => q.type === 'noul' && typeof q.answer === 'number' && q.answer >= AMBIGUITY_FLOOR).map((q) => q.id))
+      const joined = new Set((decision.joinedLines ?? []).flatMap((j) => (yes.has('m_lines') ? j.sectionIds : [])))
       for (const unit of outcome.plan.units) {
         const key = outcome.plan.units.length === 1 && !example.decomposition ? 'm' : null
         if (key === null) continue
@@ -326,7 +330,8 @@ describe('the lexical candidate source in a routing', () => {
           const node = tree.bySection.get(target)
           if (!node) continue
           const groups = [...tree.byGroup.values()].filter((g) => g.members.includes(node))
-          expect(yes.has(`m_s${node.n}`) || groups.some((g) => yes.has(`m_j${g.index}`)), `${example.id}: ${target}`).toBe(true)
+          const confirmed = yes.has(`m_s${node.n}`) || groups.some((g) => yes.has(`m_j${g.index}`))
+          expect(confirmed || (joined.has(target) && plausible.has(`m_s${node.n}`)), `${example.id}: ${target}`).toBe(true)
         }
       }
     }
