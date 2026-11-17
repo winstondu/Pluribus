@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'vitest'
+import { WORDING, providerError } from '@pluribus/protocol'
 import { answer } from '../../../testing'
 import { engineModule } from '../../../src/engine'
+import { recoveryModule } from '../../../src/recovery/module'
 import { routingModule } from '../../../src/routing/module'
 import { answerFrom, routingScenario as baseScenario, type MessageRules, type RoutingScenario } from '../../../testing/acceptance/routing'
 
@@ -10,7 +12,7 @@ import { answerFrom, routingScenario as baseScenario, type MessageRules, type Ro
  * the reviewer's tests and titled with the condition each one breaks.
  */
 
-const routingScenario = () => baseScenario({ modules: [engineModule, routingModule] })
+const routingScenario = () => baseScenario({ modules: [engineModule, routingModule, recoveryModule] })
 
 const REC = 'Recommend a laptop for coding'
 const SUM = 'Summarize that recommendation'
@@ -22,6 +24,12 @@ function inputText(s: RoutingScenario, label: string, attempt = 0): string {
   return (a?.context.messages ?? []).map((m) => m.content).join('\n')
 }
 
+function hasDirective(s: RoutingScenario, label: string): boolean {
+  const st = s.state()
+  return st.directiveOrder.some((id) => st.directives[id]?.label === label)
+}
+
+/** Holds every decision call until released. */
 function gate(s: RoutingScenario): () => void {
   let release!: () => void
   const held = new Promise<void>((r) => (release = r))
@@ -43,6 +51,40 @@ async function submitHeld(s: RoutingScenario, text: string, rules: MessageRules,
 }
 
 describe('third review: routing in submission order', () => {
+  test("C2 · REC's Decisions call is rate-limited once; SUM (needs REC) is sent during the wait and does not run before REC's result", async () => {
+    const s = await routingScenario()
+    s.t.model.script('Name a prime', answer('Seven.', 10, 20))
+    await s.send('Name a prime')
+    await s.t.advance(50)
+    const normal = answerFrom(s.rules)
+    let failedOnce = false
+    s.t.decisions.answerWith((req) => {
+      if (!failedOnce && req.state.includes(`New message: "${REC}"`)) {
+        failedOnce = true
+        return { ok: false, error: { ...providerError('rate-limited', '429'), retryAfterMs: 2_000 } }
+      }
+      return normal(req)
+    })
+    s.t.model.script(REC, answer('ThinkPad.', 10, 3_000))
+    s.t.model.script(SUM, answer('Summary.', 10, 20))
+    await s.send(REC)
+    await s.t.advance(1_000)
+    await s.send(SUM, needsRec)
+    await s.t.advance(100)
+    // SUM has not run: its routing waits for REC's, which is still waiting for capacity.
+    expect(!hasDirective(s, SUM) || s.d(SUM).attemptIds.length === 0).toBe(true)
+    await s.t.advance(1_500)
+    // REC is routed and running; SUM's routing saw it and SUM waits for its result.
+    expect(s.d(REC).state).toBe('running')
+    expect(s.d(SUM).attemptIds).toHaveLength(0)
+    expect(s.d(SUM).prerequisites).toEqual([{ kind: 'directive', directiveId: s.d(REC).id }])
+    const queue = (await s.t.snapshot(s.c)).queue.items
+    expect(queue.map((i) => i.directiveId)).toContain(s.d(SUM).id)
+    await s.t.advance(4_000)
+    expect(s.d(SUM).state).toBe('completed')
+    expect(inputText(s, SUM)).toContain('ThinkPad.')
+  })
+
   test("C2 · two messages sent back to back while the first one's Decisions call is still in flight: the second waits for the first's result", async () => {
     const s = await routingScenario()
     s.t.model.script('Name a prime', answer('Seven.', 10, 20))
@@ -61,6 +103,34 @@ describe('third review: routing in submission order', () => {
     await s.t.advance(4_000)
     expect(s.d(SUM).state).toBe('completed')
     expect(inputText(s, SUM)).toContain('ThinkPad.')
+  })
+
+  test('T3 · a reply target is superseded while the reply is being routed: it resolves to the replacement and says so', async () => {
+    const s = await routingScenario()
+    const SKY = 'Why is the sky blue'
+    s.t.model.script(SKY, answer('Scattering.', 10, 20))
+    await s.send(SKY)
+    await s.t.advance(50)
+    const old = s.d(SKY).sectionId
+    s.t.model.script(SKY, answer('Rayleigh.', 10, 20))
+    const release = gate(s)
+    await submitHeld(s, 'Actually, for a physicist', { message: { corrective: 0.95, relation: 'addition' } }, [old ?? ''])
+    await submitHeld(s, 'Shorter please', { message: { relation: 'addition' } }, [old ?? ''])
+    release()
+    await s.t.settle()
+    await s.t.advance(100)
+    const replacement = s.d(SKY).sectionId
+    expect(replacement).not.toBe(old)
+    expect(s.d('Shorter please').targets).toEqual([replacement])
+    const snap = await s.t.snapshot(s.c)
+    const replyingTo = snap.transcript.messages[s.d('Shorter please').messageId]?.replyingTo
+    expect(replyingTo?.targets.map((t) => t.sectionId)).toEqual([replacement])
+    expect(replyingTo?.note).toBe(WORDING.replyingToRevised)
+    // It is not placed under the superseded node.
+    const st = s.state()
+    const parents = st.attempts[s.d('Shorter please').attemptIds[0] ?? '']?.parents ?? []
+    for (const p of parents) expect(st.nodes[p]?.replacedByNodeId ?? null).toBeNull()
+    expect(inputText(s, 'Shorter please')).toContain('Rayleigh.')
   })
 })
 
