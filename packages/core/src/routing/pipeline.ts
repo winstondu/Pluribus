@@ -2,6 +2,7 @@ import {
   type BestNodeRecord,
   type RunEndRecord,
   type BudgetStopRecord,
+  type CandidateSourceRecord,
   type DecisionBudget,
   type StrategySelectionRecord,
   type TreeWalkSettings,
@@ -27,7 +28,9 @@ import type {
   BestNodeFound,
   ScoredSection,
   CancelSignal,
+  CandidateHit,
   CandidateSection,
+  CandidateSource,
   DecisionProvider,
   CoreDependencies,
   DecomposedFragment,
@@ -49,6 +52,7 @@ import type {
   UnitReferents,
 } from '../ports'
 import { Batch, ask, type Answers } from './batch'
+import { createLexicalCandidateSource } from './candidates'
 import { AMBIGUITY_FLOOR, derivePlacement, neededWork, placedWithoutTarget, referentCovered, resolveUnitTargets, selected, validatePlan, type TargetMode } from './derive'
 import { askUnit, readUnit, sectionNumbers, withReferents, type UnitScope, type UnitSignals } from './questions'
 import { createReferentAsk, estimateRequestTokens, firstPassQuestions, firstPassSectionIds, referentStrategyFor, routingTokenBudget, type ReferentSpend, type RoutingTokenBudget } from './referents'
@@ -80,6 +84,10 @@ import { MAX_SECTIONS, MIN_SECTIONS, decisionContextOf, describeState, numberedA
  * in the calls above, and any further call it makes is counted against the
  * routing's decision budget. The pipeline does not know which strategy it
  * has; thresholds, placement and validation are the same after any of them.
+ * A tree walk may be given places to start besides the roots: what the
+ * candidate source names for each unit (`startCandidatesFor`). The source
+ * is the injected one, or the one `settings.routing.candidateSource` names;
+ * what it returned is recorded with the decision.
  *
  * Every decision request of a routing draws from one token budget
  * (`routingTokenBudget`): the smaller of `settings.routing.tokenBudget` and
@@ -102,7 +110,9 @@ import { MAX_SECTIONS, MIN_SECTIONS, decisionContextOf, describeState, numberedA
  * The router never mints an ID except through `input.ids`, never reads the
  * clock, and never rejects: provider failures are a `failed` outcome.
  */
-export function createRouter(deps: Deps): Router {
+export function createRouter(dependencies: RouterDependencies): Router {
+  // One lexical source for the router's lifetime: it keeps its index between routings.
+  const deps: Deps = { ...dependencies, lexicalSource: createLexicalCandidateSource({ limit: MAX_START_CANDIDATES }) }
   return {
     async route(input, signal) {
       try {
@@ -114,7 +124,8 @@ export function createRouter(deps: Deps): Router {
   }
 }
 
-type Deps = Pick<CoreDependencies, 'decisionProvider' | 'decomposer' | 'referentStrategy' | 'strategySelector'>
+type RouterDependencies = Pick<CoreDependencies, 'decisionProvider' | 'decomposer' | 'referentStrategy' | 'strategySelector' | 'candidateSource'>
+type Deps = RouterDependencies & { readonly lexicalSource: CandidateSource }
 
 const failed = (error: ProviderError): RoutingOutcome => ({ kind: 'failed', error })
 const malformed = (message: string): RoutingOutcome => failed(providerError('malformed-response', message))
@@ -136,6 +147,8 @@ class Record {
   selection: StrategySelectionRecord | null = null
   /** Why the pipeline's request listed fewer answer sections than its window, for the decision's explanation. Empty when it listed them all. */
   windowNote = ''
+  /** Which candidate source was asked and what it returned for each unit. Null when none was asked. */
+  candidates: CandidateSourceRecord | null = null
   /** Set when a limit of the decision budget stopped the referent strategy: the limit and what the strategy did instead. */
   budgetStop: Pick<BudgetStopRecord, 'limit' | 'fallback'> | null = null
   /** The units placed on the best node found so far, in place of a question to the user. */
@@ -176,6 +189,7 @@ async function routeMessage(deps: Deps, input: RoutingInput, signal: CancelSigna
   // Explicit and chosen targets are used as given, so there is no strategy to choose for them.
   const { strategy, treeWalk } = await chooseStrategy(deps, input, given ? null : everything, record, signal)
   const messageUnit: ReferentUnit = { key: 'm', name: 'the new message' }
+  const startCandidates = given ? {} : await startCandidatesFor(deps, input, [{ unit: messageUnit, text: input.text }], record)
 
   // ── 1. The decision gate ──
   /** The gate's request when the pipeline lists at most `window` answer sections. */
@@ -209,7 +223,7 @@ async function routeMessage(deps: Deps, input: RoutingInput, signal: CancelSigna
     ].join('\n')
     const stateText = describeState(input, supplied, subject)
     // Explicit and chosen targets are used as given: nothing is asked about the message's referents.
-    const referentRequest = referentRequestFor(input, supplied, given ? [] : [messageUnit], stateText, subject, treeWalk)
+    const referentRequest = referentRequestFor(input, supplied, given ? [] : [messageUnit], stateText, subject, treeWalk, startCandidates)
     addReferentQuestions(gate, strategy, referentRequest)
     return { supplied, batch: gate, messageScope, subject, stateText, referentRequest }
   }
@@ -392,6 +406,12 @@ async function routeComposite(deps: Deps, input: RoutingInput, signal: CancelSig
   const t = input.settings.thresholds
   const { given, record, decomposition, requirements } = c
   const fragments = decomposition.fragments
+  const startCandidates = await startCandidatesFor(
+    deps,
+    input,
+    fragments.map((f, i) => ({ unit: { key: `f${i}`, name: `part F${i + 1}` }, text: f.instruction })),
+    record,
+  )
   const keyOf = new Map(fragments.map((f, i) => [f.key, `f${i}`]))
   const fragmentIds = new Map<string, FragmentId>()
   const relate = input.candidates.sections.length > 0 || input.candidates.chains.length > 0
@@ -439,7 +459,7 @@ async function routeComposite(deps: Deps, input: RoutingInput, signal: CancelSig
       ...(given ? [`The user replied to ${given.sectionIds.map((id) => `S${numbers.get(id) ?? '?'}`).join(' and ')}.`] : []),
     ].join('\n')
     const stateText = describeState(input, supplied, subject)
-    const referentRequest = referentRequestFor(input, supplied, scopes.map((scope) => ({ key: scope.key, name: scope.name })), stateText, subject, c.treeWalk)
+    const referentRequest = referentRequestFor(input, supplied, scopes.map((scope) => ({ key: scope.key, name: scope.name })), stateText, subject, c.treeWalk, startCandidates)
     addReferentQuestions(batch, c.strategy, referentRequest)
     return { supplied, batch, scopes, stateText, referentRequest }
   }
@@ -635,6 +655,7 @@ function referentRequestFor(
   stateText: string,
   subject: string,
   treeWalk: TreeWalkSettings,
+  startCandidates: ReferentRequest['startCandidates'],
 ): ReferentRequest {
   const sections = numberedAnswerSections(input, supplied)
   return {
@@ -647,7 +668,55 @@ function referentRequestFor(
     useSummaryIfAvailable: input.settings.routing.useSummaryIfAvailable,
     decisionContext: (section) => decisionContextOf(input, section),
     treeWalk,
+    startCandidates,
   }
+}
+
+/** The most sections a candidate source may add to a walk's start set for one unit. */
+export const MAX_START_CANDIDATES = 12
+
+/** The candidate source of a routing: the injected one, else the one the settings name, else none. */
+function candidateSourceFor(deps: Deps, input: RoutingInput): CandidateSource | null {
+  if (deps.candidateSource) return deps.candidateSource
+  return input.settings.routing.candidateSource === 'lexical' ? deps.lexicalSource : null
+}
+
+/**
+ * Where a tree walk may start besides the roots, per unit: what the
+ * candidate source suggests, as far as it names answer sections of this
+ * conversation (invariant 9), at most `MAX_START_CANDIDATES` of them.
+ * Nothing when there is no source, or when it fails: a candidate is only a
+ * place to look. The units asked about replace those recorded before: for a
+ * composite, the parts stand in place of the message.
+ */
+async function startCandidatesFor(
+  deps: Deps,
+  input: RoutingInput,
+  units: readonly { readonly unit: ReferentUnit; readonly text: string }[],
+  record: Record,
+): Promise<ReferentRequest['startCandidates']> {
+  const source = candidateSourceFor(deps, input)
+  if (!source) return {}
+  const sections = input.candidates.sections.filter((s) => !s.asksElicitationId)
+  const known = new Set(sections.map((s) => s.sectionId))
+  const firstPass = firstPassSectionIds(input.candidates)
+  const answerText = (section: CandidateSection): string => input.answerText?.(section.sectionId) ?? section.excerpt
+  const out: { [key: string]: readonly SectionId[] } = {}
+  const recorded: CandidateSourceRecord['units'][number][] = []
+  for (const { unit, text } of units) {
+    let found: readonly CandidateHit[] = []
+    try {
+      found = await source.candidates({ conversationId: input.conversationId, unit, text, sections, answerText, firstPass })
+    } catch {
+      found = []
+    }
+    const seen = new Set<SectionId>()
+    const kept = found.filter((hit) => known.has(hit.sectionId) && !seen.has(hit.sectionId) && seen.add(hit.sectionId)).slice(0, MAX_START_CANDIDATES)
+    out[unit.key] = kept.map((hit) => hit.sectionId)
+    recorded.push({ unit: unit.key === 'm' ? 'message' : unit.key, candidates: kept.map((hit) => ({ sectionId: hit.sectionId, score: hit.score })) })
+  }
+  record.candidates = { source: source.name, units: recorded }
+  return out
 }
 
 /** The share of a routing's token budget a strategy selector's request may take: beyond it the rules choose. */
@@ -1159,6 +1228,7 @@ function decisionRecord(
     questions: record.questions,
     ...(record.selection ? { strategySelection: record.selection } : {}),
     ...(record.budgetStop ? { budgetStop: { ...record.budgetStop, bestFound: record.bestFound } } : {}),
+    ...(record.candidates ? { candidateSource: record.candidates } : {}),
     ...(record.runEnds.length > 0 ? { runEnds: record.runEnds } : {}),
   }
 }

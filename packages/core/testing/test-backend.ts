@@ -12,7 +12,7 @@ import {
   type SettingsPatch,
   type StreamFrame,
 } from '@pluribus/protocol'
-import type { Backend, ContextSummariser, ContextSummaryProvider, CoreOptions, ReferentStrategy } from '../src/ports'
+import type { Backend, CandidateSource, ContextSummariser, ContextSummaryProvider, CoreOptions, ReferentStrategy } from '../src/ports'
 import { createEngine, type EngineInternals } from '../src/engine/backend'
 import { defaultModules } from '../src/engine/engine-module'
 import type { CoreModule } from '../src/engine/module'
@@ -39,6 +39,7 @@ export interface TestBackendOverrides {
   readonly useScriptedRouter?: boolean
   /** Injected in place of the referent strategy that settings name (routing pipeline only). */
   readonly referentStrategy?: ReferentStrategy
+  readonly candidateSource?: CandidateSource
   /** Injected in place of the provider that returns a node's context chain unchanged. */
   readonly contextSummaryProvider?: ContextSummaryProvider
   /** Injected in place of the summariser that produces nothing. */
@@ -124,6 +125,7 @@ export async function createTestBackend(overrides: TestBackendOverrides = {}): P
       ids,
       ...(overrides.useScriptedRouter === false ? {} : { router }),
       ...(overrides.referentStrategy ? { referentStrategy: overrides.referentStrategy } : {}),
+      ...(overrides.candidateSource ? { candidateSource: overrides.candidateSource } : {}),
       ...(overrides.contextSummaryProvider ? { contextSummaryProvider: overrides.contextSummaryProvider } : {}),
       ...(overrides.contextSummariser ? { contextSummariser: overrides.contextSummariser } : {}),
     },

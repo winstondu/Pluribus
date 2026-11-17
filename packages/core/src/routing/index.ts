@@ -28,6 +28,7 @@ export {
   type SearchOutcome,
   type StartSet,
 } from './referents'
+export * from './candidates'
 export {
   applyChoice,
   chooseByRules,

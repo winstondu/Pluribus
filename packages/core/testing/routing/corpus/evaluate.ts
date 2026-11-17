@@ -9,7 +9,7 @@ import {
   type PointRef,
   type PrerequisiteRef,
   type Settings,
-  type BudgetStopRecord, type RunEndRecord, type StrategySelectionRecord,
+  type BudgetStopRecord, type CandidateSourceRecord, type RunEndRecord, type StrategySelectionRecord,
   type TextSpan,
 } from '@pluribus/protocol'
 import type {
@@ -63,6 +63,8 @@ export interface CorpusResult {
   readonly selection: StrategySelectionRecord | null
   /** Set when a limit of the decision budget stopped the referent strategy, with the best node found so far where one was used. */
   readonly budgetStop: BudgetStopRecord | null
+  /** What the candidate source handed the routing; null when none was asked. */
+  readonly candidates: CandidateSourceRecord | null
   /** The targets that hop between branch points placed on the last section of a run without a search inside it; empty when none. */
   readonly runEnds: readonly RunEndRecord[]
 }
@@ -189,6 +191,7 @@ export async function evaluateCorpus(run: CorpusRun): Promise<CorpusReport> {
       decisions: metered.spent(),
       selection: outcome.kind === 'plan' ? (outcome.plan.decision.strategySelection ?? null) : null,
       budgetStop: outcome.kind === 'plan' ? (outcome.plan.decision.budgetStop ?? null) : null,
+      candidates: outcome.kind === 'plan' ? (outcome.plan.decision.candidateSource ?? null) : null,
       runEnds: outcome.kind === 'plan' ? (outcome.plan.decision.runEnds ?? []) : [],
     })
   }
