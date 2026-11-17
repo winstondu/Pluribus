@@ -46,6 +46,8 @@ export function runInspection(s: ConversationState, directiveId: DirectiveId, at
     instruction: d.revisedInstruction?.instruction ?? d.instruction,
     requirements: d.revisedInstruction?.requirements ?? d.requirements,
     input: attempt?.context ?? null,
+    readiness: d.readiness,
+    pauseReason: d.state === 'paused' ? (d.pause?.reason ?? null) : null,
     waitingFor,
     barrier: barrierView,
     ancestry: rootFirst(s, attempt?.context.nodeIds ?? []).map((nodeId) => {

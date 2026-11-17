@@ -24,7 +24,7 @@ import { Mark, StatusLine, type MarkKind } from './marks'
 import { COLLAPSE, useKept } from './motion'
 import { useCommand } from './use-command'
 
-const MARK_KINDS: ReadonlySet<string> = new Set(['failed', 'stopped', 'interrupted', 'cancelled', 'superseded'])
+const MARK_KINDS: ReadonlySet<string> = new Set(['failed', 'stopped', 'interrupted', 'cancelled', 'superseded', 'paused'])
 
 function markKind(state: string): MarkKind {
   return MARK_KINDS.has(state) ? (state as MarkKind) : 'stopped'
@@ -87,6 +87,10 @@ function SectionBody({ section, grouped }: { section: SectionView; grouped: bool
         ))}
 
         {section.status ? <StatusLine kind={section.status.kind} text={section.status.text} /> : null}
+
+        {section.pause?.reason === 'awaiting-input' && section.pause.questionSectionId ? (
+          <QuestionLink sectionId={section.pause.questionSectionId} />
+        ) : null}
 
         {section.state === 'failed' ? (
           <p role="alert" data-slot="failure-notice" className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-sm text-destructive">
@@ -158,11 +162,36 @@ function SupersededRow(props: { section: SectionView; markText: string; hasText:
   )
 }
 
-function ReplacesLink({ sectionId }: { sectionId: SectionId }) {
+/**
+ * On a section paused awaiting user input: where to answer. The question is an additional response with its own
+ * reply affordance (Q98, Q106); this only takes the reader there.
+ */
+function QuestionLink({ sectionId }: { sectionId: SectionId }) {
   const revealSection = useUiState((state) => state.revealSection)
   const exists = useSection(sectionId) !== undefined
-  // A status-only bubble that was dropped left no trace to link to (Q38).
   if (!exists) return null
+  return (
+    <p data-slot="question-link">
+      <button
+        type="button"
+        onClick={() => revealSection(sectionId)}
+        className="pressable inline-flex items-center gap-1 rounded-md text-xs text-primary underline-offset-4 hover:underline"
+      >
+        See the question
+        <ArrowDownIcon aria-hidden className="size-3" />
+      </button>
+    </p>
+  )
+}
+
+function ReplacesLink({ sectionId }: { sectionId: SectionId }) {
+  const revealSection = useUiState((state) => state.revealSection)
+  const replaced = useSection(sectionId)
+  // A status-only bubble that was dropped left no trace to link to (Q38).
+  if (!replaced) return null
+  // The answer after a clarification replaces nothing the reader would call a version: it follows the text of
+  // the run that stopped to ask (Q106).
+  const afterPause = replaced.superseded?.linkText === WORDING.seeAnswer
   return (
     <p>
       <button
@@ -170,7 +199,7 @@ function ReplacesLink({ sectionId }: { sectionId: SectionId }) {
         onClick={() => revealSection(sectionId)}
         className="pressable inline-flex items-center gap-1 rounded-md text-xs text-faint-foreground underline-offset-4 hover:text-foreground hover:underline"
       >
-        Replaces an earlier version
+        {afterPause ? 'Follows the paused text' : 'Replaces an earlier version'}
         <ArrowUpIcon aria-hidden className="size-3" />
       </button>
     </p>
@@ -209,7 +238,7 @@ function AttemptBody({ attempt, current, sectionState, historyOpen, directiveId 
   // The failure notice of a failed section already says "Failed" for its current attempt.
   // While the section is still being worked on (a retry is pending, waiting for capacity, or running), an earlier
   // attempt that left no text has nothing to mark: the status line says what is happening (08 · Retries, F3).
-  const working = sectionState === 'pending' || sectionState === 'streaming'
+  const working = sectionState === 'pending' || sectionState === 'streaming' || sectionState === 'paused'
   const mark =
     attempt.markText !== null &&
     !(current && sectionState === 'failed') &&

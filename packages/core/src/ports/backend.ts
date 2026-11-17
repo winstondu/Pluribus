@@ -3,6 +3,7 @@ import type { Clock, Timers } from './clock'
 import type { DecisionProvider } from './decision-provider'
 import type { Decomposer } from './decomposer'
 import type { ModelProvider } from './model-provider'
+import type { Preparer } from './preparer'
 import type { ContextSummariser, ContextSummaryProvider } from './context-summary'
 import type { CandidateSource } from './referent-operations'
 import type { ReferentStrategy } from './referent-strategy'
@@ -16,6 +17,8 @@ import type { EventStore, ProjectionCache, SecretsStore } from './stores'
  */
 export interface CoreDependencies {
   readonly modelProvider: ModelProvider
+  /** The preparation step: establishes typed readiness where routing's findings do not (Q103). */
+  readonly preparer: Preparer
   readonly decisionProvider: DecisionProvider
   readonly decomposer: Decomposer
   readonly eventStore: EventStore

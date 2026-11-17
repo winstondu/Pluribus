@@ -8,6 +8,8 @@ export interface ModelOption {
   /** The part of the ID before the slash. */
   readonly provider: string
   readonly contextLength: number | null
+  /** False for a listed model whose live smoke run is still outstanding. Absent means tested. */
+  readonly tested?: boolean
 }
 
 export type ModelLoader = () => Promise<readonly ModelOption[]>
@@ -81,15 +83,16 @@ export const MODEL_ROLES: readonly { role: ModelRole; label: string; description
 
 /**
  * The models to show for one provider of a role, from what the backend
- * reports (`ProviderChoice`). The backend decides the list: a role
- * offers the backend's suggestions, or, when the backend
+ * reports (`ProviderChoice`). The backend decides the list: a restricted
+ * role (answers and decomposition, Q107) offers exactly its models; an
+ * unrestricted one offers the backend's suggestions, or, when the backend
  * names none, the provider's public catalog as loaded. `loaded` only adds
  * what the catalog knows about a model (its context length).
  */
 export function optionsFor(choice: ProviderChoice, loaded: readonly ModelOption[]): readonly ModelOption[] {
   const known = (id: string): number | null => loaded.find((model) => model.id === id)?.contextLength ?? null
-  if (choice.models.length > 0) {
-    return choice.models.map((model) => ({ id: model.id, name: model.name, provider: groupOf(model.id, choice.provider), contextLength: known(model.id) }))
+  if (choice.models.length > 0 || choice.restricted) {
+    return choice.models.map((model) => ({ id: model.id, name: model.name, provider: groupOf(model.id, choice.provider), contextLength: known(model.id), tested: model.tested }))
   }
   return choice.provider === 'openrouter' ? loaded : []
 }

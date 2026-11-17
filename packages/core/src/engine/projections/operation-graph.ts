@@ -116,6 +116,8 @@ function sectionStatus(s: ConversationState, d: DirectiveRow, sectionId: string,
     case 'dependency-queued':
       return { status: 'waiting-for-results', text: waitingText(d.waitingFor.map((r) => prerequisiteLabel(s, r)), d.revised) }
     case 'paused':
+      // One status, two reasons: waiting for the user's input, or for a recovery choice (glossary · "Paused").
+      if (d.pause?.reason === 'awaiting-input') return { status: 'paused', text: WORDING.pausedAwaitingInput }
       return { status: 'paused', text: d.pause ? pausedText(withCurrentLabel(s, d.pause.cause)) : 'Paused' }
     case 'awaiting-elicitation':
       return { status: 'awaiting-answer', text: WORDING.awaitingAnswer }
@@ -167,6 +169,7 @@ function operationView(s: ConversationState, id: OperationId): OperationView {
       chainId: group?.baseChainId ?? ('' as never),
       status: dissolved ? 'cancelled' : formed ? 'formed' : 'group-open',
       statusText: dissolved ? WORDING.cancelled : formed ? 'Joined back' : 'Group open',
+      pauseReason: null,
       dependsOn,
       waitingFor: formed || dissolved ? [] : waitingFor,
       heldByBarrier: false,
@@ -190,7 +193,9 @@ function operationView(s: ConversationState, id: OperationId): OperationView {
   const dependsOn: OperationId[] = []
   const waitingFor: OperationId[] = []
   for (const ref of d.prerequisites) {
-    const waiting = !prerequisiteSatisfied(s, d, ref) && current && ['dependency-queued', 'paused'].includes(d.state)
+    // Work paused for input before its results arrived still waits for them; once it has run, it does not.
+    const waiting =
+      !prerequisiteSatisfied(s, d, ref) && current && ['dependency-queued', 'paused'].includes(d.state) && section.attemptIds.length === 0
     for (const op of prerequisiteOperations(s, d, ref)) {
       if (!dependsOn.includes(op)) dependsOn.push(op)
       if (waiting && !waitingFor.includes(op)) waitingFor.push(op)
@@ -213,6 +218,7 @@ function operationView(s: ConversationState, id: OperationId): OperationView {
     label: d.label,
     chainId: current ? d.chainId : latestChain(s, latest) ?? section.openedOnChainId,
     status,
+    pauseReason: current && d.state === 'paused' ? (d.pause?.reason ?? null) : null,
     statusText: text,
     dependsOn,
     waitingFor: current && d.heldByBarrier ? [] : waitingFor,

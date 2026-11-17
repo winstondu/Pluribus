@@ -27,6 +27,7 @@ import {
   type SupersessionCause,
   type TranscriptItemRef,
   type TranscriptProjection,
+  type PauseView,
 } from '@pluribus/protocol'
 import {
   isInFlightState,
@@ -39,6 +40,7 @@ import {
   chainLabel,
   sectionTitle,
   withCurrentLabel,
+  awaitingInput,
 } from '../queries'
 import { resolveTargets } from '../candidates'
 import { startedInSection } from '../lifecycle'
@@ -361,7 +363,7 @@ function responseView(s: ConversationState, m: Memo, id: ResponseId): ResponseVi
       else if (state === 'stopped') counts.stopped += 1
       else if (state === 'interrupted') counts.interrupted += 1
       else if (state === 'cancelled') counts.cancelled += 1
-      else if (state === 'pending' || state === 'streaming') counts.inProgress += 1
+      else if (state === 'pending' || state === 'streaming' || state === 'paused') counts.inProgress += 1
     }
     header = { counts, countText: groupCountText(counts) }
   }
@@ -411,7 +413,8 @@ function sectionStatus(s: ConversationState, d: DirectiveRow): SectionStatus | n
     case 'dependency-queued':
       return { kind: 'waiting-for-results', text: waitingText(d.waitingFor.map((ref) => prerequisiteLabel(s, ref)), d.revised) }
     case 'paused':
-      return { kind: 'paused', text: d.pause ? pausedText(withCurrentLabel(s, d.pause.cause)) : WORDING.awaitingAnswer }
+      if (d.pause?.reason === 'dependency-recovery') return { kind: 'paused', text: pausedText(withCurrentLabel(s, d.pause.cause)) }
+      return { kind: 'paused', text: WORDING.pausedAwaitingInput }
     case 'ready':
       // Ready work is only "waiting for a free slot" once the scheduler found every slot taken; until
       // then it is about to start (its tokens are being counted).
@@ -437,7 +440,10 @@ function sectionView(s: ConversationState, m: Memo, id: SectionId): SectionView 
   const latestHasText = latestId ? (s.attemptText[latestId] ?? '') !== '' : false
 
   let status: SectionStatus | null = null
-  if (current && (state === 'pending' || (d.state === 'running' && !latestHasText) || d.state === 'retrying' || d.state === 'waiting-for-capacity')) {
+  if (
+    current &&
+    (state === 'pending' || state === 'paused' || (d.state === 'running' && !latestHasText) || d.state === 'retrying' || d.state === 'waiting-for-capacity')
+  ) {
     status = sectionStatus(s, d)
   }
 
@@ -465,7 +471,12 @@ function sectionView(s: ConversationState, m: Memo, id: SectionId): SectionView 
   if (section.supersession) {
     const replacementId = section.supersession.replacementSectionId
     superseded = {
-      markText: section.supersession.wasFinished ? WORDING.supersededFinished : WORDING.supersededPartial,
+      markText:
+        section.supersession.cause.kind === 'clarified'
+          ? WORDING.clarifiedPartial
+          : section.supersession.wasFinished
+            ? WORDING.supersededFinished
+            : WORDING.supersededPartial,
       replacementSectionId: replacementId,
       replacementResponseId: replacementId ? (s.sections[replacementId]?.responseId ?? null) : null,
       linkText: supersededLinkText(section.supersession.cause),
@@ -485,6 +496,7 @@ function sectionView(s: ConversationState, m: Memo, id: SectionId): SectionView 
     title: sectionTitle(s, section),
     state,
     directiveState: d.state,
+    pause: current ? pauseView(s, d) : null,
     placement,
     status,
     chainId: current ? d.chainId : ((latestId ? attemptChain(s, latestId) : null) ?? section.openedOnChainId),
@@ -501,12 +513,24 @@ function sectionView(s: ConversationState, m: Memo, id: SectionId): SectionView 
       reply:
         (section.supersession === null || resolveTargets(s, [id]).sectionIds.length > 0) &&
         (d.kind === 'answer' || elicitation?.status === 'open' || elicitation === undefined),
-      stop: current && startedInSection(s, d),
+      // Not on a section paused awaiting input: it is neither streaming nor pending (10 · "Controls"); its request can still be stopped.
+      stop: current && startedInSection(s, d) && !awaitingInput(d),
       retry: current && unfinishedOutcome(d.state) !== null,
       regenerate: current && d.state === 'completed' && (section.supersededInputs?.inputs.length ?? 0) > 0,
     },
   }
   void m
+}
+
+/** Why the directive is paused and what resumes it, or null when it is not. */
+function pauseView(s: ConversationState, d: DirectiveRow): PauseView | null {
+  if (d.state !== 'paused' || !d.pause) return null
+  if (d.pause.reason === 'dependency-recovery') {
+    return { reason: 'dependency-recovery', elicitationId: d.pause.elicitationId, cause: withCurrentLabel(s, d.pause.cause) }
+  }
+  const elicitation = s.elicitations[d.pause.elicitationId]
+  const question = elicitation?.record.kind === 'clarification' ? s.directives[elicitation.record.questionDirectiveId] : undefined
+  return { reason: 'awaiting-input', elicitationId: d.pause.elicitationId, questionSectionId: question?.sectionId ?? null }
 }
 
 /** The link from superseded work to its replacement names what replaced it: Regenerate is not a revision (glossary). */
@@ -521,6 +545,8 @@ function supersededLinkText(cause: SupersessionCause): string {
       return WORDING.seeRedone
     case 'undo-split':
       return WORDING.seeRestarted
+    case 'clarified':
+      return WORDING.seeAnswer
   }
 }
 
@@ -579,6 +605,8 @@ export function attemptResultStatus(s: ConversationState, attemptId: AttemptId):
       return attempt.state
     case 'superseded':
       return 'superseded'
+    case 'paused':
+      return 'paused'
   }
 }
 
@@ -602,6 +630,10 @@ function attemptView(s: ConversationState, id: AttemptId): AttemptView {
       break
     case 'superseded':
       markText = WORDING.supersededPartial
+      break
+    case 'paused':
+      // Kept, and labeled as partial: the run stopped to ask (Q106).
+      markText = section?.supersession?.cause.kind === 'clarified' ? WORDING.clarifiedPartial : WORDING.pausedPartial
       break
     default:
       markText = null

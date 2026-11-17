@@ -4,7 +4,7 @@
  * class.
  *
  * Implementations:
- * - `@pluribus/providers`: ModelProvider, DecisionProvider, Decomposer over OpenRouter
+ * - `@pluribus/providers`: ModelProvider, Preparer, DecisionProvider, Decomposer over OpenRouter
  * - `@pluribus/storage`: EventStore, ProjectionCache, SecretsStore over IndexedDB and in memory
  * - `@pluribus/core/testing`: scripted and in-memory fakes of all of them, and the fake clock
  */
@@ -19,6 +19,7 @@ export type {
   ModelStreamTerminal,
   TokenCount,
 } from './model-provider'
+export type { PreparationRequest, PreparationResult, PreparedReadiness, Preparer } from './preparer'
 export type {
   ChoiceAnswer,
   ChoiceQuestion,

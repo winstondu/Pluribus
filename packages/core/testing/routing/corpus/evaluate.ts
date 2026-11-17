@@ -162,6 +162,7 @@ export function referenceDecomposer(example: CorpusExample): Decomposer {
           })),
           barrier: reference.barrier ?? null,
           outputOrder: reference.outputOrder ? reference.outputOrder.map((j) => `k${j}`) : null,
+          combinedLimit: reference.combinedLimit ?? null,
         },
       }
     },
@@ -286,6 +287,9 @@ export function compare(example: CorpusExample, outcome: RoutingOutcome, set: Ex
   const answered = plan.answersElicitationId ? handle(plan.answersElicitationId) : null
   if ((expect.answers ?? null) !== answered) out.push(`answers: expected ${expect.answers ?? 'none'}, got ${answered ?? 'none'}`)
   if (expect.barrier !== undefined && (plan.barrier !== null) !== expect.barrier) out.push(`barrier: expected ${String(expect.barrier)}, got ${String(plan.barrier !== null)}`)
+  if (expect.decomposed !== undefined && (plan.decompositionModel !== null) !== expect.decomposed) {
+    out.push(`decomposed: expected ${String(expect.decomposed)}, got ${String(plan.decompositionModel !== null)}`)
+  }
   if (expect.sessionWide !== undefined && (plan.sessionRequirements.length > 0) !== expect.sessionWide) {
     out.push(`session-wide requirement: expected ${String(expect.sessionWide)}, got ${String(plan.sessionRequirements.length > 0)}`)
   }
@@ -444,7 +448,9 @@ export function oracleDecisionProvider(example: CorpusExample, input: RoutingInp
       confidence,
       probabilities: Object.fromEntries(options.map((o) => [o, o === option ? confidence : (1 - confidence) / Math.max(1, options.length - 1)])),
     })
-    if (id === 'composite') return noul(expect.composition !== undefined && expect.composition !== 'atomic')
+    if (id === 'composite') return noul(expect.combinedLimit === true || (expect.composition !== undefined && expect.composition !== 'atomic'))
+    if (id === 'combinedlimit') return noul(expect.combinedLimit === true)
+    if (id === 'ordered') return noul(example.decomposition?.barrier?.reason === 'explicit-order')
     if (id === 'sessionwide' || /^rq\d+_sessionwide$/.test(id)) return noul(expect.sessionWide === true)
     if (id === 'barrier') return noul(expect.barrier === true)
     if (/^q\d+_clarify$/.test(id)) return noul(expect.sharedClarification === true)

@@ -49,7 +49,13 @@ export type DirectiveKind = 'answer' | 'clarification-question'
 export type DirectiveState =
   /** Waiting for a result it needs. Released only by success, never by streaming text (Q33). */
   | 'dependency-queued'
-  /** The result it needs failed, was stopped, or was interrupted; waiting for the recovery choice (Q48). No default. */
+  /**
+   * Waiting for user action (glossary · "Paused"). Its {@link PauseReason}
+   * says which: `awaiting-input`, the answer to a clarification question it
+   * needs before or during its answer (Q23, Q106); or `dependency-recovery`,
+   * the recovery choice after the result it needs failed, was stopped, or was
+   * interrupted (Q48). Neither has a default.
+   */
   | 'paused'
   /** Ready, held back by a provider's rate limit (429). Never shown as a dependency wait (Q47, Q60). */
   | 'waiting-for-capacity'
@@ -86,14 +92,30 @@ export type DirectiveState =
    */
   | 'retrying'
   /**
-   * Build refinement. Cannot start until the user answers an elicitation: a
-   * clarification that blocks it (Q23, Q26), or a choice with default that
-   * decides whether and how it is redone (Q44). Not a result dependency: it
-   * has no queue item.
+   * Build refinement. Cannot start until a choice with default that decides
+   * whether and how it is redone is resolved (Q44). Not a result dependency:
+   * it has no queue item. Work that waits for the answer to a clarification
+   * question is `paused` with reason `awaiting-input`, not this.
    */
   | 'awaiting-elicitation'
 
-/** States in which a directive counts as not yet started (a revision edits it in place, Q41). */
+/**
+ * How paused work can resume (glossary · "Paused": "its pause reason
+ * determines how it can resume").
+ * - `awaiting-input`: by the user's answer to its clarification question, a
+ *   reply to the question or a next message recognised as the answer (Q98).
+ *   Raised before the work starts, or by a run that discovered consequential
+ *   missing information and stopped with its partial text kept (Q106).
+ * - `dependency-recovery`: by the recovery choice on its queue item: Retry,
+ *   Continue without or Cancel (Q48).
+ */
+export type PauseReason = 'awaiting-input' | 'dependency-recovery'
+
+/**
+ * States in which a directive counts as not yet started (a revision edits it
+ * in place, Q41). `paused` is here for both pause reasons; work paused for
+ * input after partial output has started, which its section's attempts say.
+ */
 export const NOT_STARTED_STATES: readonly DirectiveState[] = [
   'dependency-queued',
   'paused',
@@ -137,6 +159,12 @@ export type AttemptState =
   | 'interrupted'
   /** Ended by Pluribus in order to replace it (Q38). Its dependents follow the replacement and are not paused. */
   | 'superseded'
+  /**
+   * The run discovered consequential missing information, stopped, and asked
+   * a clarification question (Q106). Not a success and not a failure: its
+   * text stays as labeled partial text and never releases a dependent.
+   */
+  | 'paused'
 
 export type TerminalAttemptState = Exclude<AttemptState, 'running' | 'streaming'>
 
@@ -145,7 +173,7 @@ export type TerminalAttemptState = Exclude<AttemptState, 'running' | 'streaming'
  * `superseded` also covers a completed attempt whose section was later
  * replaced by a revision.
  */
-export type AttemptResultStatus = 'in-flight' | 'current' | 'superseded' | 'failed' | 'stopped' | 'interrupted'
+export type AttemptResultStatus = 'in-flight' | 'current' | 'superseded' | 'failed' | 'stopped' | 'interrupted' | 'paused'
 
 /**
  * How work ended without completing. `cancelled` is the build's extension of
@@ -172,12 +200,16 @@ export type AttemptOrigin =
   | 'regenerate'
   /** Redo selected, or defaulted, in a choice with default (Q44, Q45). */
   | 'redo'
+  /** The answer after a clarification that paused the work once it had a section (Q106): another additional response. */
+  | 'clarified'
 
 /** The states a section can show (10 · "States a section can show"). */
 export type SectionState =
   /** No answer text yet: a responding bubble or pending section. */
   | 'pending'
   | 'streaming'
+  /** Paused awaiting user input: the work waits for the answer to its clarification question; any text is partial (Q106). */
+  | 'paused'
   | 'completed'
   | 'failed'
   | 'stopped'
@@ -450,10 +482,11 @@ export type PrerequisiteRef =
 /**
  * Whole-request barrier (Q19, Q25): the message relates its outputs to one
  * another, so if any part is blocked every part waits. A requirement that
- * applies to each part separately creates no barrier.
+ * applies to each part separately creates no barrier. A combined total
+ * output limit is not a barrier: it keeps the message atomic (Q102).
  */
 export interface WholeRequestBarrier {
-  readonly reason: 'explicit-order' | 'combined-limit' | 'integrated-presentation'
+  readonly reason: 'explicit-order' | 'integrated-presentation'
   /** The qualifier in the user's words, for the queue item and the inspector. */
   readonly qualifier: string
 }
@@ -761,8 +794,8 @@ export type ContextOrigin =
     }
   /**
    * This run's own instruction. The last message of the input, unless the
-   * directive was blocked by a clarification: then the question and the
-   * user's answer follow it.
+   * directive was paused for a clarification: then each question and the
+   * user's answer to it follow, in the order they were asked.
    */
   | {
       readonly kind: 'request'
@@ -868,6 +901,60 @@ export interface JoinBackMember {
   readonly attemptId: AttemptId | null
 }
 
+// ─────────────────────────── readiness ───────────────────────────
+
+/** Why a clarification question is asked (07 · "Clarification"). */
+export type ClarificationReason = 'missing-information' | 'incompatible-requirements'
+
+/**
+ * The typed readiness result of a directive (Q103): whether its answer can
+ * be generated, or the user has to supply something first. Established
+ * before any visible answer text of the directive; a clarification question
+ * is never answer text classified after streaming.
+ */
+export type Readiness =
+  | { readonly kind: 'ready' }
+  | {
+      readonly kind: 'clarification-needed'
+      readonly reason: ClarificationReason
+      /** The question as asked, when the finding wrote it (preparation, generation). Null when routing found it: the question directive writes it. */
+      readonly question: string | null
+      /** What is missing or in conflict, when routing found it. Not shown to the user as is. */
+      readonly about: string | null
+    }
+
+/**
+ * What established a readiness result.
+ * - `routing`: the routing and decomposition findings of the message's plan,
+ *   with no further model call.
+ * - `preparation`: the preparation step, a structured call made once the
+ *   results the directive waited for had arrived.
+ * - `answer`: the user's answer to the directive's clarification question.
+ * - `generation`: the run itself, which stopped for consequential missing
+ *   information (Q106). Always `clarification-needed`.
+ */
+export type ReadinessSource = 'routing' | 'preparation' | 'answer' | 'generation'
+
+/** A directive's readiness as last established. */
+export interface ReadinessRecord {
+  readonly readiness: Readiness
+  readonly source: ReadinessSource
+  /**
+   * True when results the directive waits for had not arrived when this was
+   * established: the remaining check runs once they have, before generation
+   * (Q105).
+   */
+  readonly awaitingResults: boolean
+  /**
+   * For `preparation`: a digest of the exact input that was checked. The
+   * check is reused while the run's input is unchanged (Q105) and made again
+   * when it differs. Null otherwise.
+   */
+  readonly basis: string | null
+  /** The model that made the check, for `preparation` and `generation`. */
+  readonly model: string | null
+}
+
 // ─────────────────────────── elicitation ───────────────────────────
 
 export type ElicitationKind = 'target-ambiguity' | 'clarification' | 'choice-with-default' | 'recovery-choice'
@@ -912,7 +999,14 @@ export type ElicitationRecord =
       readonly questionDirectiveId: DirectiveId
       /** Every directive that cannot proceed without the answer. A shared requirement blocks each fragment it applies to. */
       readonly blockedDirectiveIds: readonly DirectiveId[]
-      readonly reason: 'missing-information' | 'incompatible-requirements'
+      readonly reason: ClarificationReason
+      /**
+       * What found that the question is needed. Absent in logs written
+       * before readiness was recorded: `routing`.
+       */
+      readonly source?: Exclude<ReadinessSource, 'answer'>
+      /** For `generation`: the attempt that stopped to ask, whose partial text is kept (Q106). */
+      readonly pausedAttemptId?: AttemptId | null
     }
   | {
       readonly kind: 'choice-with-default'
@@ -971,6 +1065,13 @@ export type SupersessionCause =
   | { readonly kind: 'redo'; readonly elicitationId: ElicitationId }
   /** Undo split restarted the work as one atomic request (Q53, Q85). */
   | { readonly kind: 'undo-split' }
+  /**
+   * The work was paused for a clarification once it had a section, and the
+   * question was answered: the eventual answer is another additional
+   * response, never this one reopened (Q23, Q106). Partial text stays here,
+   * labeled; a bubble that showed none is dropped.
+   */
+  | { readonly kind: 'clarified'; readonly elicitationId: ElicitationId }
 
 /**
  * An input of completed work that has since been replaced (Q40). `label`

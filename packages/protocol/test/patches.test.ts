@@ -46,6 +46,7 @@ const section: SectionView = {
   title: 'neighborhoods',
   state: 'pending',
   directiveState: 'running',
+  pause: null,
   placement: 'pending',
   status: { kind: 'responding', text: 'Responding…' },
   chainId,

@@ -35,8 +35,8 @@ describe('routing, as the reviews found it', () => {
     expect(raised).toHaveLength(1)
     const record = raised[0]?.record
     expect(record?.kind === 'clarification' && record.blockedDirectiveIds).toEqual([s.d('hotel').id, s.d('restaurant').id])
-    expect(s.d('hotel').state).toBe('awaiting-elicitation')
-    expect(s.d('restaurant').state).toBe('awaiting-elicitation')
+    expect(s.d('hotel').state).toBe('paused')
+    expect(s.d('restaurant').state).toBe('paused')
     const question = s.d('question about hotel + restaurant')
     expect(question.instruction).toContain('Near the venue')
     // No bubble and no queue item for the held parts; the initial bubble goes away.

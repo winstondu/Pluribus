@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest'
 import { COMMAND_TYPES } from '../src/commands'
 import { APP_EVENT_TYPES, APP_LOG, CONVERSATION_EVENT_TYPES, EVENT_SCHEMA_VERSION, upcastEvent } from '../src/events'
 import { IN_FLIGHT_STATES, NOT_STARTED_STATES, PROVIDER_ERROR_CLASS, providerError, providerErrorCodeForStatus } from '../src/model'
-import { CANDIDATE_SOURCE_NAMES, DEFAULT_ABSOLUTE_TOKEN_BUDGET, DEFAULT_RELATIVE_TOKEN_BUDGET, DEFAULT_SETTINGS, LEGACY_REFERENT_INPUT_TOKENS, RETRY_POLICIES, STRATEGY_SELECTION_MODES, applySettingsPatch, normalizeSettings, resolveTokenBudget, textTokens, validateSettingsPatch } from '../src/settings'
+import { CANDIDATE_SOURCE_NAMES, DEFAULT_ABSOLUTE_TOKEN_BUDGET, DEFAULT_RELATIVE_TOKEN_BUDGET, DEFAULT_SETTINGS, LEGACY_REFERENT_INPUT_TOKENS, ORDERED_MESSAGE_HANDLINGS, RETRY_POLICIES, STRATEGY_SELECTION_MODES, applySettingsPatch, normalizeSettings, resolveTokenBudget, textTokens, validateSettingsPatch } from '../src/settings'
 import { groupCountText, pausedText, provisionalLabel, recoveryLabels, redoneByDefaultText, supersededInputText, waitingText } from '../src/wording'
 
 describe('commands', () => {
@@ -139,6 +139,8 @@ describe('settings', () => {
       strategySelection: 'rules',
       // Stored before there was a candidate source: the default applies.
       candidateSource: DEFAULT_SETTINGS.routing.candidateSource,
+      // Stored before ordered-message decomposition was a setting: the default applies.
+      orderedMessages: 'decompose',
       referentBudget: { requests: 1, questions: 10 },
       tokenBudget: { mode: 'absolute', inputTokens: 500 },
       treeWalk: DEFAULT_SETTINGS.routing.treeWalk,
@@ -151,6 +153,22 @@ describe('settings', () => {
     expect(summaries.routing.useSummaryIfAvailable).toBe(true)
     expect(summaries.routing.backgroundSummaries).toBe(false)
     expect(applySettingsPatch(summaries, { routing: { backgroundSummaries: true } }).routing).toMatchObject({ useSummaryIfAvailable: true, backgroundSummaries: true })
+  })
+})
+
+describe('ordered-message decomposition', () => {
+  test('ordered messages · a decomposer setting (Q104): decompose by default, validated, a stored value kept, and defaulted for settings stored before it existed', () => {
+    expect(DEFAULT_SETTINGS.routing.orderedMessages).toBe('decompose')
+    expect(ORDERED_MESSAGE_HANDLINGS).toEqual(['decompose', 'atomic'])
+    const atomic = applySettingsPatch(DEFAULT_SETTINGS, { routing: { orderedMessages: 'atomic' } })
+    expect(atomic.routing).toEqual({ ...DEFAULT_SETTINGS.routing, orderedMessages: 'atomic' })
+    expect(applySettingsPatch(DEFAULT_SETTINGS, { routing: { orderedMessages: 'decompose' } })).toBe(DEFAULT_SETTINGS)
+    expect(validateSettingsPatch({ routing: { orderedMessages: 'atomic' } })).toBeNull()
+    expect(validateSettingsPatch({ routing: { orderedMessages: 'sometimes' as never } })).toMatch(/Unknown ordered-message handling/)
+    const { orderedMessages: _dropped, ...before } = DEFAULT_SETTINGS.routing
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, routing: before as never }).routing.orderedMessages).toBe('decompose')
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, orderedMessages: 'sometimes' as never } }).routing.orderedMessages).toBe('decompose')
+    expect(normalizeSettings(atomic).routing.orderedMessages).toBe('atomic')
   })
 })
 

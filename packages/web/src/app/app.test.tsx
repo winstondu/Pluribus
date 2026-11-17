@@ -150,7 +150,8 @@ describe('shell', () => {
     expect(await within(main).findByRole('textbox', { name: 'Message' })).toBeInTheDocument()
   })
 
-  test('settings show every row, send each change, and show only whether a key is configured', async () => {
+  // A long walk through every row: past the default 5 s when the whole suite runs at once.
+  test('settings show every row, send each change, and show only whether a key is configured', { timeout: 20_000 }, async () => {
     const user = userEvent.setup()
     const { ready, backend, store } = renderWithBackend(<Shell />, { fixture: fixture('trip') })
     await act(() => ready)
@@ -169,8 +170,18 @@ describe('shell', () => {
       expect(within(dialog).getByRole('button', { name: new RegExp(`^${role} model`) })).toBeInTheDocument()
     }
     await user.click(within(dialog).getByRole('button', { name: /^Decomposition model/ }))
-    await user.click(await screen.findByRole('option', { name: /Claude Opus 5.5/ }))
-    await waitFor(() => expect(store.getState().app?.settings.models.decomposition).toBe('anthropic/claude-opus-5.5'))
+    // Answers and decomposition offer the tested compatibility list and nothing else (Q107).
+    const tested = await screen.findByRole('option', { name: /Claude Sonnet 5.5/ })
+    expect(screen.getAllByRole('option')).toHaveLength(2)
+    expect(screen.queryByRole('option', { name: /Claude Opus 5.5/ })).toBeNull()
+    expect(screen.getByText(/Only models tested with Pluribus are offered here/)).toBeInTheDocument()
+    await user.click(tested)
+    await waitFor(() => expect(store.getState().app?.settings.models.decomposition).toBe('anthropic/claude-sonnet-5.5'))
+    // Ordered-message decomposition, a decomposer option beside the decomposition model (Q104): decompose by default.
+    expect(within(dialog).getByRole('radio', { name: /^Decompose/ })).toBeChecked()
+    await user.click(within(dialog).getByRole('radio', { name: /Keep atomic/ }))
+    await waitFor(() => expect(store.getState().app?.settings.routing.orderedMessages).toBe('atomic'))
+    expect(within(dialog).getByText(/A combined limit like “under 100 words total” always keeps a message as one request/)).toBeInTheDocument()
 
     await user.click(within(dialog).getByRole('tab', { name: 'Routing' }))
     // Five thresholds and the decision token budget's value.

@@ -1,9 +1,9 @@
 import type { SectionStatus } from '@pluribus/protocol'
-import { BanIcon, CircleAlertIcon, HistoryIcon, SquareIcon, UnplugIcon, type LucideIcon } from 'lucide-react'
+import { BanIcon, CircleAlertIcon, HistoryIcon, PauseIcon, SquareIcon, UnplugIcon, type LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 /** The states that leave a mark on text or on a section: distinct states, labeled distinctly (08). */
-export type MarkKind = 'failed' | 'stopped' | 'interrupted' | 'cancelled' | 'superseded'
+export type MarkKind = 'failed' | 'stopped' | 'interrupted' | 'cancelled' | 'superseded' | 'paused'
 
 const MARK_ICON: { [K in MarkKind]: LucideIcon } = {
   failed: CircleAlertIcon,
@@ -11,6 +11,7 @@ const MARK_ICON: { [K in MarkKind]: LucideIcon } = {
   interrupted: UnplugIcon,
   cancelled: BanIcon,
   superseded: HistoryIcon,
+  paused: PauseIcon,
 }
 
 const MARK_TONE: { [K in MarkKind]: string } = {
@@ -19,6 +20,7 @@ const MARK_TONE: { [K in MarkKind]: string } = {
   interrupted: 'text-warning',
   cancelled: 'text-muted-foreground',
   superseded: 'text-muted-foreground',
+  paused: 'text-muted-foreground',
 }
 
 /** The label kept on work that did not complete, or was replaced. The text comes from the projection. */

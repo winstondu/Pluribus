@@ -10,6 +10,7 @@ import {
   type DecisionTokenBudget,
   type KeyProviderName,
   type ModelRoleChoice,
+  type OrderedMessageHandling,
   type ReferentStrategyName,
   type RetryPolicy,
   type Settings,
@@ -89,7 +90,7 @@ export function SettingsDialog() {
                 <GeneralSettings settings={app.settings} />
               </TabsContent>
               <TabsContent value="models">
-                <ModelSettingsPanel roles={app.modelRoles} />
+                <ModelSettingsPanel settings={app.settings} roles={app.modelRoles} />
               </TabsContent>
               <TabsContent value="routing">
                 <div className="grid gap-8">
@@ -342,6 +343,20 @@ function CommittedSlider(props: {
 
 // ───────────────────────── models ─────────────────────────
 
+/** The decomposer option for messages that ask for their outputs in an explicit order (Q104). */
+const ORDERED_MESSAGES: readonly { value: OrderedMessageHandling; label: string; description: string }[] = [
+  {
+    value: 'decompose',
+    label: 'Decompose',
+    description: 'Splits the message like any other; the whole request waits until every part can start, so the outputs keep the order asked for. The default.',
+  },
+  {
+    value: 'atomic',
+    label: 'Keep atomic',
+    description: 'Answers the message as one request, in one answer that follows the order itself.',
+  },
+]
+
 /**
  * The Models section renders what the backend reports for each role
  * (`AppSnapshot.modelRoles`): the providers the role can run on, the
@@ -349,8 +364,9 @@ function CommittedSlider(props: {
  * decides none of that itself; a change is a `change-settings` command the
  * backend validates.
  */
-function ModelSettingsPanel({ roles }: { roles: readonly ModelRoleChoice[] }) {
+function ModelSettingsPanel({ settings, roles }: { settings: Settings; roles: readonly ModelRoleChoice[] }) {
   const change = useChangeSettings()
+  const orderedLabel = useId()
   const serverSet = roles.length > 0 && roles.every((role) => !role.editable)
   return (
     <Panel
@@ -366,6 +382,20 @@ function ModelSettingsPanel({ roles }: { roles: readonly ModelRoleChoice[] }) {
         if (!entry) return null
         return <ModelRoleRow key={choice.role} choice={choice} label={entry.label} description={entry.description} change={change} />
       })}
+      <Row
+        label="Ordered-message decomposition"
+        labelId={orderedLabel}
+        description="For a message that asks for its answers in a set order, such as “but put the translation first”. A combined limit like “under 100 words total” always keeps a message as one request."
+        stacked
+      >
+        <ChoiceCards
+          labelledBy={orderedLabel}
+          options={ORDERED_MESSAGES}
+          value={settings.routing.orderedMessages}
+          onChoose={(value) => void change({ routing: { orderedMessages: value } })}
+          className="sm:grid-cols-2"
+        />
+      </Row>
     </Panel>
   )
 }
