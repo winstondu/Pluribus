@@ -16,7 +16,6 @@ function git(args: string): string {
 /** Which source this client was built from: shown in the sidebar's build tooltip. */
 const BUILD = {
   commit: git('rev-parse --short HEAD'),
-  branch: git('rev-parse --abbrev-ref HEAD'),
   dirty: git('status --porcelain --untracked-files=no') !== '',
   builtAt: new Date().toISOString(),
 }

@@ -35,8 +35,7 @@ export function BuildInfo() {
       </TooltipTrigger>
       <TooltipContent side="bottom" align="start" className="flex-col items-start gap-0.5">
         <span>
-          Build <span className="font-mono">{buildLabel()}</span>
-          {BUILD.branch !== '' ? <span className="opacity-70"> on {BUILD.branch}</span> : null}
+          Build on commit <span className="font-mono">{buildLabel()}</span>
         </span>
         <span className="opacity-70">Built {when}</span>
         {BUILD.dirty ? <span className="opacity-70">Includes uncommitted changes</span> : null}

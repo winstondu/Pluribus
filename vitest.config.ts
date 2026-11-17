@@ -17,7 +17,7 @@ export default defineConfig({
         define: {
           __DEV_OPENROUTER_KEY__: '""',
           __DEV_ANTHROPIC_KEY__: '""',
-          __BUILD__: JSON.stringify({ commit: 'abc1234', branch: 'test', dirty: false, builtAt: '2026-11-17T12:00:00.000Z' }),
+          __BUILD__: JSON.stringify({ commit: 'abc1234', dirty: false, builtAt: '2026-11-17T12:00:00.000Z' }),
         },
         test: {
           name: 'web',
