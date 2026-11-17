@@ -341,6 +341,7 @@ An optional layer in front of the referent strategy chooses, for each routing, w
 With the routing decision of each message ([Inspection](#inspection)), in addition to the questions and answers:
 
 - for each question about a section, the section's text as the decision model was shown it and in what form (whole answer, opening and matching passages, opening only, or summary), so the inspector shows what was sent and not a reconstruction. A summary is recorded by reference, never as text (invariant 12);
+- for each decision request, the whole state text its questions were asked about, exactly as sent, and for each question the request it was sent in, so the inspector shows every question with the state it was asked about. Answer text is recorded by reference to the attempt's text and a summary by reference, never as text (invariant 12);
 - the limit of the decision budget that was reached, if one was, and what the strategy did instead;
 - that the best node found so far was used in place of a question to the user, for which unit, which node, and its score;
 - that hop between branch points placed a unit on the last section of an unbranched run without a search inside the run: for which unit, which run, which section, its score, and the question the score comes from;

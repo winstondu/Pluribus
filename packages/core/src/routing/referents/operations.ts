@@ -1,6 +1,6 @@
 import type { DecisionBudget, SectionId, ShownSection } from '@pluribus/protocol'
 import type { Probe, ReferentAsk, ReferentGate, ReferentOperations, ReferentQuestions, ReferentRequest, ReferentUnit, SegmentProbe, ShownSubjects } from '../../ports'
-import { chooseShown, createShowing, OPENING, recordLine, renderLine, type ShownChoice } from '../shown'
+import { chooseShown, createShowing, OPENING, recordLine, recordState, renderLine, type Line, type ShownChoice } from '../shown'
 import { estimateDecisionTokens, STATE_TOKENS_PER_CHARACTER } from './ask'
 import { chunkQuestion, digest, groupQuestion, list, ownQuestion, questionId, severalQuestion } from './shared'
 import type { ReferentTree, SectionNode, TreeNode } from './tree'
@@ -63,6 +63,8 @@ interface Built {
   readonly shown: ShownSubjects
   /** The sections asked about by themselves, whose answers may be shown at more length. */
   readonly points: readonly SectionNode[]
+  /** The lines of the sections the state text lists, in order, for recording the state with answer text by reference. */
+  readonly listed: readonly { readonly sectionId: SectionId; readonly line: Line }[]
 }
 
 export const createDecisionOperations: OperationsFactory = ({ request, tree, gate, ask }) => {
@@ -171,7 +173,13 @@ export const createDecisionOperations: OperationsFactory = ({ request, tree, gat
     }
     const lines = new Map<number, string>()
     const choiceOf = (node: SectionNode): ShownChoice => choices?.get(node.entry.section.sectionId) ?? OPENING
-    for (const node of shown) for (const s of node.kind === 'section' ? [node] : node.members) lines.set(s.n, lineOf(s, choiceOf(s)))
+    const listed = new Map<number, { readonly sectionId: SectionId; readonly line: Line }>()
+    for (const node of shown)
+      for (const s of node.kind === 'section' ? [node] : node.members) {
+        const line = lineAt(s, choiceOf(s))
+        listed.set(s.n, { sectionId: s.entry.section.sectionId, line })
+        lines.set(s.n, renderLine(line))
+      }
     // What the pipeline's state text says under "Lines of work": which of these were requested side by side.
     const parallel = [...shown].flatMap((node) =>
       node.kind === 'group'
@@ -232,7 +240,7 @@ export const createDecisionOperations: OperationsFactory = ({ request, tree, gat
     ].join('\n')
     const record: { [id: string]: readonly ShownSection[] } = {}
     for (const [id, nodes] of subjects) record[id] = nodes.map((node) => recordLine(node.entry.section.sectionId, lineAt(node, choiceOf(node))))
-    const made: Built = { stateText, questions: asked, ids, shown: record, points }
+    const made: Built = { stateText, questions: asked, ids, shown: record, points, listed: [...listed].sort((a, b) => a[0] - b[0]).map(([, l]) => l) }
     if (!choices) built.set(round, made)
     return made
   }
@@ -298,8 +306,8 @@ export const createDecisionOperations: OperationsFactory = ({ request, tree, gat
     async ask(round) {
       if (round.length === 0) return { kind: 'answered' }
       if (!ask) return { kind: 'refused', limit: 'requests' }
-      const { stateText, questions: asked, shown } = expanded(round, ask.remaining())
-      const result = await ask(stateText, asked, shown)
+      const { stateText, questions: asked, shown, listed } = expanded(round, ask.remaining())
+      const result = await ask(stateText, asked, shown, recordState(stateText, listed))
       if (result.kind !== 'answered') return result
       for (const id of Object.keys(asked)) {
         const p = result.probability(id)

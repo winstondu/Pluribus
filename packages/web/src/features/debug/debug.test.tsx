@@ -464,7 +464,7 @@ describe('operation graph', () => {
 })
 
 describe('run inspector', () => {
-  test('a question card keeps its header and opens what was sent for its section in a dialog; Escape closes it and returns focus', async () => {
+  test('a question card keeps its header and opens exactly what was sent, the question and the whole state, in a dialog; Escape closes it and returns focus', async () => {
     const user = userEvent.setup()
     const { ready, ui } = renderWithBackend(<RunInspector />, { fixture: fixture('run-inspection') })
     await act(() => ready)
@@ -474,38 +474,40 @@ describe('run inspector', () => {
     // The card still shows the question header as asked, and nothing of the answer.
     expect(card).toHaveTextContent('Does the new message refer to answer section S3 ("seafood places")')
     expect(card).not.toHaveTextContent('Walking between them')
-    // Questions that recorded nothing have no button.
-    expect(within(one(document.body, '[data-question="q-composite"]') as HTMLElement).queryByRole('button')).toBeNull()
-    expect(screen.queryByTestId('shown-not-recorded')).toBeNull()
+    expect(screen.queryByTestId('state-not-recorded')).toBeNull()
 
     const trigger = within(card).getByRole('button', { name: 'Show what was sent' })
     await user.click(trigger)
     const dialog = await screen.findByRole('dialog', { name: 'What the decision model was given' })
-    expect(dialog).toHaveAccessibleDescription(/exactly as sent/)
-    expect(within(dialog).getByText('Opening and matching passages')).toBeInTheDocument()
-    expect(dialog).toHaveTextContent('Does the new message refer to answer section S3 ("seafood places")')
-    const text = within(dialog).getByLabelText('Text shown: Opening and matching passages')
-    expect(text.textContent).toContain('S3. "seafood places": request "Which seafood places should we try?"; answer, its opening and the passages')
-    expect(text.textContent).toContain('## Walking between them')
+    expect(dialog).toHaveAccessibleDescription('The question and the state text it was asked about, exactly as sent.')
+    expect(within(dialog).getByLabelText('Question')).toHaveTextContent('Does the new message refer to answer section S3 ("seafood places")')
+    const state = within(dialog).getByLabelText('State text sent')
+    expect(state.textContent).toContain('S3. "seafood places": request "Which seafood places should we try?"; answer, its opening and the passages')
+    expect(state.textContent).toContain('## Walking between them')
+    expect(state.textContent).toContain('L1. "trip brief" (root): S1, S2, S3; latest "seafood places"')
+    expect(state.textContent).toContain('The new message: "Use both to plan the four days.')
+    expect(within(dialog).getByText('All 5 questions of its request were asked about this text.')).toBeInTheDocument()
     await user.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(trigger).toHaveFocus()
 
-    // The whole answer, labelled as such; the explicit close button closes it too.
-    await user.click(within(one(document.body, '[data-question="m_s2"]') as HTMLElement).getByRole('button', { name: 'Show what was sent' }))
-    const whole = await screen.findByRole('dialog')
-    expect(within(whole).getByText('Whole answer')).toBeInTheDocument()
-    await user.click(within(whole).getAllByRole('button', { name: 'Close' })[0] as HTMLElement)
+    // A choice: the question with the options sent, and the state; the explicit close button closes it too.
+    await user.click(within(one(document.body, '[data-question="q-target"]') as HTMLElement).getByRole('button', { name: 'Show what was sent' }))
+    const choice = await screen.findByRole('dialog')
+    expect(within(choice).getByLabelText('Options sent')).toHaveTextContent('where to stay')
+    expect(within(choice).getByLabelText('Options sent')).toHaveTextContent('seafood places')
+    expect(within(choice).getByLabelText('State text sent')).toHaveTextContent('Lines of work')
+    await user.click(within(choice).getAllByRole('button', { name: 'Close' })[0] as HTMLElement)
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 
-  test('a decision recorded before the shown text was kept shows the questions only, with a note', async () => {
+  test('a decision recorded before the state was kept shows the questions only, with a note', async () => {
     const user = userEvent.setup()
     const { ready, ui } = renderWithBackend(<RunInspector />, { fixture: fixture('run-inspection') })
     await act(() => ready)
     act(() => ui.getState().inspect({ directiveId: fx.id('directive', 'packing'), attemptId: null }))
     await user.click(await screen.findByText(/Questions put to the decision model \(1\)/))
-    expect(screen.getByTestId('shown-not-recorded')).toHaveTextContent('only the questions are shown')
+    expect(screen.getByTestId('state-not-recorded')).toHaveTextContent('only the questions are shown')
     expect(screen.queryByRole('button', { name: 'Show what was sent' })).toBeNull()
   })
 

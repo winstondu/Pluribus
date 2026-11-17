@@ -2,6 +2,7 @@ import { IN_FLIGHT_STATES, type DirectiveId, type NodeId, type SectionId, type S
 import { FIRST_PASS_SECTIONS, firstPassSectionIds } from './referents/first-pass'
 import type { AnswerSource, CandidateChain, CandidateGroup, CandidateSection, CandidateWork, DecisionContext, ReferentSection, RoutingInput } from '../ports'
 import { createShowing, renderLine, shownWords, type Line, type Showing, type ShownChoice } from './shown'
+import type { Batch } from './batch'
 
 /**
  * Which candidates the decision model is asked about (12 · "Left to the
@@ -176,6 +177,15 @@ export function describeState(input: RoutingInput, supplied: Supplied, subject: 
   }
   lines.push('', subject)
   return lines.join('\n')
+}
+
+/**
+ * `describeState`, with the lines of the sections it lists put on the batch,
+ * so that the request's state is recorded with answer text by reference.
+ */
+export function stateFor(input: RoutingInput, supplied: Supplied, subject: string, batch: Batch, shown: Shown | null = null): string {
+  batch.list(supplied.sections.map((s, i) => ({ sectionId: s.sectionId, line: listedLine(input, s, i + 1, shown) })))
+  return describeState(input, supplied, subject, shown)
 }
 
 /**

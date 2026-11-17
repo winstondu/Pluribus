@@ -1,4 +1,4 @@
-import { CHARACTERS_PER_TOKEN, resolveTokenBudget, textTokens, type DecisionBudget, type DecisionCostGuard, type ProviderError, type RoutingSettings } from '@pluribus/protocol'
+import { CHARACTERS_PER_TOKEN, resolveTokenBudget, textTokens, type DecisionBudget, type DecisionCostGuard, type ProviderError, type RoutingSettings, type ShownPiece } from '@pluribus/protocol'
 import type { CancelSignal, DecisionProvider, DecisionQuestions, ReferentAsk, ReferentAskResult, ReferentQuestions, ShownSubjects } from '../../ports'
 import { Batch, ask as askBatch, type Answers } from '../batch'
 
@@ -140,7 +140,7 @@ export function createReferentAsk(options: {
     questions: Math.max(0, budget.questions - questionCount),
     inputTokens: Math.max(0, budget.inputTokens - inputTokens),
   })
-  const send = async (stateText: string, questions: ReferentQuestions, shown: ShownSubjects = {}): Promise<ReferentAskResult> => {
+  const send = async (stateText: string, questions: ReferentQuestions, shown: ShownSubjects = {}, state?: readonly ShownPiece[]): Promise<ReferentAskResult> => {
     const count = Object.keys(questions).length
     if (count === 0) return { kind: 'answered', probability: () => null }
     const tokens = estimateDecisionTokens(stateText, questions)
@@ -152,6 +152,7 @@ export function createReferentAsk(options: {
     questionCount += count
     inputTokens += tokens
     const batch = new Batch()
+    if (state) batch.recordAs(state)
     for (const [id, question] of Object.entries(questions)) {
       batch.noul(id, question.instructions)
       batch.show(id, shown[id] ?? [])

@@ -1,4 +1,5 @@
-import { providerError, type DecisionQuestionRecord, type ProviderError, type ShownSection } from '@pluribus/protocol'
+import { providerError, type DecisionQuestionRecord, type ProviderError, type SectionId, type ShownPiece, type ShownSection } from '@pluribus/protocol'
+import { recordState, type Line } from './shown'
 import type {
   CancelSignal,
   ChoiceAnswer,
@@ -19,6 +20,21 @@ export class Batch {
   readonly questions: { [id: string]: DecisionQuestion } = {}
   /** What each question showed of the sections it is about, recorded with its answer. Not sent: it is part of the state text. */
   readonly shown: { [id: string]: readonly ShownSection[] } = {}
+
+  /** The section lines the request's state text lists, in order, so that the state is recorded with answer text by reference. Not sent. */
+  readonly lines: { readonly sectionId: SectionId; readonly line: Line }[] = []
+
+  /** Records the lines of the sections the state text lists. */
+  list(lines: readonly { readonly sectionId: SectionId; readonly line: Line }[]): void {
+    this.lines.push(...lines)
+  }
+
+  /** The state as already recorded by the caller, in place of recording it from `lines`. */
+  recorded: readonly ShownPiece[] | null = null
+
+  recordAs(state: readonly ShownPiece[]): void {
+    this.recorded = state
+  }
 
   get size(): number {
     return Object.keys(this.questions).length
@@ -47,13 +63,16 @@ type AnyAnswer = NoulAnswer | ChoiceAnswer | ScoreAnswer
 /** The answers of one call, read back by question ID. Absent questions read as null. */
 export class Answers {
   readonly model: string
+  /** The state text the questions were asked about, as recorded: answer text by reference. */
+  readonly state: readonly ShownPiece[]
   private readonly batch: Batch
   private readonly answers: { readonly [id: string]: AnyAnswer }
 
-  constructor(model: string, batch: Batch, answers: { readonly [id: string]: AnyAnswer }) {
+  constructor(model: string, batch: Batch, answers: { readonly [id: string]: AnyAnswer }, state: string = '') {
     this.model = model
     this.batch = batch
     this.answers = answers
+    this.state = batch.recorded ?? recordState(state, batch.lines)
   }
 
   /** Probability of yes, or null when the question was not asked. */
@@ -122,5 +141,5 @@ export async function ask(
     }
     clean[id] = answer
   }
-  return { ok: true, answers: new Answers(result.model, batch, clean) }
+  return { ok: true, answers: new Answers(result.model, batch, clean, state) }
 }

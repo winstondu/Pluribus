@@ -223,6 +223,19 @@ const SHOWN_FOOD_OPENING =
 const SHOWN_FOOD_PASSAGE =
   '## Walking between them Ramiro is at the bottom of Avenida Almirante Reis, an easy walk from Baixa on the flat. Taberna da Rua das Flores is a short climb into Chiado. Plan both on days you are already near; neither is worth a cross-town trip on foot when the day is long.'
 
+/** The whole state text of the itinerary's one decision request, as the projection resolves it. */
+const ITINERARY_STATE = [
+  'Answer sections in this conversation, oldest first:',
+  `S1. "trip brief": request "Trip brief: Lisbon, four days, in May"; answer "${SHOWN_BRIEF_OPENING}"`,
+  `S2. "where to stay": request "${STAY}"; answer "${STAY_ANSWER}"`,
+  `S3. "seafood places": request "Which seafood places should we try?"; answer, its opening and the passages that share the most words with the message: "${SHOWN_FOOD_OPENING}" … "${SHOWN_FOOD_PASSAGE}"`,
+  '',
+  'Lines of work (each reads only its own history):',
+  'L1. "trip brief" (root): S1, S2, S3; latest "seafood places"',
+  '',
+  `The new message: "${ITINERARY}"`,
+].join('\n')
+
 const itineraryRouting = decision(
   {
     key: 'message',
@@ -254,6 +267,7 @@ const itineraryRouting = decision(
         answer: 0.08,
         confidence: 0.92,
         probabilities: null,
+        request: 0,
       },
       {
         id: 'q-target',
@@ -263,6 +277,7 @@ const itineraryRouting = decision(
         answer: 'stay+food',
         confidence: 0.88,
         probabilities: null,
+        request: 0,
       },
       {
         id: 'm_s1',
@@ -272,6 +287,7 @@ const itineraryRouting = decision(
         answer: 0.21,
         confidence: null,
         probabilities: null,
+        request: 0,
       },
       {
         id: 'm_s2',
@@ -281,6 +297,7 @@ const itineraryRouting = decision(
         answer: 0.88,
         confidence: null,
         probabilities: null,
+        request: 0,
       },
       {
         id: 'm_s3',
@@ -290,23 +307,13 @@ const itineraryRouting = decision(
         answer: 0.86,
         confidence: null,
         probabilities: null,
+        request: 0,
       },
     ],
     shownRecorded: true,
+    requests: [{ state: [{ kind: 'text', text: ITINERARY_STATE }] }],
   },
-  [
-    null,
-    null,
-    [{ sectionId: id('section', 'brief'), form: 'opening', text: `S1. "trip brief": request "Trip brief: Lisbon, four days, in May"; answer "${SHOWN_BRIEF_OPENING}"` }],
-    [{ sectionId: id('section', 'stay'), form: 'full', text: `S2. "where to stay": request "${STAY}"; answer "${STAY_ANSWER}"` }],
-    [
-      {
-        sectionId: id('section', 'food'),
-        form: 'passages',
-        text: `S3. "seafood places": request "Which seafood places should we try?"; answer, its opening and the passages that share the most words with the message: "${SHOWN_FOOD_OPENING}" … "${SHOWN_FOOD_PASSAGE}"`,
-      },
-    ],
-  ],
+  [ITINERARY_STATE],
 )
 
 const itineraryAttempts = [

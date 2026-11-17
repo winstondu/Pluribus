@@ -13,6 +13,7 @@ import {
   type ChainId,
   type Decided,
   type DecisionQuestionRecord,
+  type DecisionRequestRecord,
   type DirectiveId,
   type ElicitationId,
   type FragmentId,
@@ -60,7 +61,7 @@ import { AMBIGUITY_FLOOR, derivePlacement, neededWork, placedWithoutTarget, refe
 import { askUnit, readUnit, sectionNumbers, withReferents, type UnitScope, type UnitSignals } from './questions'
 import { createReferentAsk, estimateRequestTokens, firstPassQuestions, firstPassSectionIds, questionSubjects, referentStrategyFor, routingTokenBudget, type ReferentSpend, type RoutingTokenBudget } from './referents'
 import { applyChoice, choiceText, selectStrategy, strategySelectorFor } from './selection'
-import { MAX_SECTIONS, MIN_SECTIONS, answerOf, decisionContextOf, describeState, listedLine, numberedAnswerSections, showingFor, supply, type Supplied } from './supply'
+import { MAX_SECTIONS, MIN_SECTIONS, answerOf, decisionContextOf, listedLine, numberedAnswerSections, showingFor, stateFor, supply, type Supplied } from './supply'
 import { chooseShown, recordLine, shownWords, type Showing, type ShownChoice, type ShownPoint } from './shown'
 
 /**
@@ -174,9 +175,16 @@ class Record {
     return ask(provider, model, stateText, batch, signal)
   }
 
+  /** Every request answered, with its state as sent, for the run inspector. */
+  readonly requests: DecisionRequestRecord[] = []
+
   add(answers: Answers): void {
     this.model ??= answers.model
-    this.questions.push(...answers.records())
+    const records = answers.records()
+    if (records.length === 0) return
+    const request = this.requests.length
+    this.requests.push({ state: answers.state })
+    this.questions.push(...records.map((q) => ({ ...q, request })))
   }
 }
 
@@ -306,7 +314,7 @@ async function routeMessage(deps: Deps, input: RoutingInput, signal: CancelSigna
           `Does the user explicitly say that the requirement "${r.text}" applies to the whole conversation from now on, rather than only to this request?`,
         )
       })
-      const result = await record.ask(deps.decisionProvider, input.settings.models.decision, describeState(input, supplied, subject), batch, signal)
+      const result = await record.ask(deps.decisionProvider, input.settings.models.decision, stateFor(input, supplied, subject, batch), batch, signal)
       if (!result.ok) return failed(result.error)
       record.add(result.answers)
       tagged.forEach((r, i) => {
@@ -327,7 +335,7 @@ async function routeMessage(deps: Deps, input: RoutingInput, signal: CancelSigna
     else if (input.settings.routing.orderedMessages === 'atomic' && decomposition.barrier?.reason === 'explicit-order' && !orderFollowsDependencies(decomposition)) {
       const batch = new Batch()
       batch.noul('ordered', orderedQuestion(decomposition.barrier.qualifier))
-      const result = await record.ask(deps.decisionProvider, input.settings.models.decision, describeState(input, supplied, subject), batch, signal)
+      const result = await record.ask(deps.decisionProvider, input.settings.models.decision, stateFor(input, supplied, subject, batch), batch, signal)
       if (!result.ok) return failed(result.error)
       record.add(result.answers)
       if ((result.answers.noul('ordered') ?? 0) >= t.dependency) seenByDecomposer = 'ordered'
@@ -1007,7 +1015,7 @@ function showRequest(
     batch.show(id, subjects.sections.map((entry) => recordLine(entry.section.sectionId, listedLine(input, entry.section, entry.n, shown))))
     for (const entry of subjects.kind === 'point' ? subjects.sections : []) points.push({ section: entry.section, n: entry.n, context: decisionContextOf(input, entry.section) })
   }
-  return { stateText: describeState(input, supplied, subject, shown), points }
+  return { stateText: stateFor(input, supplied, subject, batch, shown), points }
 }
 
 /**
@@ -1209,7 +1217,7 @@ async function affectedWork(
   })
   if (batch.size === 0) return { ok: true, revisions: [...revisions] }
   const subject = `Corrections in the new message "${input.text}":\n${revisions.map((r, i) => `C${i + 1}. ${JSON.stringify(r.correction)}`).join('\n')}`
-  const result = await record.ask(deps.decisionProvider, input.settings.models.decision, describeState(input, supplied, subject), batch, signal)
+  const result = await record.ask(deps.decisionProvider, input.settings.models.decision, stateFor(input, supplied, subject, batch), batch, signal)
   if (!result.ok) return result
   record.add(result.answers)
   return {
@@ -1382,6 +1390,7 @@ function decisionRecord(
     explanation: `${explanation}${selectionNote(record.selection)}${record.windowNote}${record.referentNote}${runEndNote(input, record)}${bestFoundNote(input, record)}${joinedLinesNote(input, record)}${record.contextNote}`,
     questions: record.questions,
     shownRecorded: true,
+    requests: record.requests,
     ...(record.selection ? { strategySelection: record.selection } : {}),
     ...(record.budgetStop ? { budgetStop: { ...record.budgetStop, bestFound: record.bestFound } } : {}),
     ...(record.candidates ? { candidateSource: record.candidates } : {}),
