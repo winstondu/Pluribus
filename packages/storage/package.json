@@ -1,0 +1,18 @@
+{
+  "name": "@pluribus/storage",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./conformance": "./testing/conformance.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@pluribus/core": "workspace:*",
+    "@pluribus/protocol": "workspace:*",
+    "idb": "^8.0.4"
+  }
+}

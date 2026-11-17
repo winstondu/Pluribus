@@ -11,6 +11,9 @@ importers:
       '@types/node':
         specifier: ^24.19.2
         version: 24.19.2
+      fake-indexeddb:
+        specifier: ^6.2.8
+        version: 6.2.8
       typescript:
         specifier: ~7.0.2
         version: 7.0.2
@@ -25,6 +28,33 @@ importers:
         version: link:../protocol
 
   packages/protocol: {}
+
+  packages/providers:
+    dependencies:
+      '@pluribus/core':
+        specifier: workspace:*
+        version: link:../core
+      '@pluribus/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      eventsource-parser:
+        specifier: ^4.1.3
+        version: 4.1.3
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
+
+  packages/storage:
+    dependencies:
+      '@pluribus/core':
+        specifier: workspace:*
+        version: link:../core
+      '@pluribus/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      idb:
+        specifier: ^8.0.4
+        version: 8.0.4
 
 packages:
 
@@ -489,9 +519,17 @@ packages:
   estree-walker@3.0.3:
     resolution: {integrity: sha512-7RUKfXgSMMkzt6ZuXmqapOurLGPPfgj6l9uRZ7lRGolvk0y2yocc35LdcxKC5PQZdn2DMqioAQ2NoWcrTKmm6g==}
 
+  eventsource-parser@4.1.3:
+    resolution: {integrity: sha512-jZVIVilXZfAx6H20ZKKEj5dabbpD9ETmMj3uHsjMmgBzBHB6tsHrmdWB4mAiy3amtN6MOoVkfXRQu4wf1n88Rw==}
+    engines: {node: '>=22.12'}
+
   expect-type@1.4.0:
     resolution: {integrity: sha512-KfYbmpRm0VbLjEvVa9yGwCi9GI34xvi7A/HXYWQO65CSD2u3MczUJSuwXKFIxlGsgBQizV9q5J9NHj4VG0n+pA==}
     engines: {node: '>=12.0.0'}
+
+  fake-indexeddb@6.2.8:
+    resolution: {integrity: sha512-mpVW/HLUqwKXJ6F/s0hMgdK1eQfM4ncTHDioNGHWL0WKV3VcZCoZq1NKgboBbAge07aRCO7L48yziKssL59XEQ==}
+    engines: {node: '>=18'}
 
   fdir@6.5.0:
     resolution: {integrity: sha512-tIbYtZbucOs0BRGqPJkshJUYdL+SDH7dVM8gjy+ERp3WAUjLEFJE+02kanyHtwjWOnwrKYBiwAmM0p4kLJAnXg==}
@@ -510,6 +548,9 @@ packages:
   html-encoding-sniffer@7.0.0:
     resolution: {integrity: sha512-UikN5yr7xsCDAq87Or5or0PAlD3HJJOKVzM05az588WnpDJ4Ux7a2A53Qi6gofGg2/EtvF/H4hCi/TXfCW4Y6w==}
     engines: {node: ^22.13.0 || >=24.0.0}
+
+  idb@8.0.4:
+    resolution: {integrity: sha512-jd0ITCrN+Zah4J7R/Z2jnR3W7A4BXDAjmo62MwWuSjxCiueUAf7X5rbodEdidWzeknwXHmLpdZkoiiCppNi30Q==}
 
   is-alphabetical@2.0.1:
     resolution: {integrity: sha512-FWyyY60MeTNyeSRpkM2Iry0G9hpr7/9kD40mD/cGQEuilcZYS4okz8SN2Q6rLCJ8gbCt6fN+rC+6tMGS99LaxQ==}
@@ -810,6 +851,9 @@ packages:
   xmlchars@2.2.0:
     resolution: {integrity: sha512-JZnDKK8B0RCDw84FNdDAIpZK+JuJw+s7Lz8nksI7SIuU3UXJJslUthsi+uWBUYOwPFwW7W7PRLRfUKpxjtjFCw==}
 
+  zod@4.6.7:
+    resolution: {integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==}
+
 snapshots:
 
   '@esbuild/aix-ppc64@0.28.2':
@@ -1104,7 +1148,11 @@ snapshots:
     dependencies:
       '@types/estree': 1.0.10
 
+  eventsource-parser@4.1.3: {}
+
   expect-type@1.4.0: {}
+
+  fake-indexeddb@6.2.8: {}
 
   fdir@6.5.0(picomatch@4.0.7):
     optionalDependencies:
@@ -1119,6 +1167,8 @@ snapshots:
     transitivePeerDependencies:
       - '@noble/hashes'
     optional: true
+
+  idb@8.0.4: {}
 
   is-alphabetical@2.0.1:
     optional: true
@@ -1393,3 +1443,5 @@ snapshots:
 
   xmlchars@2.2.0:
     optional: true
+
+  zod@4.6.7: {}

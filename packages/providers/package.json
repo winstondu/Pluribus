@@ -1,0 +1,18 @@
+{
+  "name": "@pluribus/providers",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@pluribus/core": "workspace:*",
+    "@pluribus/protocol": "workspace:*",
+    "eventsource-parser": "^4.1.3",
+    "zod": "^4.6.7"
+  }
+}
