@@ -450,7 +450,7 @@ The routing state used to describe a line of work only by the label of its first
 | Corpus by tokenizer, default (`decision-tokens.test.ts`) | 337,954 characters, 78,924 tokens | 345,763 characters, 81,295 tokens (+2.3% characters, +3.0% tokens) |
 | Price guard, worst guarded cell | 1.997 by estimate, 1.817 by tokenizer | 1.995 by estimate, 1.851 by tokenizer: under 2× on every cell |
 
-The margin over `joinChoice` (0.8) widens from 0.06–0.07 to 0.08–0.09, and the control moves further from it. The recorded figures of `providers/test/decision-tokens.test.ts` are re-recorded, with the earlier ones in its comments; nothing was loosened.
+The margin over `joinChoice` (0.8) widens from 0.06–0.07 to 0.08–0.09, and the control moves further from it. `providers/test/decision-tokens.test.ts` no longer records exact figures: it asserts ceilings only (mean tokens per corpus request, the guard's estimate never below the calibrated count, the 2× bound on every guarded grid cell, and twice an answer of the floor's length under a raised floor), and prints the figures. See [dependency-decisioning.md](dependency-decisioning.md#measuring-tokens) · "What the test asserts".
 
 ## How to run
 
