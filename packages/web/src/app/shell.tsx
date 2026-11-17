@@ -77,15 +77,18 @@ function ShellLayout() {
   }, [wide, sidebarOpen, setSidebarOpen])
 
   const debug = app?.settings.debug
+  // Compare placed on the message is not in the side panel.
+  const compareInSidePanel = debug?.comparePlacement !== 'inline'
   const sidePanelWanted =
     DebugSidePanel !== null &&
-    (compare !== null || (debug ? debug.miniMap || debug.runInspector || debug.compareIndependent : false))
+    ((compareInSidePanel && compare !== null) ||
+      (debug ? debug.miniMap || debug.runInspector || (compareInSidePanel && debug.compareIndependent) : false))
   const drawerWanted = OperationGraphDrawer !== null && debug?.operationGraph === true
 
   // Asking to inspect a run or a decomposition brings the panel forward when it lives in a sheet.
   useEffect(() => {
-    if ((compare !== null || inspected !== null) && !roomForSidePanel) setSidePanelSheetOpen(true)
-  }, [compare, inspected, roomForSidePanel])
+    if (((compareInSidePanel && compare !== null) || inspected !== null) && !roomForSidePanel) setSidePanelSheetOpen(true)
+  }, [compare, compareInSidePanel, inspected, roomForSidePanel])
 
   return (
     <div className="flex h-full min-h-0">

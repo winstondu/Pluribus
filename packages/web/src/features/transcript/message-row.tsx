@@ -1,12 +1,13 @@
 import type { MessageId, MessageView, ReplyingToView } from '@pluribus/protocol'
 import { WORDING } from '@pluribus/protocol'
 import { CornerDownLeftIcon, RotateCwIcon, ScanSearchIcon, SquareIcon, Undo2Icon } from 'lucide-react'
-import { Fragment, memo } from 'react'
+import { Fragment, memo, useId } from 'react'
 import { useUiState } from '@/app/ui-state'
 import { useStore } from 'zustand'
 import { useApp, useBackendStore, useMessage, useSplit } from '@/backend'
 import { Button } from '@/components/ui/button'
 import { ChainRail, useMessageFocus } from '@/features/association'
+import { CompareCard, SourceMarks, useFragmentSelection } from '@/features/debug'
 import { cn } from '@/lib/utils'
 import { focusClass, FocusTag } from './focus-style'
 import { useKept } from './motion'
@@ -26,10 +27,21 @@ export const MessageRow = memo(function MessageRow({ id }: { id: MessageId }) {
 
 function MessageBody({ message }: { message: MessageView }) {
   const relation = useMessageFocus(message.id)
+  const debug = useApp()?.settings.debug
+  const inline = debug?.comparePlacement === 'inline'
+  // Compare for an independent composite is behind its debug toggle (Q94).
+  const decomposition = debug?.compareIndependent === true ? message.decomposition : null
+  const open = useUiState((state) => state.inlineCompare.includes(message.id))
+  const toggleInlineCompare = useUiState((state) => state.toggleInlineCompare)
+  const [selected, select] = useFragmentSelection(decomposition)
+  const cardId = useId()
+  const card = inline && open && decomposition !== null ? decomposition : null
+  // The message is the source: it carries the marks itself, unless its text is not the decomposed text.
+  const marked = card !== null && card.originalText === message.text
   return (
     <div className="flex flex-col gap-2.5">
       {message.split && message.split.index > 0 ? (
-        <SplitLink originalMessageId={message.split.originalMessageId} first={message.split.index === 1} />
+        <SplitLink messageId={message.id} originalMessageId={message.split.originalMessageId} first={message.split.index === 1} />
       ) : null}
       <article
         aria-label="Your message"
@@ -45,15 +57,42 @@ function MessageBody({ message }: { message: MessageView }) {
             <time dateTime={new Date(message.submittedAt).toISOString()} className="tabular text-faint-foreground">
               {TIME.format(message.submittedAt)}
             </time>
+            {inline && decomposition !== null ? (
+              <DecompositionToggle open={open} controls={cardId} onToggle={() => toggleInlineCompare(message.id)} />
+            ) : null}
             <FocusTag relation={relation} reserve />
             <RequestControls message={message} />
           </header>
           {message.replyingTo ? <ReplyingTo replyingTo={message.replyingTo} /> : null}
-          <p className="text-prose break-words whitespace-pre-wrap">{message.text}</p>
-          <DecompositionControl message={message} />
+          <p data-slot="message-text" className="text-prose break-words whitespace-pre-wrap">
+            {marked ? <SourceMarks decomposition={card} selected={selected} inText /> : message.text}
+          </p>
+          {card !== null ? (
+            <CompareCard id={cardId} decomposition={card} selected={selected} onSelect={select} showSource={!marked} />
+          ) : null}
+          {inline ? null : <DecompositionControl message={message} />}
         </div>
       </article>
     </div>
+  )
+}
+
+/**
+ * Shows or hides Compare on the message, when it is placed there. A quiet
+ * text button in the header, so the message's height changes only by the
+ * card itself.
+ */
+function DecompositionToggle(props: { open: boolean; controls: string; onToggle(): void }) {
+  return (
+    <button
+      type="button"
+      aria-expanded={props.open}
+      aria-controls={props.open ? props.controls : undefined}
+      onClick={props.onToggle}
+      className="pressable rounded-sm text-xs text-primary underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+    >
+      {props.open ? 'Hide decomposition' : 'Show decomposition'}
+    </button>
   )
 }
 
@@ -144,31 +183,47 @@ function DecompositionControl({ message }: { message: MessageView }) {
 
 /**
  * The faint link that joins split messages (Q53). It opens Compare with the
- * exact original text, whatever the debug toggles say. Undo split sits
- * beside the first link while the backend still offers it.
+ * exact original text, whatever the debug toggles say: in the side panel,
+ * or, when Compare is placed on the message, as a card under the link.
+ * Undo split sits beside the first link while the backend still offers it.
  */
-function SplitLink({ originalMessageId, first }: { originalMessageId: MessageId; first: boolean }) {
+function SplitLink(props: { messageId: MessageId; originalMessageId: MessageId; first: boolean }) {
+  const { messageId, originalMessageId, first } = props
   const command = useCommand()
   const openCompare = useUiState((state) => state.openCompare)
-  const undoAvailable = useSplit(originalMessageId)?.undoAvailable === true
+  const toggleInlineCompare = useUiState((state) => state.toggleInlineCompare)
+  const inline = useApp()?.settings.debug.comparePlacement === 'inline'
+  const split = useSplit(originalMessageId)
+  const undoAvailable = split?.undoAvailable === true
+  const open = useUiState((state) => state.inlineCompare.includes(messageId))
+  const [selected, select] = useFragmentSelection(split?.decomposition ?? null)
+  const cardId = useId()
+  const card = inline && open && split ? split.decomposition : null
   return (
-    <div data-slot="split-link" className="-mt-4 flex items-center gap-3.5">
+    <div data-slot="split-link" className="-mt-4 flex gap-3.5">
       <span aria-hidden className="flex w-(--spacing-rail) flex-none justify-center self-stretch">
         <span className="w-px border-l border-dashed border-border-strong" />
       </span>
-      <div className="flex min-h-6 flex-wrap items-center gap-x-3 gap-y-1">
-        <button
-          type="button"
-          onClick={() => openCompare(originalMessageId)}
-          className="pressable rounded-sm text-xs text-faint-foreground underline decoration-border-strong underline-offset-4 hover:text-foreground hover:decoration-current"
-        >
-          {WORDING.splitLink}
-        </button>
-        {first && undoAvailable ? (
-          <Button variant="ghost" size="xs" className="text-muted-foreground" onClick={() => void command({ type: 'undo-split', originalMessageId })}>
-            <Undo2Icon aria-hidden />
-            Undo split
-          </Button>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex min-h-6 flex-wrap items-center gap-x-3 gap-y-1">
+          <button
+            type="button"
+            aria-expanded={inline ? open : undefined}
+            aria-controls={card !== null ? cardId : undefined}
+            onClick={() => (inline ? toggleInlineCompare(messageId) : openCompare(originalMessageId))}
+            className="pressable rounded-sm text-xs text-faint-foreground underline decoration-border-strong underline-offset-4 hover:text-foreground hover:decoration-current"
+          >
+            {WORDING.splitLink}
+          </button>
+          {first && undoAvailable ? (
+            <Button variant="ghost" size="xs" className="text-muted-foreground" onClick={() => void command({ type: 'undo-split', originalMessageId })}>
+              <Undo2Icon aria-hidden />
+              Undo split
+            </Button>
+          ) : null}
+        </div>
+        {card !== null ? (
+          <CompareCard id={cardId} decomposition={card} selected={selected} onSelect={select} showSource />
         ) : null}
       </div>
     </div>

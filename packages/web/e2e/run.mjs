@@ -338,7 +338,7 @@ async function secondTab({ browser }) {
   }
 }
 
-/** Settings, the conversation list and the key survive a reload. */
+/** Settings, the conversation list and the key survive a reload; the run inspector shows the model the settings chose. */
 async function persistence({ page }) {
   const before = await page.locator('nav li').count()
   await page.reload()
@@ -352,7 +352,27 @@ async function persistence({ page }) {
   for (const label of ['Answers', 'Synthesis', 'Decomposition']) {
     await page.getByRole('button', { name: `${label} model: anthropic/claude-haiku-5.5` }).waitFor({ timeout: 5_000 })
   }
+  await page.getByRole('tab', { name: 'Debug views' }).click()
+  const inspector = page.getByRole('switch', { name: /Run inspector/ })
+  if ((await inspector.getAttribute('aria-checked')) !== 'true') await inspector.click()
   await page.keyboard.press('Escape')
+
+  // The run inspector reads the exact input the backend recorded, and the model it used.
+  await newConversation(page)
+  await send(page, 'Name one prime number greater than 50. Just the number.')
+  await settled(page)
+  const section = page.locator('[data-section-id]').first()
+  await section.hover()
+  await section.getByRole('button', { name: 'Inspect run' }).click()
+  const run = page.getByTestId('run-inspector')
+  await run.waitFor({ timeout: 10_000 })
+  await until(page, () => /claude-haiku-5\.5/.test(document.querySelector('[data-testid="run-inspector"]')?.textContent ?? ''), undefined, {
+    what: 'the model in the run inspector',
+    timeout: 10_000,
+  })
+  const input = await page.getByTestId('model-input').innerText()
+  assert(/prime number greater than 50/.test(input), 'the recorded model input holds the request')
+  await shot(page, '09-run-inspector-after-reload')
 
   // The key is in the secrets database only, never in the event log or the projection cache.
   const leaked = await page.evaluate(async (secret) => {
