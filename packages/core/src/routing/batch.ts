@@ -1,4 +1,4 @@
-import { providerError, type DecisionQuestionRecord, type ProviderError } from '@pluribus/protocol'
+import { providerError, type DecisionQuestionRecord, type ProviderError, type ShownSection } from '@pluribus/protocol'
 import type {
   CancelSignal,
   ChoiceAnswer,
@@ -17,6 +17,8 @@ import type {
  */
 export class Batch {
   readonly questions: { [id: string]: DecisionQuestion } = {}
+  /** What each question showed of the sections it is about, recorded with its answer. Not sent: it is part of the state text. */
+  readonly shown: { [id: string]: readonly ShownSection[] } = {}
 
   get size(): number {
     return Object.keys(this.questions).length
@@ -28,6 +30,11 @@ export class Batch {
 
   choice(id: string, instructions: string, options: { readonly [option: string]: string }): void {
     this.questions[id] = { type: 'choice', instructions, options }
+  }
+
+  /** Records the lines of the sections a question is about, as the state text shows them. */
+  show(id: string, sections: readonly ShownSection[]): void {
+    if (sections.length > 0) this.shown[id] = sections
   }
 
   has(id: string): boolean {
@@ -78,6 +85,7 @@ export class Answers {
         answer: a.type === 'noul' ? clamp(a.probability) : a.type === 'choice' ? a.choice : a.score,
         confidence: a.type === 'noul' ? null : clamp(a.confidence),
         probabilities: a.type === 'choice' ? { ...a.probabilities } : null,
+        ...(this.batch.shown[id] ? { shown: this.batch.shown[id] } : {}),
       })
     }
     return out

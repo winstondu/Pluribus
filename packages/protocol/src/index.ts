@@ -10,6 +10,7 @@
  * - commands: what the client can ask for
  * - projections, patches: what the client reads, and how it is kept current
  * - backend, wire: the one interface between client and backend, and its Worker transport
+ * - log-export: the full log export document and how it travels
  * - wording: the text the specification pins down
  */
 export * from './ids'
@@ -25,4 +26,5 @@ export * from './projections'
 export * from './patches'
 export * from './backend'
 export * from './wire'
+export * from './log-export'
 export * from './wording'
