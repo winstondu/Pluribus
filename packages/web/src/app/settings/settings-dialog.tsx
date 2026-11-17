@@ -6,6 +6,7 @@ import {
   type DecisionThresholds,
   type KeyProviderName,
   type ModelRoleChoice,
+  type ReferentStrategyName,
   type RetryPolicy,
   type Settings,
   type SettingsPatch,
@@ -86,7 +87,10 @@ export function SettingsDialog() {
                 <ModelSettingsPanel roles={app.modelRoles} />
               </TabsContent>
               <TabsContent value="routing">
-                <ThresholdSettings settings={app.settings} />
+                <div className="grid gap-8">
+                  <ReferentSettings settings={app.settings} />
+                  <ThresholdSettings settings={app.settings} />
+                </div>
               </TabsContent>
               <TabsContent value="key">
                 <KeySettings openRouter={app.key.configured} />
@@ -414,6 +418,65 @@ const THRESHOLDS: readonly { key: keyof DecisionThresholds; label: string; descr
     description: 'At or above this, work is held until you answer a clarification question.',
   },
 ]
+
+const REFERENT_STRATEGIES: readonly { value: ReferentStrategyName; label: string; description: string }[] = [
+  {
+    value: 'tree-walk',
+    label: 'Tree walk',
+    description: 'Follows the lines of work a message is about, level by level. Reaches answers however old; one more decision request per branching level.',
+  },
+  {
+    value: 'one-pass',
+    label: 'One pass',
+    description: 'Asks about the most recent answers in the routing request itself. No further request; older answers are out of reach.',
+  },
+]
+
+/** The tree walk's two switches. A run that is too long to ask about answer by answer is searched whichever way they are set. */
+const TREE_WALK_SWITCHES: readonly { key: 'startAtTrunkBase' | 'hopBetweenBranchPoints'; label: string; description: string }[] = [
+  {
+    key: 'startAtTrunkBase',
+    label: 'Start at the trunk base',
+    description:
+      'Asks about a line of work where it first splits, not about every answer before that. Fewer questions; a reply to an earlier answer of the trunk takes one more decision request.',
+  },
+  {
+    key: 'hopBetweenBranchPoints',
+    label: 'Hop between branch points',
+    description:
+      'A message about an answer inside a run (a line of work between two splits) continues from the run’s last answer: routing asks only whether the run is meant, not which answer in it. Saves decision tokens; the answer then reads everything after the part of the run the message is about. A correction is still matched to the exact answer it revises.',
+  },
+]
+
+/** Context summaries for routing decisions. Nothing produces a summary yet, and the wording says so. */
+function ReferentSettings({ settings }: { settings: Settings }) {
+  const change = useChangeSettings()
+  const label = useId()
+  return (
+    <Panel title="Referents" description="How routing decides which earlier answers a message refers to and waits for.">
+      <Row label="Strategy" labelId={label} stacked>
+        <ChoiceCards
+          labelledBy={label}
+          options={REFERENT_STRATEGIES}
+          value={settings.routing.referentStrategy}
+          onChoose={(value) => void change({ routing: { referentStrategy: value } })}
+          className="sm:grid-cols-2"
+        />
+      </Row>
+      {settings.routing.referentStrategy === 'tree-walk'
+        ? TREE_WALK_SWITCHES.map((entry) => (
+            <DebugRow
+              key={entry.key}
+              label={entry.label}
+              description={entry.description}
+              checked={settings.routing.treeWalk[entry.key]}
+              onChange={(checked) => void change({ routing: { treeWalk: { [entry.key]: checked } } })}
+            />
+          ))
+        : null}
+    </Panel>
+  )
+}
 
 function ThresholdSettings({ settings }: { settings: Settings }) {
   const change = useChangeSettings()

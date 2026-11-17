@@ -12,5 +12,21 @@ export { createRouter } from './pipeline'
 export { validatePlan, topological, resolveUnitTargets, derivePlacement, AMBIGUITY_FLOOR, type Validation, type TargetResolution } from './derive'
 export { routingModule, clarificationInstruction, answerClarification } from './module'
 export { MAX_SECTIONS, MAX_DEPENDENCIES, MAX_CHAINS } from './supply'
+export { REFERENT_STRATEGIES, referentStrategyFor, onePassStrategy, treeWalkStrategy, estimateDecisionTokens } from './referents'
+export {
+  createDecisionOperations,
+  onePassPolicy,
+  reduceToNonAncestors,
+  startSet,
+  strategyFromPolicy,
+  treeWalkPolicy,
+  type DecisionOperations,
+  type OperationsContext,
+  type OperationsFactory,
+  type ReferentPolicy,
+  type SearchInput,
+  type SearchOutcome,
+  type StartSet,
+} from './referents'
 
 registerCoreModule(routingModule)

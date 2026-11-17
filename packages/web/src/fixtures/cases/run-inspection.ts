@@ -456,6 +456,18 @@ const packing: RunInspection = {
     prerequisites: { value: [{ kind: 'directive', directiveId: id('directive', 'itinerary') }], confidence: 0.9 },
     needsClarification: 0.07,
     explanation: '“That plan” is the itinerary, which is still being written, so the packing list waits for it.',
+  }, {
+    // Hop between branch points was on: the line from the brief to the itinerary was asked about as one, and the message was placed on its last answer.
+    runEnds: [
+      {
+        unit: 'message',
+        sectionId: id('section', 'itinerary-revised'),
+        confidence: 0.84,
+        run: { firstSectionId: id('section', 'brief'), lastSectionId: id('section', 'itinerary-revised'), sections: 2 },
+        evidence: { firstSectionId: id('section', 'brief'), lastSectionId: id('section', 'itinerary-revised'), sections: 2 },
+        limitedByContext: false,
+      },
+    ],
   }),
   attempt: null,
   directiveState: 'dependency-queued',

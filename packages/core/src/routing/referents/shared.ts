@@ -7,12 +7,17 @@ import { ancestorsOfAll, type GroupNode, type ReferentTree, type SectionNode, ty
  * how scores become a unit's referents. Section numbers are the same in
  * every state text of one routing, so an ID names the same thing wherever
  * it is asked: `m_s3` (Point: does the message refer to S3), `m_j1` (Group:
- * does it build on the members of group 1 together), `m_several`.
+ * does it build on the members of group 1 together), `m_c25_36` (Segment:
+ * does it refer to one of S25 to S36 of an unbranched run), `m_several`.
  */
 export const questionId = {
   own: (unit: ReferentUnit, node: SectionNode): string => `${unit.key}_s${node.n}`,
   group: (unit: ReferentUnit, node: GroupNode): string => `${unit.key}_j${node.index}`,
   several: (unit: ReferentUnit): string => `${unit.key}_several`,
+  /** A part of an unbranched run, by its first and last section. */
+  chunk: (unit: ReferentUnit, nodes: readonly SectionNode[]): string => `${unit.key}_c${nodes[0]?.n ?? 0}_${nodes[nodes.length - 1]?.n ?? 0}`,
+  /** The most recent answer, asked about beside Segment questions for comparison. Its answer is not read. */
+  recent: (unit: ReferentUnit): string => `${unit.key}_recent`,
   of: (unit: ReferentUnit, node: TreeNode): string => (node.kind === 'section' ? questionId.own(unit, node) : questionId.group(unit, node)),
 }
 
@@ -39,6 +44,28 @@ export function groupQuestion(unit: ReferentUnit, node: GroupNode): NoulQuestion
   const members = list(node.members.map((m) => `S${m.n}`))
   return noul(
     `Does ${unit.name} build on ${members} together, the answers that were requested in parallel, rather than on one of them alone or on none of them?`,
+  )
+}
+
+/** The longest request quoted for a section named in a Segment question or shown as context. */
+export const CHUNK_DIGEST = 80
+
+/** A section named by the request it answered. */
+export function digest(node: SectionNode): string {
+  const request = node.entry.section.request.replace(/\s+/g, ' ').trim()
+  return `S${node.n} ("${request.length > CHUNK_DIGEST ? `${request.slice(0, CHUNK_DIGEST)}…` : request}")`
+}
+
+/**
+ * Segment: several sections of an unbranched run in one question, each
+ * named by the request it answered. It says where to look next and makes
+ * none of them a referent. Measured live: the request finds a single old section among 200; the
+ * title alone does not always (0.31 for the itinerary, whose title is cut
+ * before the word).
+ */
+export function chunkQuestion(unit: ReferentUnit, nodes: readonly SectionNode[]): NoulQuestion {
+  return noul(
+    `Does ${unit.name} refer to one of these earlier answer sections, each named by the request it answered: ${nodes.map(digest).join(', ')}: reply to it, build on it, compare or combine it with another answer, or correct it?`,
   )
 }
 

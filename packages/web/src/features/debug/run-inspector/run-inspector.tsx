@@ -1,5 +1,6 @@
 import type {
   AttemptResultStatus,
+  RunEndRecord,
   ConsumedMessage,
   ContextOrigin,
   Decided,
@@ -9,6 +10,7 @@ import type {
   PointRef,
   PrerequisiteRef,
   RunInspection,
+  SectionId,
   TranscriptProjection,
   UnitRoutingDecision,
   WaitTargetView,
@@ -450,6 +452,36 @@ function prerequisiteWord(ref: PrerequisiteRef, transcript: TranscriptProjection
   return section?.title ?? ref.directiveId
 }
 
+/**
+ * That hop between branch points placed this work on the last answer of a run it refers to, without a search inside
+ * the run: which run, and the question whose answer said the run is meant.
+ */
+function RunEndsRow({ ends, unitKey, transcript }: { ends: readonly RunEndRecord[]; unitKey: string | null; transcript: TranscriptProjection }) {
+  const mine = ends.filter((end) => unitKey === null || end.unit === unitKey)
+  if (mine.length === 0) return null
+  const title = (sectionId: SectionId): string => transcript.sections[sectionId]?.title ?? sectionId
+  return (
+    <Row label="Hop between branch points">
+      <span data-testid="run-ends">
+        {mine.map((end) => (
+          <span key={end.sectionId} className="block">
+            Placed on {title(end.sectionId)}, {end.limitedByContext ? 'the deepest answer a run can continue from' : 'the last answer'} of a run of{' '}
+            {end.run.sections} · <span className="text-muted-foreground">confidence {end.confidence.toFixed(2)}</span>
+            <span className="mt-0.5 block text-muted-foreground">
+              No answer inside the run was searched for, and this one was not asked about by itself: its context holds the whole run. The run is{' '}
+              {title(end.run.firstSectionId)} to {title(end.run.lastSectionId)}; the score is that of{' '}
+              {end.evidence.sections === 1
+                ? `a question about ${title(end.evidence.firstSectionId)} by itself`
+                : `a question about ${end.evidence.sections} of its answers together, ${title(end.evidence.firstSectionId)} to ${title(end.evidence.lastSectionId)}`}
+              .
+            </span>
+          </span>
+        ))}
+      </span>
+    </Row>
+  )
+}
+
 /** Item 5: what routing decided. A record, not a verdict. */
 function Routing(props: { inspection: RunInspection; transcript: TranscriptProjection; genealogy: GenealogyProjection }) {
   const { inspection, transcript, genealogy } = props
@@ -476,6 +508,7 @@ function Routing(props: { inspection: RunInspection; transcript: TranscriptProje
           {decision.composition.value} · <span className="text-muted-foreground">{confidence(decision.composition)}</span>
         </Row>
         {unit ? <UnitRows unit={unit} transcript={transcript} genealogy={genealogy} inspection={inspection} /> : null}
+        {decision.runEnds ? <RunEndsRow ends={decision.runEnds} unitKey={unit?.key ?? null} transcript={transcript} /> : null}
         <Row label="Explanation">{unit?.explanation || decision.explanation || 'None recorded.'}</Row>
       </dl>
       {decision.questions.length > 0 ? (

@@ -80,7 +80,7 @@ export interface RoutingInput {
   readonly candidates: RoutingCandidates
   /** Requirements already session-wide in this conversation (Q17). */
   readonly sessionRequirements: readonly Requirement[]
-  readonly settings: Pick<Settings, 'models' | 'thresholds'>
+  readonly settings: Pick<Settings, 'models' | 'thresholds' | 'routing'>
   /** Mints the IDs the plan needs: directives, fragments, requirements. */
   readonly ids: IdFactory
 }

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest'
 import { COMMAND_TYPES } from '../src/commands'
 import { APP_EVENT_TYPES, APP_LOG, CONVERSATION_EVENT_TYPES, EVENT_SCHEMA_VERSION, upcastEvent } from '../src/events'
 import { IN_FLIGHT_STATES, NOT_STARTED_STATES, PROVIDER_ERROR_CLASS, providerError, providerErrorCodeForStatus } from '../src/model'
-import { DEFAULT_SETTINGS, RETRY_POLICIES, applySettingsPatch, validateSettingsPatch } from '../src/settings'
+import { DEFAULT_SETTINGS, RETRY_POLICIES, applySettingsPatch, normalizeSettings, validateSettingsPatch } from '../src/settings'
 import { groupCountText, pausedText, provisionalLabel, recoveryLabels, redoneByDefaultText, supersededInputText, waitingText } from '../src/wording'
 
 describe('commands', () => {
@@ -105,6 +105,33 @@ describe('settings', () => {
     expect(validateSettingsPatch({ thresholds: { targetChoice: 1.2 } })).toMatch(/targetChoice/)
     expect(validateSettingsPatch({ models: { answer: ' ' } })).toMatch(/answer/)
     expect(validateSettingsPatch({ concurrencyLimit: 2, defaultChoiceWaitMs: 0 })).toBeNull()
+  })
+
+  test('the referent strategy is a setting: merged key by key, validated, and filled in for settings stored before it existed', () => {
+    const next = applySettingsPatch(DEFAULT_SETTINGS, { routing: { referentStrategy: 'one-pass' } })
+    expect(next.routing).toEqual({ ...DEFAULT_SETTINGS.routing, referentStrategy: 'one-pass' })
+    expect(next.thresholds).toEqual(DEFAULT_SETTINGS.thresholds)
+    expect(applySettingsPatch(DEFAULT_SETTINGS, { routing: {} })).toBe(DEFAULT_SETTINGS)
+    expect(validateSettingsPatch({ routing: { referentStrategy: 'guess' as never } })).toMatch(/referent strategy/)
+    const { routing: _dropped, ...stored } = { ...DEFAULT_SETTINGS, retryPolicy: 'manual' as const }
+    expect(normalizeSettings(stored)).toEqual({ ...DEFAULT_SETTINGS, retryPolicy: 'manual' })
+  })
+
+  test('the tree walk\'s two switches and its search size are settings: independent, validated, and defaulted for settings stored before they existed', () => {
+    expect(DEFAULT_SETTINGS.routing.treeWalk).toEqual({ startAtTrunkBase: false, hopBetweenBranchPoints: false, searchRunsOverTokens: 1_500 })
+    const trunk = applySettingsPatch(DEFAULT_SETTINGS, { routing: { treeWalk: { startAtTrunkBase: true } } })
+    expect(trunk.routing.treeWalk).toEqual({ startAtTrunkBase: true, hopBetweenBranchPoints: false, searchRunsOverTokens: 1_500 })
+    const both = applySettingsPatch(trunk, { routing: { treeWalk: { hopBetweenBranchPoints: true } } })
+    expect(both.routing.treeWalk).toEqual({ startAtTrunkBase: true, hopBetweenBranchPoints: true, searchRunsOverTokens: 1_500 })
+    expect(both.routing.referentStrategy).toBe(DEFAULT_SETTINGS.routing.referentStrategy)
+    expect(validateSettingsPatch({ routing: { treeWalk: { searchRunsOverTokens: 0 } } })).toMatch(/whole number/)
+    expect(validateSettingsPatch({ routing: { treeWalk: { searchRunsOverTokens: 800, hopBetweenBranchPoints: true } } })).toBeNull()
+    // Stored by the version that had only the strategy and its budget.
+    const old = { ...DEFAULT_SETTINGS, routing: { referentStrategy: 'one-pass', referentBudget: { requests: 1, questions: 10, inputTokens: 500 } } } as unknown as typeof DEFAULT_SETTINGS
+    expect(normalizeSettings(old).routing).toEqual({
+      referentStrategy: 'one-pass',
+      treeWalk: DEFAULT_SETTINGS.routing.treeWalk,
+    })
   })
 })
 

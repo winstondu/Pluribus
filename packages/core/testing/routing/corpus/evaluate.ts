@@ -8,6 +8,7 @@ import {
   type PointRef,
   type PrerequisiteRef,
   type Settings,
+  type RunEndRecord,
   type TextSpan,
 } from '@pluribus/protocol'
 import type {
@@ -29,14 +30,14 @@ import { buildTree } from '../../../src/routing/referents/tree'
 import { numberedAnswerSections, supply } from '../../../src/routing/supply'
 import { ROUTING_CORPUS } from './examples'
 import { ids } from './scene'
-import type { CorpusExample, CorpusTopic, PartExpectation, PlacementExpectation, ReferenceDecomposition } from './types'
+import type { CorpusExample, CorpusExpectation, CorpusTopic, ExpectationSet, PartExpectation, PlacementExpectation, ReferenceDecomposition } from './types'
 
 export interface CorpusRun {
   readonly decisionProvider: DecisionProvider
   /** Defaults to the examples' reference decompositions, so the decision model is evaluated on its own. */
   readonly decomposer?: Decomposer
   /** Models and thresholds; default `DEFAULT_SETTINGS`. */
-  readonly settings?: Pick<Settings, 'models' | 'thresholds'>
+  readonly settings?: Pick<Settings, 'models' | 'thresholds' | 'routing'>
   readonly examples?: readonly CorpusExample[]
   readonly signal?: CancelSignal
 }
@@ -45,6 +46,8 @@ export interface CorpusResult {
   readonly id: string
   readonly covers: readonly CorpusTopic[]
   readonly passed: boolean
+  /** The expectations it was scored against: those for hop between branch points when the tree walk ran with the switch on. */
+  readonly expectations: ExpectationSet
   /** What differed from the label, one line each. */
   readonly mismatches: readonly string[]
   readonly outcome: RoutingOutcome['kind']
@@ -52,6 +55,8 @@ export interface CorpusResult {
   readonly questions: readonly DecisionQuestionRecord[]
   /** What routing the example cost in decision calls. */
   readonly decisions: DecisionSpend
+  /** The targets that hop between branch points placed on the last section of a run without a search inside it; empty when none. */
+  readonly runEnds: readonly RunEndRecord[]
 }
 
 /** Decision calls made, and the input tokens the provider reported for them (0 where it reported none). */
@@ -82,13 +87,15 @@ export interface CorpusReport {
   readonly results: readonly CorpusResult[]
   readonly passed: number
   readonly total: number
+  /** How many routings were scored against each set of expectations, and how many of the hop-on ones differ from the default. */
+  readonly expectations: { readonly [S in ExpectationSet]: number } & { readonly hopDiffering: number }
   /** Decision calls over the whole run. */
   readonly decisions: DecisionSpend
   readonly byTopic: { readonly [T in CorpusTopic]?: { readonly passed: number; readonly total: number } }
 }
 
 /** The routing input for an example, as the engine would build it. */
-export function corpusInput(example: CorpusExample, settings: Pick<Settings, 'models' | 'thresholds'> = DEFAULT_SETTINGS, idFactory?: IdFactory): RoutingInput {
+export function corpusInput(example: CorpusExample, settings: Pick<Settings, 'models' | 'thresholds' | 'routing'> = DEFAULT_SETTINGS, idFactory?: IdFactory): RoutingInput {
   return {
     conversationId: 'cnv_corpus' as RoutingInput['conversationId'],
     messageId: ids.message('new'),
@@ -99,7 +106,7 @@ export function corpusInput(example: CorpusExample, settings: Pick<Settings, 'mo
     forcedComposition: null,
     candidates: example.scene.candidates,
     sessionRequirements: example.scene.sessionRequirements,
-    settings: { models: settings.models, thresholds: settings.thresholds },
+    settings: { models: settings.models, thresholds: settings.thresholds, routing: settings.routing },
     ids: idFactory ?? createIdFactory(createUlidFactory(() => 0, createSeededRandom(11))),
   }
 }
@@ -148,20 +155,25 @@ export function referenceDecomposer(example: CorpusExample): Decomposer {
 /** Runs the router over every example and compares each outcome with its label. */
 export async function evaluateCorpus(run: CorpusRun): Promise<CorpusReport> {
   const results: CorpusResult[] = []
+  let hopDiffering = 0
   for (const example of run.examples ?? ROUTING_CORPUS) {
     const input = corpusInput(example, run.settings)
     const metered = meteredDecisionProvider(run.decisionProvider)
     const router = createRouter({ decisionProvider: metered, decomposer: run.decomposer ?? referenceDecomposer(example) })
     const outcome = await router.route(input, run.signal ?? NEVER_CANCELLED)
-    const mismatches = compare(example, outcome)
+    const expectations = expectationSetFor(input.settings, outcome)
+    const mismatches = compare(example, outcome, expectations)
+    if (expectations === 'hop' && example.hop) hopDiffering += 1
     results.push({
       id: example.id,
       covers: example.covers,
       passed: mismatches.length === 0,
+      expectations,
       mismatches,
       outcome: outcome.kind,
       questions: outcome.kind === 'plan' ? outcome.plan.decision.questions : [],
       decisions: metered.spent(),
+      runEnds: outcome.kind === 'plan' ? (outcome.plan.decision.runEnds ?? []) : [],
     })
   }
   const byTopic: { [T in CorpusTopic]?: { passed: number; total: number } } = {}
@@ -177,12 +189,30 @@ export async function evaluateCorpus(run: CorpusRun): Promise<CorpusReport> {
     (sum, r) => ({ requests: sum.requests + r.decisions.requests, questions: sum.questions + r.decisions.questions, inputTokens: sum.inputTokens + r.decisions.inputTokens }),
     { requests: 0, questions: 0, inputTokens: 0 },
   )
-  return { results, passed: results.filter((r) => r.passed).length, total: results.length, decisions, byTopic }
+  const expectations = { default: results.filter((r) => r.expectations === 'default').length, hop: results.filter((r) => r.expectations === 'hop').length, hopDiffering }
+  return { results, passed: results.filter((r) => r.passed).length, total: results.length, expectations, decisions, byTopic }
+}
+
+/**
+ * The expectations a routing is scored against: those for hop between
+ * branch points when the switch is on and the tree walk ran; the default
+ * ones otherwise. Read from the configuration, never from where the routing
+ * placed anything.
+ */
+export function expectationSetFor(settings: Pick<Settings, 'routing'>, outcome: RoutingOutcome): ExpectationSet {
+  const routing = settings.routing
+  if (!routing.treeWalk.hopBetweenBranchPoints) return 'default'
+  return routing.referentStrategy === 'tree-walk' ? 'hop' : 'default'
+}
+
+/** An example's expectation in one set: the hop's parts in place of the default ones where the example has them. */
+export function expectationOf(example: CorpusExample, set: ExpectationSet): CorpusExpectation {
+  return set === 'hop' && example.hop ? { ...example.expect, parts: example.hop.parts } : example.expect
 }
 
 export function formatCorpusReport(report: CorpusReport): string {
   const lines = [
-    `Routing corpus: ${report.passed}/${report.total} examples as labelled`,
+    `Routing corpus: ${report.passed}/${report.total} examples as labelled, against ${expectationsText(report)}`,
     `  decision calls: ${report.decisions.requests} requests, ${report.decisions.questions} questions, ${report.decisions.inputTokens} input tokens reported`,
   ]
   for (const [topic, t] of Object.entries(report.byTopic)) lines.push(`  ${topic}: ${t.passed}/${t.total}`)
@@ -192,6 +222,13 @@ export function formatCorpusReport(report: CorpusReport): string {
     for (const m of r.mismatches) lines.push(`    ${m}`)
   }
   return lines.join('\n')
+}
+
+function expectationsText(report: CorpusReport): string {
+  const { hop, hopDiffering } = report.expectations
+  if (hop === 0) return 'the default expectations'
+  const which = `the hop-on expectations (hop between branch points, tree walk; ${hopDiffering} of them differ from the default)`
+  return hop === report.total ? which : `${which} for ${hop} routings and the default expectations for ${report.total - hop}`
 }
 
 // ───────────────────────────── comparison ─────────────────────────────
@@ -204,10 +241,10 @@ function show(list: readonly string[]): string {
   return `[${list.join(', ')}]`
 }
 
-/** Every difference between an outcome and the example's label. */
-export function compare(example: CorpusExample, outcome: RoutingOutcome): string[] {
+/** Every difference between an outcome and the example's label in one set of expectations, the default one unless named. */
+export function compare(example: CorpusExample, outcome: RoutingOutcome, set: ExpectationSet = 'default'): string[] {
   const out: string[] = []
-  const expect = example.expect
+  const expect = expectationOf(example, set)
   const wanted = expect.outcome ?? 'plan'
   if (outcome.kind !== wanted) {
     out.push(`outcome: expected ${wanted}, got ${outcome.kind}${outcome.kind === 'failed' ? ` (${outcome.error.message})` : ''}`)
@@ -326,6 +363,8 @@ function expectedPlacementText(p: PlacementExpectation): string {
 const YES = 0.95
 const NO = 0.05
 const UNSURE = 0.5
+/** A section on the line above a target: worth looking below, not a target. */
+const PLAUSIBLE = 0.4
 
 /**
  * A decision provider that answers every question as the example's label
@@ -386,13 +425,19 @@ export function oracleDecisionProvider(example: CorpusExample, input: RoutingInp
       if (expect.answers && h === expect.answers) return noul(true)
       if (expect.ambiguous?.includes(h)) return noul('unsure')
       if (targets?.includes(h)) return noul(true)
-      return noul(false)
+      return expect.context?.includes(h) ? { type: 'noul', probability: PLAUSIBLE } : noul(false)
     }
     const together = /^j(\d+)$/.exec(question)
     if (together) {
       const node = [...tree.byGroup.values()].find((x) => x.index === Number(together[1]))
       const members = node ? node.members.map((x) => sectionHandle(x.n)) : []
       return noul(members.length >= 2 && members.every((h) => targets?.includes(h) ?? false))
+    }
+    // A part of a run being searched: yes when it names a section the part refers to.
+    if (/^c\d+_\d+(_\d+)?$/.test(question)) {
+      const named = [...instructions.matchAll(/S(\d+) \(/g)].map((m) => sectionHandle(Number(m[1])))
+      if (expect.ambiguous?.some((h) => named.includes(h))) return noul('unsure')
+      return noul(named.some((h) => targets?.includes(h) ?? false))
     }
     const work = /^w(\d+)$/.exec(question)
     if (work) {

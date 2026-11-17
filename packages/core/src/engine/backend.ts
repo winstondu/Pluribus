@@ -533,7 +533,7 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
       forcedComposition: routeOptions.forcedComposition ?? null,
       candidates: routingCandidates(state),
       sessionRequirements: sessionRequirementsInForce(state),
-      settings: { models: settings.models, thresholds: settings.thresholds },
+      settings: { models: settings.models, thresholds: settings.thresholds, routing: settings.routing },
       ids: deps.ids,
     }
   }

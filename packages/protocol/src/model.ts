@@ -525,6 +525,26 @@ export interface UnitRoutingDecision {
  * (run inspector item 5). The decision model only selects among supplied
  * candidates; any rewritten text comes from decomposition (invariant 9).
  */
+/**
+ * Recorded when hop between branch points placed a unit's referent on the
+ * last section of an unbranched run without a search inside the run (11 ·
+ * "Referent strategies", DA3): the section was not asked about by itself.
+ */
+export interface RunEndRecord {
+  /** The unit's key in `RoutingDecision.units`. */
+  readonly unit: string
+  /** The section taken: the run's last, or the deepest one a run's context allows. */
+  readonly sectionId: SectionId
+  /** The confidence it carries: the highest score among the questions about the run. */
+  readonly confidence: number
+  /** The unbranched run: its first and last answer section, and how many it has. */
+  readonly run: { readonly firstSectionId: SectionId; readonly lastSectionId: SectionId; readonly sections: number }
+  /** The question with that score: about one section of the run by itself, or about a part of the run. */
+  readonly evidence: { readonly firstSectionId: SectionId; readonly lastSectionId: SectionId; readonly sections: number }
+  /** True when the run's last section was not taken because a run continuing from it would not fit its context. */
+  readonly limitedByContext: boolean
+}
+
 export interface RoutingDecision {
   /**
    * - `decision-model`: produced by the routing pipeline.
@@ -539,6 +559,8 @@ export interface RoutingDecision {
   readonly thresholds: { readonly [name: string]: number }
   readonly explanation: string
   readonly questions: readonly DecisionQuestionRecord[]
+  /** Set when hop between branch points took the last section of a run as a referent without a search inside the run. */
+  readonly runEnds?: readonly RunEndRecord[]
 }
 
 // ─────────────────────────── decomposition ───────────────────────────

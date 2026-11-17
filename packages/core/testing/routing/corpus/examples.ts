@@ -222,7 +222,7 @@ const longConversation = (() => {
 /**
  * Long runs: 200
  * answer sections, far more than the pipeline lists, as one chain that
- * never splits; and a tree whose
+ * never splits and as 200 unrelated one-answer lines; and a tree whose
  * branches are long runs of only children.
  */
 const GUIDE_TOPICS = [
@@ -442,6 +442,16 @@ const longChain = (() => {
     })
   GUIDE_TOPICS.forEach((topic, i) => {
     s.add(`E${i}`, { chain: 'guide', on: i === 0 ? 'brief' : `E${i - 1}`, label: `Next entry: ${topic}`, request: `Next entry: ${topic}`, answer: guideEntry(topic) })
+  })
+  return s.build()
+})()
+
+/** The same 199 topics as unrelated questions: every answer is a root. */
+const longRoots = (() => {
+  const s = scene()
+  GUIDE_TOPICS.forEach((topic, i) => {
+    const question = `What should I know about ${topic}?`
+    s.chain(`r${i}`, 'root', question).add(`R${i}`, { chain: `r${i}`, on: null, label: question, request: question, answer: guideEntry(topic) })
   })
   return s.build()
 })()
@@ -1074,6 +1084,16 @@ export const ROUTING_CORPUS: readonly CorpusExample[] = [
     expect: { composition: 'atomic', parts: [{ kind: 'unit', relation: 'addition', targets: ['A'], placement: { continue: 'A' } }] },
   },
   {
+    id: 'live-referent-beyond-window',
+    covers: ['targets', 'placement'],
+    note: '05, Q20: the itinerary is the target however long ago it was written. It is older than the 24 sections the pipeline lists, so only a strategy that walks the context tree can find it.',
+    scene: longConversation,
+    text: 'Swap days 2 and 3 of the Kyoto itinerary',
+    beyondWindow: true,
+    below: ['brief'],
+    expect: { composition: 'atomic', parts: [{ kind: 'unit', targets: ['J'], placement: { continue: 'J' } }] },
+  },
+  {
     id: 'live-unrelated-in-long-conversation',
     covers: ['placement'],
     note: '05: unrelated new work in a long conversation starts a new chain; nothing is walked into.',
@@ -1091,6 +1111,19 @@ export const ROUTING_CORPUS: readonly CorpusExample[] = [
   },
   // ── long runs ──
   {
+    id: 'long-chain-old-section',
+    covers: ['targets', 'placement'],
+    note: '05, Q20: the entry on tides is the target although 190 sections were written after it on the same chain. Only a strategy that reaches beyond the pipeline\u2019s window can find it.',
+    scene: longChain,
+    text: 'Make the entry on tides shorter',
+    beyondWindow: true,
+    expect: { composition: 'atomic', parts: [{ kind: 'unit', targets: ['E2'], placement: { continue: 'E2' } }] },
+    hop: {
+      note: '11 · hop between branch points, DA3: the chain never splits, so it is one unbranched run of 200 sections (a trunk). The unit refers to it (E2 is in it) and to nothing built on it (it has nothing below it), and is not a correction: it is placed on the run’s last section, whose context holds E2.',
+      parts: [{ kind: 'unit', targets: ['E198'], placement: { continue: 'E198' } }],
+    },
+  },
+  {
     id: 'long-chain-latest-section',
     covers: ['targets', 'placement'],
     note: '05 edge case "Make that shorter": in a long chain a reply to the latest answer continues from the tip, whether the section is inferred as its target or the line is chosen as its handling chain.',
@@ -1107,12 +1140,26 @@ export const ROUTING_CORPUS: readonly CorpusExample[] = [
     expect: { composition: 'atomic', parts: [{ kind: 'unit', relation: 'new', placement: 'new-chain' }] },
   },
   {
+    id: 'long-roots-old-section',
+    covers: ['targets', 'placement'],
+    note: '05, Q20: one of 199 unrelated answers, far older than the window, is the target; the reply continues that line.',
+    scene: longRoots,
+    text: 'Go back to the answer about honey bees and add a diagram',
+    beyondWindow: true,
+    expect: { composition: 'atomic', parts: [{ kind: 'unit', targets: ['R16'], placement: { continue: 'R16' } }] },
+  },
+  {
     id: 'deep-run-middle-section',
     covers: ['targets', 'placement'],
     note: '05: a reply to a section in the middle of a run of only children targets that section, not the end of the run; the work branches from it.',
     scene: deepRuns,
     text: 'Make the day 2 plan less packed',
+    below: ['brief'],
     expect: { composition: 'atomic', parts: [{ kind: 'unit', targets: ['D2'], placement: { continue: 'D2' } }] },
+    hop: {
+      note: '11 · hop between branch points, DA3: the itinerary and the day plans (J, D1 to D5) are one unbranched run below the join-back; the unit refers to it (D2) and to nothing built on it (D5 is a leaf), and D3 and D4 are not asked about by themselves: it is placed on the run’s last section, D5. Not reached without a candidate source (`below`), as with the switch off.',
+      parts: [{ kind: 'unit', targets: ['D5'], placement: { continue: 'D5' } }],
+    },
   },
   {
     id: 'deep-run-end-section',
@@ -1128,6 +1175,11 @@ export const ROUTING_CORPUS: readonly CorpusExample[] = [
     note: '05: a reply to a section inside the other branch\u2019s run targets it; the day plans are not walked into for it.',
     scene: deepRuns,
     text: 'Which of those hostels has private rooms with a bathroom?',
+    below: ['brief'],
     expect: { composition: 'atomic', parts: [{ kind: 'unit', targets: ['H2'], placement: { continue: 'H2' } }] },
+    hop: {
+      note: '11 · hop between branch points, DA3: the cheaper stays (H1 to H4) are one unbranched run below A, a member of a sibling group (A does not count for the run). The unit refers to it (H2) and to nothing built on it (H4 is a leaf), and H3 is not asked about by itself: it is placed on the run’s last section, H4. Not reached without a candidate source (`below`), as with the switch off.',
+      parts: [{ kind: 'unit', targets: ['H4'], placement: { continue: 'H4' } }],
+    },
   },
 ]

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createBackend } from '@pluribus/core'
 import { MemoryEventStore, MemoryProjectionCache, MemorySecretsStore } from '@pluribus/core/testing'
 import {
+  DEFAULT_SETTINGS,
   createIdFactory,
   createUlidFactory,
   type ConversationEvent,
@@ -135,6 +136,10 @@ async function checkJ(c: Conversation, t: Awaited<ReturnType<typeof trip>>, jMes
 }
 
 describe.skipIf(key === '')('the J request through the backend, live', () => {
+  it(`the default strategy is the one under test`, () => {
+    expect(DEFAULT_SETTINGS.routing.referentStrategy).toBe('tree-walk')
+  })
+
   it(`J sent while A and B are running waits for the whole group and reads both, ${RUNS} runs`, { timeout: 600_000 }, async () => {
     const failures: string[] = []
     for (let run = 0; run < RUNS; run++) {
