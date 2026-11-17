@@ -136,7 +136,8 @@ async function checkJ(c: Conversation, t: Awaited<ReturnType<typeof trip>>, jMes
 }
 
 describe.skipIf(key === '')('the J request through the backend, live', () => {
-  it(`the default strategy is the one under test`, () => {
+  it(`the default settings are the ones under test: the referent strategy is selected by the rules`, () => {
+    expect(DEFAULT_SETTINGS.routing.strategySelection).toBe('rules')
     expect(DEFAULT_SETTINGS.routing.referentStrategy).toBe('tree-walk')
   })
 

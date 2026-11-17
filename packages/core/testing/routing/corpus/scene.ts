@@ -46,6 +46,8 @@ interface WorkSpec {
   readonly label: string
   readonly request: string
   readonly answer?: string
+  /** Characters of the whole answer, of which `answer` is the opening. Default: `ANSWER_LENGTH` once there is an answer. */
+  readonly answerLength?: number
   readonly state?: DirectiveState
   readonly group?: string
   /** Handles of the directives its latest attempt consumed. */
@@ -61,6 +63,9 @@ const SECTION_STATE: { readonly [S in DirectiveState]?: SectionState } = {
   interrupted: 'interrupted',
   cancelled: 'cancelled',
 }
+
+/** The length a scene's answers have unless stated: 1,700 tokens, the shortest answer run measured live. */
+export const ANSWER_LENGTH = 6_800
 
 export class SceneBuilder {
   private readonly chains: { handle: string; kind: ChainKind; label: string; nodes: string[] }[] = []
@@ -140,6 +145,7 @@ export class SceneBuilder {
           title: w.label,
           request: w.request,
           excerpt: w.answer ?? '',
+          answerLength: w.answerLength ?? (w.answer ? Math.max(ANSWER_LENGTH, w.answer.length) : 0),
           state: SECTION_STATE[s] ?? (s === 'running' && w.answer ? 'streaming' : 'pending'),
           chainId: ids.chain(w.chain),
           nodeId: ids.node(w.handle),
@@ -172,6 +178,7 @@ export class SceneBuilder {
         title: 'Question',
         request: `Ask the user what is missing for: ${blocked.request}`,
         excerpt: q.text,
+        answerLength: q.text.length,
         state: 'completed',
         chainId: ids.chain(blocked.chain),
         nodeId: ids.node(blocked.handle),

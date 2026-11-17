@@ -1,3 +1,4 @@
+import type { DecisionBudget } from '@pluribus/protocol'
 import type { Probe, ReferentAsk, ReferentGate, ReferentOperations, ReferentQuestions, ReferentRequest, ReferentUnit, SegmentProbe } from '../../ports'
 import { sectionLine } from '../supply'
 import { estimateDecisionTokens, STATE_TOKENS_PER_CHARACTER } from './ask'
@@ -5,17 +6,19 @@ import { chunkQuestion, digest, groupQuestion, list, ownQuestion, questionId, se
 import type { ReferentTree, SectionNode, TreeNode } from './tree'
 
 /**
- * The operations over the decision provider: the
+ * The operations over the decision provider and the budget guard: the
  * default implementation of `ReferentOperations`.
  *
  * - Point, Group, Segment and Several are yes/no questions; the probes of
- *   one round are one decision request, which goes through `ReferentAsk`.
+ *   one round are one decision request, which goes through the guard
+ *   (`ReferentAsk`) and is refused when it would pass a limit.
  * - Describe: a section is shown by its line (title, request, opening of
- *   the answer). In a round, a section asked about by itself
+ *   the answer, or a stored summary and the section's own content where the
+ *   summary provider has one). In a round, a section asked about by itself
  *   is followed by the nearest answers it was built on, named by their
  *   requests, as context; a part of an unbranched run is followed by the
  *   first answers of the run and what the run was built on.
- * - Cost: an estimate of a request, before anything is sent.
+ * - Cost: the guard's own estimate of a request, before anything is sent.
  * - Estimate: none. A prior from wording or embeddings would go here.
  */
 export interface DecisionOperations extends ReferentOperations {
@@ -28,7 +31,7 @@ export interface OperationsContext {
   readonly tree: ReferentTree
   /** The answers of the routing request; null while that request is being put together. */
   readonly gate: Pick<ReferentGate, 'probability'> | null
-  /** What every further request goes through; null while the routing request is being put together. */
+  /** The guard every further request goes through; null while the routing request is being put together. */
   readonly ask: ReferentAsk | null
 }
 
@@ -39,6 +42,14 @@ export const POINT_ANCESTRY = 2
 /** How many of the first answers of an unbranched run are shown beside a question about a later part of it. */
 export const SEGMENT_LEAD = 2
 
+const NOTHING: Cost = { requests: 0, questions: 0, inputTokens: 0 }
+
+interface Cost {
+  readonly requests: number
+  readonly questions: number
+  readonly inputTokens: number
+}
+
 interface Built {
   readonly stateText: string
   readonly questions: ReferentQuestions
@@ -48,7 +59,7 @@ interface Built {
 
 export const createDecisionOperations: OperationsFactory = ({ request, tree, gate, ask }) => {
   const answers = new Map<string, number>()
-  const estimate = estimateDecisionTokens
+  const estimate = ask ? ask.estimate : estimateDecisionTokens
   const recent = mostRecent(tree)
   const sizes = new Map<string, number>()
   const built = new WeakMap<readonly Probe[], Built>()
@@ -82,7 +93,7 @@ export const createDecisionOperations: OperationsFactory = ({ request, tree, gat
         : probe.kind === 'segment'
           ? chunkQuestion(probe.unit, probe.nodes)
           : severalQuestion(probe.unit)
-  const lineOf = (node: SectionNode): string => sectionLine(node.entry.section, node.n)
+  const lineOf = (node: SectionNode): string => sectionLine(node.entry.section, node.n, request.decisionContext(node.entry.section))
 
   const questions = (probes: readonly Probe[]): ReferentQuestions => {
     const out: { [id: string]: ReferentQuestions[string] } = {}
@@ -155,7 +166,8 @@ export const createDecisionOperations: OperationsFactory = ({ request, tree, gat
     const follows = (node: SectionNode): boolean => node.parent !== null && node.parent.kind === 'section' && alone.has(node.parent) && shownBelow.get(node.parent)?.length === 1
     const byParent = new Map<TreeNode, SectionNode[]>()
     for (const node of alone) {
-      if (!node.parent || follows(node)) continue
+      // A stored summary already stands for the work before the section.
+      if (!node.parent || follows(node) || request.decisionContext(node.entry.section) !== null) continue
       byParent.set(node.parent, [...(byParent.get(node.parent) ?? []), node])
     }
     for (const [parent, nodes] of byParent) {
@@ -201,6 +213,12 @@ export const createDecisionOperations: OperationsFactory = ({ request, tree, gat
     return made
   }
 
+  const costOf = (round: readonly Probe[]): Cost => {
+    if (round.length === 0) return NOTHING
+    const { stateText, questions: asked } = build(round)
+    return { requests: 1, questions: Object.keys(asked).length, inputTokens: estimate(stateText, asked) }
+  }
+
   return {
     questions,
     known: (probe) => {
@@ -226,9 +244,18 @@ export const createDecisionOperations: OperationsFactory = ({ request, tree, gat
       sizes.set(id, size)
       return size
     },
+    fits(round, reserve = []) {
+      if (!ask) return null
+      const left = ask.remaining()
+      const first = costOf(round)
+      const second = costOf(reserve)
+      const limits: readonly (keyof DecisionBudget)[] = ['requests', 'questions', 'inputTokens']
+      return limits.find((limit) => left[limit] < first[limit] + second[limit]) ?? null
+    },
+    remaining: () => (ask ? ask.remaining() : { requests: 0, questions: 0, inputTokens: 0 }),
     async ask(round) {
       if (round.length === 0) return { kind: 'answered' }
-      if (!ask) return { kind: 'answered' }
+      if (!ask) return { kind: 'refused', limit: 'requests' }
       const { stateText, questions: asked } = build(round)
       const result = await ask(stateText, asked)
       if (result.kind !== 'answered') return result

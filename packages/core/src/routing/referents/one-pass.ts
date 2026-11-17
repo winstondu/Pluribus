@@ -4,13 +4,14 @@ import { probe, strategyFromPolicy, type ReferentPolicy, type SearchInput } from
 /**
  * One pass: every candidate is asked about in the request the pipeline
  * sends anyway. A Point per listed answer section, a Group per sibling
- * group as a whole (its join-back), and Several. No round of its own: its
- * size is bounded by the routing request's window of sections.
+ * group as a whole (its join-back), and Several. No round of its own, so
+ * nothing for the budget to stop: its size is bounded by the routing
+ * request's window of sections.
  */
 export const onePassPolicy: ReferentPolicy = {
   name: 'one-pass',
   opening: (input, ops) => onePassProbes(input, ops),
-  search: async () => ({ ok: true }),
+  search: async () => ({ ok: true, stop: null }),
 }
 
 /** A probe for everything the routing request lists, per unit: Several first, then every node by itself. */

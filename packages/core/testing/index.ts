@@ -30,4 +30,15 @@ export {
 export { MemoryEventStore, MemoryProjectionCache, MemorySecretsStore } from './memory-stores'
 export { createTestBackend, type TestBackend, type TestBackendOverrides } from './test-backend'
 export * from './routing/corpus'
+export {
+  COST_GRID_MESSAGE,
+  COST_GRID_ROWS_PER_SIZE,
+  COST_GRID_SIZES,
+  costGridRows,
+  decisionDollars,
+  formatCostGrid,
+  type CostGridChannel,
+  type CostGridRow,
+  type DecisionCost,
+} from './routing/referents/cost-grid'
 export { createOracleOperations, type OracleOperations, type OracleOptions } from './routing/referents/oracle'

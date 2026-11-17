@@ -1,3 +1,4 @@
+import type { DecisionBudget } from '@pluribus/protocol'
 import type { Probe, ReferentOperations, ReferentUnit } from '../../../src/ports'
 import type { ReferentTree, TreeNode } from '../../../src/routing/referents/tree'
 
@@ -6,12 +7,14 @@ import type { ReferentTree, TreeNode } from '../../../src/routing/referents/tree
  * `ReferentOperations` with no decision provider behind it. A Point or a
  * Group is answered yes when its node is labelled, a Segment when one of
  * its sections is, Several when two or more nodes are. Every probe costs
- * one.
+ * one; the budget, when there is one, is counted in rounds and probes.
  */
 export interface OracleOptions {
   readonly tree: ReferentTree
   /** The relevant nodes of a unit: sections, and sibling groups as a whole. */
   relevant(unit: ReferentUnit): ReadonlySet<TreeNode>
+  /** Left out: no budget, the exact search. */
+  readonly budget?: { readonly rounds?: number; readonly probes?: number }
   /** Which probes the routing request carries: answered before the search starts. None unless given. */
   readonly riding?: (probe: Probe) => boolean
   /** An answer that differs from the labels, for a decision model that is wrong about a probe. Undefined: as labelled. */
@@ -50,6 +53,15 @@ export function createOracleOperations(options: OracleOptions): OracleOperations
     return relevant.size >= 2
   }
   const answerTo = (probe: Probe): number => options.answer?.(probe) ?? (truth(probe) ? yes : no)
+  const remaining = (): DecisionBudget => ({
+    requests: Math.max(0, (options.budget?.rounds ?? Number.POSITIVE_INFINITY) - rounds.length),
+    questions: Math.max(0, (options.budget?.probes ?? Number.POSITIVE_INFINITY) - probes),
+    inputTokens: Number.POSITIVE_INFINITY,
+  })
+  const exceeded = (count: number, requests: number): keyof DecisionBudget | null => {
+    const left = remaining()
+    return left.requests < requests ? 'requests' : left.questions < count ? 'questions' : null
+  }
   return {
     rounds,
     probes: () => probes,
@@ -59,8 +71,12 @@ export function createOracleOperations(options: OracleOptions): OracleOperations
     estimate: () => null,
     describe: (node) => node.key,
     size: () => 1,
+    fits: (round, reserve = []) => exceeded(round.length + reserve.length, (round.length > 0 ? 1 : 0) + (reserve.length > 0 ? 1 : 0)),
+    remaining,
     async ask(round) {
       if (round.length === 0) return { kind: 'answered' }
+      const limit = exceeded(round.length, 1)
+      if (limit) return { kind: 'refused', limit }
       rounds.push(round)
       probes += round.length
       for (const probe of round) {

@@ -163,7 +163,7 @@ Both the original text and any generated rewrite are recorded (Q59). Whether tri
 
 The part of routing that decides which earlier work a message or fragment attaches to: its **referents**, and from them its reply targets, its place in the genealogy, and the results it waits for. It answers the decision gate's questions about target sections and dependencies ([Pipeline](#pipeline)).
 
-This section was settled after Q98, by the user's instructions of 2026-11-11 and 2026-11-12. They have no question numbers yet.
+This section was settled after Q98, by the user's instructions of 2026-11-11 and 2026-11-12. They are quoted in the build record: [context summaries](../build/context-summaries.md). They have no question numbers yet.
 
 **Scope.** The architecture is part of the first version: the interfaces, the settings, the guard, and what is recorded. Optimizing it is not. [Scope in the first version](#scope-in-the-first-version) says which is which.
 

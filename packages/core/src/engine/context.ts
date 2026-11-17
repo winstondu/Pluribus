@@ -11,6 +11,7 @@ import type {
   RequirementId,
   UnfinishedOutcome,
 } from '@pluribus/protocol'
+import type { ContextChain } from '../ports'
 import { currentResult, nodeParents, unfinishedOutcome } from './queries'
 import type { ConversationState, Correction, DirectiveRow } from './state'
 
@@ -171,8 +172,24 @@ export function assembleContext(
   nodeId: NodeId,
   parents: readonly NodeId[],
 ): AssembledContext {
+  return assemble(state, directiveId, nodeId, parents)
+}
+
+/**
+ * The context chain of a node: what a run that continues from it reads
+ * before its own request. The same assembly as a run's (steps 1 to 3), for
+ * a run that does not exist yet, so the two cannot drift apart. Read by the
+ * context summary provider and the summariser (ports/context-summary.ts);
+ * never recorded and never a run's input.
+ */
+export function contextChainOf(state: ConversationState, nodeId: NodeId): ContextChain {
+  const assembled = assemble(state, null, null, [nodeId])
+  return { nodeId, messages: assembled.messages, nodeIds: assembled.nodeIds }
+}
+
+function assemble(state: ConversationState, directiveId: DirectiveId | null, nodeId: NodeId | null, parents: readonly NodeId[]): AssembledContext {
   const b = new Builder()
-  const self = state.directives[directiveId]
+  const self = directiveId === null ? undefined : state.directives[directiveId]
 
   // 1. The preamble.
   b.messages.push({ role: 'system', content: PREAMBLE, origin: { kind: 'preamble' } })
@@ -306,7 +323,7 @@ function readExchange(state: ConversationState, b: Builder, d: DirectiveRow, nod
  * exchange of every late retry that had completed, in the order requested
  * (Q49, Q92). A member's marker stays in the record after a late retry.
  */
-function readJoinBack(state: ConversationState, b: Builder, joinNodeId: NodeId, runNodeId: NodeId): void {
+function readJoinBack(state: ConversationState, b: Builder, joinNodeId: NodeId, runNodeId: NodeId | null): void {
   const node = state.nodes[joinNodeId]
   const group = node?.joinGroupId ? state.groups[node.joinGroupId] : undefined
   if (!node || !group) return

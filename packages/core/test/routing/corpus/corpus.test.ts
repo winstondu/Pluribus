@@ -22,7 +22,8 @@ describe('routing corpus', () => {
   })
 
   describe.each(REFERENT_STRATEGY_NAMES)('referents by %s', (referentStrategy) => {
-    const settings = { ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, referentStrategy } }
+    // Strategy selection is off here: each strategy is tested as configured.
+    const settings = { ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, referentStrategy, strategySelection: 'off' as const } }
     test.each(ROUTING_CORPUS.map((e) => [e.id, e] as const))('corpus · with decisions as labelled, the pipeline routes %s as labelled', async (_id, example) => {
       const input = corpusInput(example, settings)
       const router = createRouter({ decisionProvider: oracleDecisionProvider(example, input), decomposer: referenceDecomposer(example) })
@@ -37,7 +38,7 @@ describe('routing corpus', () => {
 
   // What the tree walk does not reach with decisions strictly as labelled, it reaches in two ways.
   describe('referents by tree-walk, a referent below work the message does not refer to', () => {
-    const settings = { ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, referentStrategy: 'tree-walk' as const } }
+    const settings = { ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, referentStrategy: 'tree-walk' as const, strategySelection: 'off' as const } }
     const below = ROUTING_CORPUS.filter((e) => e.below)
     test('corpus · three examples have such a referent', () => expect(below.map((e) => e.id)).toEqual(['live-referent-beyond-window', 'deep-run-middle-section', 'deep-run-other-branch']))
 
@@ -51,7 +52,7 @@ describe('routing corpus', () => {
 
   // Start at the trunk base: with decisions as labelled every example is still routed as labelled.
   describe('referents by tree-walk, start at the trunk base', () => {
-    const settings = { ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, startAtTrunkBase: true } } }
+    const settings = { ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, strategySelection: 'off' as const, treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, startAtTrunkBase: true } } }
     test.each(ROUTING_CORPUS.map((e) => [e.id, e] as const))('corpus · with decisions as labelled, the pipeline routes %s as labelled', async (_id, example) => {
       const input = corpusInput(example, settings)
       const router = createRouter({ decisionProvider: oracleDecisionProvider(example, input), decomposer: referenceDecomposer(example) })
@@ -67,7 +68,7 @@ describe('routing corpus', () => {
   const MOVED = { 'long-chain-old-section': 'E198', 'deep-run-middle-section': 'D5', 'deep-run-other-branch': 'H4' } as const
   const hopSettings = (switches: { readonly startAtTrunkBase?: boolean }) => ({
     ...DEFAULT_SETTINGS,
-    routing: { ...DEFAULT_SETTINGS.routing, treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, ...switches, hopBetweenBranchPoints: true } },
+    routing: { ...DEFAULT_SETTINGS.routing, strategySelection: 'off' as const, treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, ...switches, hopBetweenBranchPoints: true } },
   })
   const routedTo = (outcome: Awaited<ReturnType<ReturnType<typeof createRouter>['route']>>) => (outcome.kind === 'plan' ? outcome.plan.units.map((unit) => [unit.targets, unit.placement]) : outcome.kind)
   const placedOn = (end: string) => [[[sceneIds.section(end)], { kind: 'continue', buildsOn: { kind: 'node', nodeId: sceneIds.node(end) } }]]
@@ -103,7 +104,8 @@ describe('routing corpus', () => {
 
   test('corpus · the evaluator scores a routing by the tree walk with the hop on against the hop-on expectations, and every other one against the default', async () => {
     const example = ROUTING_CORPUS.find((e) => e.id === 'long-chain-old-section')
-    if (!example) throw new Error('missing example')
+    const deep = ROUTING_CORPUS.find((e) => e.id === 'deep-run-middle-section')
+    if (!example || !deep) throw new Error('missing example')
     const run = async (e: CorpusExample, settings: NonNullable<Parameters<typeof corpusInput>[1]>) => {
       const report = await evaluateCorpus({ decisionProvider: oracleDecisionProvider(e, corpusInput(e, settings)), settings, examples: [e] })
       return { result: report.results[0], report }
@@ -112,9 +114,33 @@ describe('routing corpus', () => {
     expect(on.result).toMatchObject({ passed: true, expectations: 'hop' })
     expect(on.report.expectations).toEqual({ default: 0, hop: 1, hopDiffering: 1 })
     expect(formatCorpusReport(on.report)).toContain('against the hop-on expectations')
-    const off = await run(example, { ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, referentStrategy: 'tree-walk' } })
+    const off = await run(example, { ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, strategySelection: 'off', referentStrategy: 'tree-walk' } })
     expect(off.result).toMatchObject({ passed: true, expectations: 'default' })
     expect(formatCorpusReport(off.report)).toContain('against the default expectations')
+    // The hop is on but the rules choose one pass for this short conversation: the tree walk did not run, so the default holds.
+    const selected = await run(deep, { ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, strategySelection: 'rules', treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, hopBetweenBranchPoints: true } } })
+    expect(selected.result).toMatchObject({ passed: true, expectations: 'default' })
+    // With the rules choosing the tree walk (a conversation longer than the window), the hop-on expectations.
+    const chosen = await run(example, { ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, strategySelection: 'rules', treeWalk: { ...DEFAULT_SETTINGS.routing.treeWalk, hopBetweenBranchPoints: true } } })
+    expect(chosen.result).toMatchObject({ passed: true, expectations: 'hop' })
+  })
+
+  // A strategy selector in front, by the rules, which is the default: every example is routed as labelled, the ones beyond the window included,
+  // because the rules choose the tree walk exactly there. The one exception is the referent that is both beyond the window and below work
+  // the message does not refer to: the walk does not reach it. The record names the choice.
+  describe('referents by the strategy the rules select (the default)', () => {
+    test('corpus · the default settings select by rules', () => expect(DEFAULT_SETTINGS.routing.strategySelection).toBe('rules'))
+    const settings = { ...DEFAULT_SETTINGS, routing: { ...DEFAULT_SETTINGS.routing, referentStrategy: 'one-pass' as const, strategySelection: 'rules' as const } }
+    test.each(ROUTING_CORPUS.map((e) => [e.id, e] as const))('corpus · with decisions as labelled, the pipeline routes %s as labelled', async (_id, example) => {
+      const input = corpusInput(example, settings)
+      const router = createRouter({ decisionProvider: oracleDecisionProvider(example, input), decomposer: referenceDecomposer(example) })
+      const outcome = await router.route(input, NEVER_CANCELLED)
+      if (example.below && example.beyondWindow) expect(compare(example, outcome)).not.toEqual([])
+      else expect(compare(example, outcome)).toEqual([])
+      if (outcome.kind !== 'plan' || (example.replyTo ?? []).length > 0 || example.scene.candidates.sections.every((s) => s.asksElicitationId !== null)) return
+      // No explicit target and answers to refer to: a selection was made and recorded.
+      if (outcome.plan.answersElicitationId === null) expect(outcome.plan.decision.strategySelection?.choice.strategy).toBe(example.scene.candidates.sections.filter((s) => !s.asksElicitationId).length > 24 ? 'tree-walk' : 'one-pass')
+    })
   })
 
   test('corpus · the evaluator reports per topic, and a provider that always says no fails the labels it should', async () => {

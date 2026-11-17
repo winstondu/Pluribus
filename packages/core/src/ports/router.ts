@@ -20,11 +20,13 @@ import type {
   SectionState,
   Settings,
   SiblingGroupId,
+  StrategySelectionRecord,
   TargetRedirect,
   TextSpan,
   WholeRequestBarrier,
 } from '@pluribus/protocol'
 import type { CancelSignal } from './cancel'
+import type { DecisionContext } from './context-summary'
 
 /**
  * The seam between the engine and the routing pipeline (11 · "Routing").
@@ -80,7 +82,32 @@ export interface RoutingInput {
   readonly candidates: RoutingCandidates
   /** Requirements already session-wide in this conversation (Q17). */
   readonly sessionRequirements: readonly Requirement[]
+  /**
+   * The size of the conversation's log in tokens, which a relative decision
+   * token budget is a share of (`settings.routing.tokenBudget`): the text of
+   * every user message as typed and of every attempt, whatever became of it
+   * (superseded, failed, stopped and interrupted attempts are in the log and
+   * count, with the partial text they recorded), at one token per four
+   * characters. Routing records, events' own fields and context sent again
+   * to a run are not counted.
+   */
+  readonly sessionLogTokens: number
   readonly settings: Pick<Settings, 'models' | 'thresholds' | 'routing'>
+  /**
+   * What the decision model may be shown for a node in place of its usual
+   * line (docs/build/context-summaries.md). Present while
+   * `settings.routing.useSummaryIfAvailable` is on; the backend answers it
+   * from the context summary provider and its own context assembly.
+   */
+  readonly decisionContext?: (nodeId: NodeId) => DecisionContext | null
+  /**
+   * The most recent strategy selection recorded in the conversation's
+   * routing decisions, or null. A selector whose choice depends on the
+   * genealogy's shape alone is not asked again while the shape's signature
+   * is the one recorded: the choice is reused from the log, so nothing is
+   * cached outside state.
+   */
+  readonly strategySelectionOnRecord?: StrategySelectionRecord | null
   /** Mints the IDs the plan needs: directives, fragments, requirements. */
   readonly ids: IdFactory
 }
@@ -109,6 +136,8 @@ export interface CandidateSection {
   readonly request: string
   /** Opening of the answer text so far; empty while pending. */
   readonly excerpt: string
+  /** Characters of the whole answer text so far: what the decision cost guard reads an answer's size from. */
+  readonly answerLength: number
   readonly state: SectionState
   readonly chainId: ChainId
   readonly nodeId: NodeId
