@@ -1,0 +1,447 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/newsreader";
+@source "../node_modules/streamdown/dist";
+
+/*
+ * Pluribus design system.
+ *
+ * Every color, radius, type size, easing and duration used by the app is a
+ * token here. Components never contain a hex value. The system is quiet and
+ * typographic: warm paper neutrals, one deep green for the few things that
+ * are primary, and eight chain colors that carry meaning and are used for
+ * nothing else.
+ *
+ * Sections: 1 theme mapping · 2 light · 3 dark · 4 base · 5 utilities · 6 motion
+ */
+
+@custom-variant dark (&:is(.dark *));
+
+/* ───────────────────────── 1 · theme mapping ───────────────────────── */
+
+@theme inline {
+  /* Type. Sans for the interface, serif for display and the brand. */
+  --font-sans: 'Geist Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-serif: 'Newsreader Variable', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  --font-heading: var(--font-sans);
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace;
+
+  /*
+   * Type scale. Tailwind's xs–2xl stay as they are (shadcn uses them); these
+   * add the two ends the app needs.
+   *   text-2xs    11px  eyebrows, counts, timestamps
+   *   text-prose  15px  transcript text (messages and answers)
+   *   text-display      serif display, key prompt and empty states
+   */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+  --text-prose: 0.9375rem;
+  --text-prose--line-height: 1.6;
+  --text-display: 1.75rem;
+  --text-display--line-height: 1.15;
+  --text-display--letter-spacing: -0.02em;
+
+  /* Surfaces and ink. */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-faint-foreground: var(--faint-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* States. Each has a foreground (text, icons) and a tint (quiet background). */
+  --color-destructive: var(--destructive);
+  --color-destructive-tint: var(--destructive-tint);
+  --color-success: var(--success);
+  --color-success-tint: var(--success-tint);
+  --color-warning: var(--warning);
+  --color-warning-tint: var(--warning-tint);
+
+  /* Chains. `bg-chain-3`, `text-chain-3`, `border-chain-3`; or chainColor() from @/design/chains. */
+  --color-chain-0: var(--chain-0);
+  --color-chain-1: var(--chain-1);
+  --color-chain-2: var(--chain-2);
+  --color-chain-3: var(--chain-3);
+  --color-chain-4: var(--chain-4);
+  --color-chain-5: var(--chain-5);
+  --color-chain-6: var(--chain-6);
+  --color-chain-7: var(--chain-7);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-chart-1: var(--chain-0);
+  --color-chart-2: var(--chain-1);
+  --color-chart-3: var(--chain-2);
+  --color-chart-4: var(--chain-3);
+  --color-chart-5: var(--chain-4);
+
+  /* Radii, from one base. */
+  --radius-sm: calc(var(--radius) * 0.5);
+  --radius-md: calc(var(--radius) * 0.75);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* Elevation: two steps, both soft. */
+  --shadow-raised: var(--shadow-raised-value);
+  --shadow-overlay: var(--shadow-overlay-value);
+
+  /*
+   * Motion. Strong custom curves; the built-in ones are too weak.
+   *   ease-out     entering and exiting
+   *   ease-in-out  moving on screen
+   *   ease-drawer  sheets and drawers
+   * Durations: press 140 · fast 160 · base 200 · slow 260. Nothing in the
+   * interface runs longer than 300 ms.
+   */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --default-transition-timing-function: cubic-bezier(0.23, 1, 0.32, 1);
+  --default-transition-duration: 160ms;
+
+  /* Layout. */
+  --spacing-sidebar: 16.5rem;
+  --spacing-transcript: 47.5rem;
+  --spacing-rail: 3px;
+  --breakpoint-shell: 56.25rem;
+}
+
+/* ───────────────────────── 2 · light ───────────────────────── */
+
+:root {
+  color-scheme: light;
+  --radius: 0.625rem;
+
+  --duration-press: 140ms;
+  --duration-fast: 160ms;
+  --duration-base: 200ms;
+  --duration-slow: 260ms;
+
+  /* Paper and ink. A little warmth in the neutrals, a little green in the ink. */
+  --background: oklch(0.982 0.004 95);
+  --surface: oklch(0.998 0.002 95);
+  --surface-raised: oklch(1 0 0);
+  --foreground: oklch(0.255 0.012 175);
+  --muted: oklch(0.955 0.005 95);
+  --muted-foreground: oklch(0.49 0.012 155);
+  --faint-foreground: oklch(0.54 0.01 155); /* 4.5:1 on the page: it is used for small type */
+  --border: oklch(0.905 0.006 100);
+  --border-strong: oklch(0.84 0.008 100);
+  --input: oklch(0.885 0.006 100);
+
+  --card: var(--surface);
+  --card-foreground: var(--foreground);
+  --popover: var(--surface-raised);
+  --popover-foreground: var(--foreground);
+
+  /* The one accent: a deep green, close enough to ink to stay quiet. */
+  --primary: oklch(0.42 0.072 165);
+  --primary-foreground: oklch(0.985 0.006 120);
+  --secondary: oklch(0.945 0.006 95);
+  --secondary-foreground: oklch(0.3 0.015 170);
+  --accent: oklch(0.945 0.008 120);
+  --accent-foreground: oklch(0.28 0.02 170);
+  --ring: oklch(0.42 0.072 165 / 55%);
+
+  --destructive: oklch(0.52 0.19 27);
+  --destructive-tint: oklch(0.52 0.19 27 / 9%);
+  --success: oklch(0.47 0.1 160);
+  --success-tint: oklch(0.47 0.1 160 / 10%);
+  --warning: oklch(0.52 0.11 70);
+  --warning-tint: oklch(0.6 0.12 75 / 13%);
+
+  /*
+   * Chain colors. One stable color per chain, assigned by the backend as
+   * `colorIndex`. Every one is at least 3:1 against --background. The first
+   * four are the prototype's hues; the others stay clear of them and of
+   * --destructive. Tints are for backgrounds behind chain-colored content.
+   */
+  --chain-variant-l: -0.13; /* a chain past the eighth: darker here, lighter in the dark theme (chainColor) */
+  --chain-0: oklch(0.52 0.14 258); /* blue */
+  --chain-1: oklch(0.55 0.115 50); /* clay */
+  --chain-2: oklch(0.52 0.14 305); /* violet */
+  --chain-3: oklch(0.55 0.09 190); /* teal */
+  --chain-4: oklch(0.55 0.15 352); /* rose */
+  --chain-5: oklch(0.58 0.11 88); /* ochre */
+  --chain-6: oklch(0.54 0.12 145); /* green */
+  --chain-7: oklch(0.62 0.1 228); /* sky */
+  --chain-0-tint: oklch(0.52 0.14 258 / 9%);
+  --chain-1-tint: oklch(0.55 0.115 50 / 10%);
+  --chain-2-tint: oklch(0.52 0.14 305 / 9%);
+  --chain-3-tint: oklch(0.55 0.09 190 / 10%);
+  --chain-4-tint: oklch(0.55 0.15 352 / 9%);
+  --chain-5-tint: oklch(0.58 0.11 88 / 12%);
+  --chain-6-tint: oklch(0.54 0.12 145 / 10%);
+  --chain-7-tint: oklch(0.62 0.1 228 / 11%);
+
+  --sidebar: oklch(0.966 0.005 95);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: oklch(0.93 0.007 100);
+  --sidebar-accent-foreground: var(--foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+
+  --shadow-raised-value: 0 1px 2px oklch(0.25 0.02 170 / 5%), 0 2px 8px -2px oklch(0.25 0.02 170 / 7%);
+  --shadow-overlay-value: 0 2px 4px oklch(0.25 0.02 170 / 5%), 0 16px 40px -12px oklch(0.25 0.02 170 / 20%);
+}
+
+/* ───────────────────────── 3 · dark ───────────────────────── */
+
+.dark {
+  color-scheme: dark;
+
+  --background: oklch(0.19 0.008 160);
+  --surface: oklch(0.225 0.009 160);
+  --surface-raised: oklch(0.255 0.01 160);
+  --foreground: oklch(0.935 0.008 120);
+  --muted: oklch(0.265 0.01 160);
+  --muted-foreground: oklch(0.73 0.014 150);
+  --faint-foreground: oklch(0.6 0.012 150);
+  --border: oklch(0.94 0.02 140 / 11%);
+  --border-strong: oklch(0.94 0.02 140 / 20%);
+  --input: oklch(0.94 0.02 140 / 16%);
+
+  --primary: oklch(0.84 0.085 160);
+  --primary-foreground: oklch(0.2 0.02 165);
+  --secondary: oklch(0.28 0.011 160);
+  --secondary-foreground: oklch(0.935 0.008 120);
+  --accent: oklch(0.29 0.014 160);
+  --accent-foreground: oklch(0.95 0.01 130);
+  --ring: oklch(0.84 0.085 160 / 55%);
+
+  --destructive: oklch(0.74 0.15 25);
+  --destructive-tint: oklch(0.74 0.15 25 / 13%);
+  --success: oklch(0.82 0.1 158);
+  --success-tint: oklch(0.82 0.1 158 / 12%);
+  --warning: oklch(0.84 0.11 85);
+  --warning-tint: oklch(0.84 0.11 85 / 12%);
+
+  --chain-variant-l: 0.09;
+  --chain-0: oklch(0.78 0.11 258);
+  --chain-1: oklch(0.8 0.09 55);
+  --chain-2: oklch(0.79 0.11 305);
+  --chain-3: oklch(0.76 0.09 200); /* kept clear of --primary and --success */
+  --chain-4: oklch(0.78 0.12 352);
+  --chain-5: oklch(0.78 0.09 112); /* kept clear of --warning */
+  --chain-6: oklch(0.75 0.13 138); /* kept clear of --success */
+  --chain-7: oklch(0.84 0.07 225);
+  --chain-0-tint: oklch(0.78 0.11 258 / 13%);
+  --chain-1-tint: oklch(0.8 0.09 55 / 13%);
+  --chain-2-tint: oklch(0.79 0.11 305 / 13%);
+  --chain-3-tint: oklch(0.76 0.09 200 / 13%);
+  --chain-4-tint: oklch(0.78 0.12 352 / 13%);
+  --chain-5-tint: oklch(0.78 0.09 112 / 13%);
+  --chain-6-tint: oklch(0.75 0.13 138 / 13%);
+  --chain-7-tint: oklch(0.84 0.07 225 / 12%);
+
+  --sidebar: oklch(0.172 0.008 160);
+  --sidebar-accent: oklch(0.25 0.011 160);
+
+  --shadow-raised-value: 0 1px 2px oklch(0 0 0 / 30%), 0 2px 8px -2px oklch(0 0 0 / 35%);
+  --shadow-overlay-value: 0 2px 4px oklch(0 0 0 / 30%), 0 18px 44px -12px oklch(0 0 0 / 60%);
+}
+
+/* ───────────────────────── 4 · base ───────────────────────── */
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html {
+    @apply font-sans;
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    min-width: 320px;
+    font-feature-settings: 'ss01', 'cv11';
+  }
+
+  /* One focus treatment everywhere: visible for the keyboard, absent for the pointer. */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: oklch(from var(--primary) l c h / 22%);
+  }
+
+  button,
+  [role='button'] {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  [aria-disabled='true'] {
+    cursor: default;
+  }
+}
+
+/* ───────────────────────── 5 · utilities ───────────────────────── */
+
+/* Small-caps label above a group: sidebar headings, settings groups, gallery. */
+@utility eyebrow {
+  font-size: var(--text-2xs);
+  line-height: 1rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint-foreground);
+}
+
+/* Serif display line. */
+@utility display {
+  font-family: var(--font-serif);
+  font-size: var(--text-display);
+  line-height: var(--text-display--line-height);
+  letter-spacing: var(--text-display--letter-spacing);
+  font-weight: 450;
+  font-optical-sizing: auto;
+}
+
+/* Numbers that change in place (countdowns, counts, credit) must not shift. */
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Press feedback for anything pressable that is not a shadcn Button (which
+ * has it built in): the interface confirms it heard.
+ */
+@utility pressable {
+  transition-property: transform, color, background-color, border-color, box-shadow, opacity;
+  transition-duration: var(--duration-press);
+  transition-timing-function: var(--ease-out);
+  &:active {
+    transform: scale(0.97);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    &:active {
+      transform: none;
+    }
+  }
+}
+
+/*
+ * A margin rail: the vertical mark of a chain at the left edge of a
+ * transcript item. Set `background` with chainColor() or chainSegments()
+ * from @/design/chains. Several chains are hard segments, never a blend.
+ */
+@utility chain-rail {
+  width: var(--spacing-rail);
+  border-radius: 999px;
+  flex: none;
+  align-self: stretch;
+}
+
+/*
+ * Touch: the small text controls of the transcript (Stop, Retry, Reply to
+ * this, a reply-target link) are 16 to 24 px tall to sit quietly in the
+ * text. On a coarse pointer each gets a 40 px tall hit area around it, as
+ * the rails have, without changing the layout.
+ */
+@media (pointer: coarse) {
+  :where([data-slot='section-controls'], [data-slot='request-controls'], [data-slot='decomposition-control'], [data-slot='replying-to'], [data-slot='split-link'])
+    :where(button) {
+    position: relative;
+  }
+  :where([data-slot='section-controls'], [data-slot='request-controls'], [data-slot='decomposition-control'], [data-slot='replying-to'], [data-slot='split-link'])
+    :where(button)::after {
+    content: '';
+    position: absolute;
+    inset-inline: 0;
+    top: 50%;
+    height: 2.5rem;
+    translate: 0 -50%;
+  }
+}
+
+/* Thin, quiet scrollbars inside panels. */
+@utility scroll-quiet {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+/* ───────────────────────── 6 · motion ───────────────────────── */
+
+/* The pending pulse of a responding bubble's status dot. Opacity only. */
+@keyframes pluribus-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@utility animate-pending {
+  animation: pluribus-pulse 1.4s ease-in-out infinite;
+}
+
+/* A spinner turns at constant speed, and fast: it reads as a faster load. */
+@utility animate-spin-fast {
+  animation: spin 0.6s linear infinite;
+}
+
+/*
+ * Reduced motion: keep fades and color changes, drop movement. Components
+ * built with Motion read useReducedMotion(); this covers the CSS side,
+ * including the shadcn enter and exit animations.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+  }
+
+  [data-slot][data-state] {
+    --tw-enter-scale: 1 !important;
+    --tw-exit-scale: 1 !important;
+    --tw-enter-translate-x: 0 !important;
+    --tw-enter-translate-y: 0 !important;
+    --tw-exit-translate-x: 0 !important;
+    --tw-exit-translate-y: 0 !important;
+  }
+
+  .animate-pending {
+    animation: none;
+    opacity: 0.7;
+  }
+}
