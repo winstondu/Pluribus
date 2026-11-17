@@ -535,7 +535,7 @@ export interface DecisionQuestionRecord {
 
 /**
  * How much of a section's answer the decision model was shown in a question
- * about it.
+ * about it (docs/build/dependency-decisioning.md · "What a Point shows").
  * - `full`: the whole answer so far.
  * - `passages`: its opening and the passages that best match the message's words; the whole did not fit the budget.
  * - `opening`: its first 280 characters, as every section listed in a request is shown.

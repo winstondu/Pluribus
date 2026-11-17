@@ -5,7 +5,8 @@ import { answer, fail, say } from '../../../testing'
 import { routingScenario } from '../../../testing/acceptance/routing'
 
 /**
- * The decision token budget on a real backend: what a
+ * The decision token budget on a real backend
+ * (docs/build/dependency-decisioning.md · "The token budget"): what a
  * relative budget is a share of, and that routing receives it.
  */
 

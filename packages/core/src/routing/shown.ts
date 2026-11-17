@@ -4,7 +4,8 @@ import { lexicalTerms } from './candidates/lexical'
 import { STATE_TOKENS_PER_CHARACTER } from './referents/ask'
 
 /**
- * What a decision request shows of an answer section.
+ * What a decision request shows of an answer section
+ * (docs/build/dependency-decisioning.md · "What a Point shows").
  *
  * Every listed section is shown by its line: title, request, and the
  * opening of its answer (`CandidateSection.excerpt`, 280 characters). A

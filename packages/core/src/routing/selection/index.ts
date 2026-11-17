@@ -6,7 +6,7 @@ import { rulesSelector } from './rules'
 import { describeShape, genealogyShape, shapeSignature } from './shape'
 
 /**
- * Strategy selection (working name
+ * Strategy selection (docs/build/dependency-decisioning.md · "Strategy selection"; working name
  * "decision-inception"): the optional layer that chooses a routing's
  * referent strategy and tree-walk settings from the shape of the
  * genealogy. With no selector, the settings are used as they are. Hop

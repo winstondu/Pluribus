@@ -141,7 +141,7 @@ export const JOIN_CHOICE_OFF = 1
 
 /**
  * How routing decides which earlier work a message refers to and depends on
- * The strategies sit behind one
+ * (docs/build/dependency-decisioning.md). The strategies sit behind one
  * interface in core (`ReferentStrategy`); the rest of the pipeline does not
  * know which is in use.
  * - `one-pass`: the questions ride in the routing request the pipeline sends
@@ -179,7 +179,7 @@ export type DecisionCaps = Pick<DecisionBudget, 'requests' | 'questions'>
 /**
  * The decision input tokens one routing may use, in every decision request
  * it makes: the pipeline's own, the strategy selector's and the referent
- * strategy's.
+ * strategy's (docs/build/dependency-decisioning.md · "The token budget").
  *
  * - `absolute`: a fixed number of tokens.
  * - `relative`: `fraction` of the tokens recorded in the conversation's log
@@ -222,7 +222,7 @@ export function resolveTokenBudget(budget: DecisionTokenBudget, sessionLogTokens
 /**
  * How the tree walk treats an unbranched run: the answers of one line of
  * work between two places where it splits. Read by the `tree-walk`
- * strategy only.
+ * strategy only (docs/build/dependency-decisioning.md · "The search").
  */
 export interface TreeWalkSettings {
   /**
@@ -268,7 +268,7 @@ export interface TreeWalkSettings {
  * answers to fit, and what is left is what a referent strategy may add,
  * within `referentBudget`. Prices are US dollars per million tokens and
  * default to the cheapest answer model offered, so the bound holds on any
- * dearer one.
+ * dearer one (docs/build/dependency-decisioning.md · "The guard").
  */
 export interface DecisionCostGuard {
   /** Decision cost of one routing ÷ cost of the answer it routes, at most. 0 turns the price guard off. */
@@ -287,7 +287,7 @@ export interface DecisionCostGuard {
 /**
  * Whether a strategy selector chooses the referent strategy, and the tree
  * walk's switches, for each routing from the shape of the conversation's
- * genealogy.
+ * genealogy (docs/build/dependency-decisioning.md · "Strategy selection").
  * - `off`: the strategy and switches set here are used as they are.
  * - `rules` (the default): deterministic rules over the shape. No request.
  * - `decision-model`: one small decision request about the shape, reused
@@ -300,7 +300,7 @@ export const STRATEGY_SELECTION_MODES: readonly StrategySelectionMode[] = ['off'
 
 /**
  * Where a tree walk gets candidate sections from: places to start besides
- * the roots.
+ * the roots (docs/build/dependency-decisioning.md · "The candidate source").
  * A candidate is a seed hint for the search and never a referent: it is
  * asked about by itself like any other section.
  * - `none`: no source. The walk starts at the roots.
@@ -408,24 +408,24 @@ export const DEFAULT_SETTINGS: Settings = {
     joinChoice: 0.8,
   },
   routing: {
-    // Chosen on the routing corpus and on cost.
+    // Chosen on the routing corpus and on cost (docs/build/dependency-decisioning.md).
     referentStrategy: 'tree-walk',
     // Rules: on the corpus they match the configured tree walk's score at fewer requests, and the decision model does
-    // not beat them. `off` uses the strategy set above as it is.
+    // not beat them (docs/build/dependency-decisioning.md · "Strategy selection"). `off` uses the strategy set above as it is.
     strategySelection: 'rules',
     // Seed hints for the tree walk from a word index over the answer sections. Live on the corpus the configured tree
-    // walk routes two more examples with it and the default, by rules, the same number, for fewer decision tokens.
-    // `none` starts the walk at the roots alone.
+    // walk routes two more examples with it and the default, by rules, the same number, for fewer decision tokens
+    // (docs/build/dependency-decisioning.md · "The candidate source"). `none` starts the walk at the roots alone.
     candidateSource: 'lexical',
     // Today's behaviour: an ordered message is split, and the barrier keeps its outputs in the order asked for (D3).
     orderedMessages: 'decompose',
     referentBudget: { requests: 4, questions: 96 },
     // 3% of the conversation's log, at least what the pipeline's request and a search of a long run cost (16,000) and
     // at most what twice a 1,700-token answer on the cheapest answer model buys (40,000): the budget grows with what
-    // there is to search.
+    // there is to search. Evidence in docs/build/dependency-decisioning.md · "The token budget".
     tokenBudget: DEFAULT_RELATIVE_TOKEN_BUDGET,
     // Both switches cost a further request whenever a skipped answer is referred to and save little inside the
-    // pipeline's window; a long run is searched anyway.
+    // pipeline's window; a long run is searched anyway. Measured in docs/build/dependency-decisioning.md.
     treeWalk: { startAtTrunkBase: false, hopBetweenBranchPoints: false, searchRunsOverTokens: 1_500 },
     // Twice an answer priced on the cheapest answer model (0.10 in, 0.50 out per million); decisions cost 0.042 per
     // million input. 1,700 output tokens is the shortest of the answer runs measured live.

@@ -4,7 +4,7 @@ import { onePassStrategy } from './one-pass'
 import { treeWalkStrategy } from './tree-walk'
 
 /**
- * Referent strategies: how routing
+ * Referent strategies (docs/build/dependency-decisioning.md): how routing
  * decides which earlier work a message refers to and depends on. Both sit
  * behind `ReferentStrategy`; the pipeline takes the one settings name, or
  * the one injected as `CoreDependencies.referentStrategy`. Each is a policy

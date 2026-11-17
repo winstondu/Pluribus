@@ -7,7 +7,8 @@ import { MIN_SECTIONS, numberedAnswerSections, supply } from '../../../src/routi
 import { FIRST_PASS_SECTIONS, ancestorsOf, bestNodeFound, branchingDepth, buildTree, createDecisionOperations, probe, decisionAllowance, estimateDecisionTokens, estimateRequestTokens, firstPassSectionIds, routingTokenBudget, segmentFrom, type TreeNode } from '../../../src/routing/referents/index'
 
 /**
- * The two referent strategies over a scripted decision provider. Decisions are stated by section
+ * The two referent strategies over a scripted decision provider
+ * (docs/build/dependency-decisioning.md). Decisions are stated by section
  * handle: `own` is "does the message refer to this section" (Point),
  * `together` "does it build on this group as a whole" (Group); a Segment
  * scores the highest `own` of the sections it names. Anything not stated

@@ -3,7 +3,8 @@ import type { CandidateHit, CandidateQuery, CandidateSection, CandidateSource } 
 
 /**
  * The lexical candidate source: a word index over the conversation's answer
- * sections, ranked BM25-style against the text of a unit.
+ * sections, ranked BM25-style against the text of a unit
+ * (docs/build/dependency-decisioning.md · "The candidate source").
  *
  * What it returns are seed hints: places a tree walk starts at besides the
  * roots. It confirms nothing, scores nothing that routing reads, and is not
@@ -316,7 +317,8 @@ export const LEXICAL_SOURCE_NAME = 'lexical'
 
 /**
  * A section is a candidate when its share of the text's weight is at least
- * this. Chosen on the routing corpus: the section a message names clears it, a section
+ * this. Chosen on the routing corpus (docs/build/dependency-decisioning.md ·
+ * "The candidate source"): the section a message names clears it, a section
  * that shares one incidental word with an unrelated message does not.
  */
 export const LEXICAL_MIN_SHARE = 0.3

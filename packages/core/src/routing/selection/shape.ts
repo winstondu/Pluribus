@@ -5,7 +5,7 @@ import { FURTHER_REQUEST_ROOM } from './rules'
 
 /**
  * The shape of the genealogy a referent strategy would read, for a strategy
- * selector. It is read from the same
+ * selector (docs/build/dependency-decisioning.md · "Strategy selection"). It is read from the same
  * context tree the strategies build, so "trunk", "run" and "branch point"
  * mean here what they mean there. Counts only: nothing of what was asked or
  * answered leaves this function.

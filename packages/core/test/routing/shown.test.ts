@@ -12,7 +12,8 @@ import { estimateRequestTokens } from '../../src/routing/referents'
 import { chooseShown, createShowing, passagesOf, rankPassages, shownWords } from '../../src/routing/shown'
 
 /**
- * What a question about a section by itself shows of its answer: the whole
+ * What a question about a section by itself shows of its answer
+ * (docs/build/dependency-decisioning.md · "What a Point shows"): the whole
  * answer when the request fits, the opening and the passages that match the
  * message when it does not, the opening alone when nothing more fits, and a
  * stored summary in place of the answer where there is one. Recorded with

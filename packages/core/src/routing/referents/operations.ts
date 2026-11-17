@@ -7,7 +7,8 @@ import type { ReferentTree, SectionNode, TreeNode } from './tree'
 
 /**
  * The operations over the decision provider and the budget guard: the
- * default implementation of `ReferentOperations`.
+ * default implementation of `ReferentOperations`
+ * (docs/build/dependency-decisioning.md · "The model and the operations").
  *
  * - Point, Group, Segment and Several are yes/no questions; the probes of
  *   one round are one decision request, which goes through the guard

@@ -59,7 +59,8 @@ export function digest(node: SectionNode): string {
 /**
  * Segment: several sections of an unbranched run in one question, each
  * named by the request it answered. It says where to look next and makes
- * none of them a referent. Measured live: the request finds a single old section among 200; the
+ * none of them a referent. Measured live (docs/build/dependency-decisioning.md
+ * · "Long runs"): the request finds a single old section among 200; the
  * title alone does not always (0.31 for the itinerary, whose title is cut
  * before the word).
  */

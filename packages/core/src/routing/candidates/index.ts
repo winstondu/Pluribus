@@ -1,5 +1,6 @@
 /**
- * Candidate sources: where a tree walk gets places to start besides the roots. The
+ * Candidate sources (docs/build/dependency-decisioning.md · "The candidate
+ * source"): where a tree walk gets places to start besides the roots. The
  * pipeline takes the one `settings.routing.candidateSource` names, or the
  * one injected as `CoreDependencies.candidateSource`.
  */

@@ -5,7 +5,8 @@ import { answer } from '../../../testing'
 import { answerFrom, routingScenario, type RoutingScenario } from '../../../testing/acceptance/routing'
 
 /**
- * Strategy selection on a real backend: the J request lands on both siblings whoever
+ * Strategy selection on a real backend (docs/build/dependency-decisioning.md
+ * · "Strategy selection"): the J request lands on both siblings whoever
  * chooses the strategy (C9, C19), the choice is recorded with the routing
  * decision, and a choice made by the decision model is reused from the
  * event log while the conversation's shape is the same.

@@ -5,7 +5,8 @@ import { answer } from '../../../testing'
 import { routingScenario, type RoutingScenario } from '../../../testing/acceptance/routing'
 
 /**
- * The spec's J request end to end, with either referent strategy: the decision model is clear about
+ * The spec's J request end to end, with either referent strategy
+ * (docs/build/dependency-decisioning.md): the decision model is clear about
  * one sibling, weak about the other, and says the message builds on the
  * two together. J must be a child of both through their join-back: it
  * depends on the whole group and reads every member (01, 04 · "Join-back",

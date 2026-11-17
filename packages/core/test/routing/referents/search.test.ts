@@ -25,7 +25,8 @@ import type { SectionNode } from '../../../src/routing/referents/tree'
 
 /**
  * The search with no decision provider at all: the policies run over an
- * oracle that answers every probe from a labelled set of relevant nodes.
+ * oracle that answers every probe from a labelled set of relevant nodes
+ * (docs/build/dependency-decisioning.md · "The model and the operations").
  * Every probe costs one, so `searchRunsOverTokens` is a number of sections.
  */
 

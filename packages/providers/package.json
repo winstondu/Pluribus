@@ -15,5 +15,8 @@
     "@pluribus/protocol": "workspace:*",
     "eventsource-parser": "^4.1.3",
     "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "gpt-tokenizer": "4.1.0"
   }
 }
