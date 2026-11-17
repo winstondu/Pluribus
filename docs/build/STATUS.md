@@ -436,6 +436,22 @@ From an exported conversation (`cnv_01M78JH41T1Y9GQB9ZBBXNF43Q`): after separate
 
 The suite was run twice: 6 of 6 joins across both runs (the first run's scores were not captured). Every join passed all its checks. The margin over `joinChoice` (0.8) is 0.06 to 0.07. The follow-up plan, including the per-line questions that would widen this margin and the speculative fan-out of decision requests, is [join-and-speculation-plan.md](join-and-speculation-plan.md).
 
+### Each line of work names its sections and its latest one (2026-11-15)
+
+The routing state used to describe a line of work only by the label of its first answer, so the decision model had to guess what the line is about now. `describeState` (`core/src/routing/supply.ts`) now lists, for each line, the listed sections on it and the title of its latest answer section, for example `L2. "sky color question" (root): S2, S3; latest "ocean sky reflection"`. A line whose sections all fall outside the listed window shows the latest title alone. It adds a few tokens per line and no request. The section lines in `shown.ts` are unchanged: the line already names its sections, so tagging each section with its line again would repeat the same link. Unit test: `core/test/routing/supply.test.ts`.
+
+| Check | Before | After |
+|---|---|---|
+| Join smoke test, `m_lines` over 3 runs | 0.86, 0.87, 0.86 | 0.89, 0.89, 0.88 (3/3 joined, all checks) |
+| Control "Make that shorter", `m_lines` | 0.22, asked | 0.15, asked |
+| Live corpus, decision model alone | 64/65 | 64/65 (the miss is `split-correction-and-new-work`, as before) |
+| Live corpus, with the live decomposer | not recorded on 65 | 62/65 (`revision-session-requirement`, `split-output-order-barrier`, `split-correction-and-new-work`: plan and ambiguity misses, not lines of work) |
+| Live corpus decision calls (default) | — | 84 requests, 1,103 questions, 118,592 input tokens reported |
+| Corpus by tokenizer, default (`decision-tokens.test.ts`) | 337,954 characters, 78,924 tokens | 345,763 characters, 81,295 tokens (+2.3% characters, +3.0% tokens) |
+| Price guard, worst guarded cell | 1.997 by estimate, 1.817 by tokenizer | 1.995 by estimate, 1.851 by tokenizer: under 2× on every cell |
+
+The margin over `joinChoice` (0.8) widens from 0.06–0.07 to 0.08–0.09, and the control moves further from it. The recorded figures of `providers/test/decision-tokens.test.ts` are re-recorded, with the earlier ones in its comments; nothing was loosened.
+
 ## How to run
 
 ```sh

@@ -97,6 +97,7 @@ Each change also gets its deterministic twin in `packages/core/test/` with the s
 ## 5. Order
 
 1. S1 against the current code. This confirms the join works live today and records the `m_lines` margin. **Done 2026-11-15:** 6 of 6 joined; `m_lines` was 0.86 to 0.87, and "Make that shorter" scored 0.22 and was asked (STATUS.md · "The join through the whole backend, live").
+   **Then, 2026-11-15:** each line of work in the state text names its sections and its latest one; `m_lines` rose to 0.88–0.89 and the control fell to 0.15 (STATUS.md · "Each line of work names its sections"). J1's per-line questions can now judge a line by its latest answer.
 2. J1, then the corpus sweep for `lineNeed`.
 3. F1 and F3. They are low-risk and their savings are certain. Then S2.
 4. F2, behind its gate, kept only if S2 and the corpus show a net saving.
