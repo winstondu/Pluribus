@@ -21,6 +21,7 @@ import {
 import { formatRelativeTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { BrandMark, Wordmark } from './brand'
+import { BuildInfo } from './build-info'
 import { ThemeToggle } from './theme-toggle'
 import { useKeyProvision } from './environment'
 import { useUiState } from './ui-state'
@@ -67,6 +68,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       <div className="flex h-14 shrink-0 items-center gap-2.5 px-4">
         <BrandMark />
         <Wordmark />
+        <BuildInfo />
       </div>
 
       <div className="px-3 pb-3">

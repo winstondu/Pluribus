@@ -1,6 +1,8 @@
 /** OpenRouter key from the dev server's environment (`OPENROUTER_KEY`). Empty in production builds. */
 declare const __DEV_OPENROUTER_KEY__: string
 declare const __DEV_ANTHROPIC_KEY__: string
+/** The git commit and time this client was built from (`vite.config.ts`). */
+declare const __BUILD__: { commit: string; dirty: boolean; builtAt: string }
 
 interface ImportMetaEnv {
   /** `1` keeps `?fixture=<id>` and `?fixtures` available in a production build. */
