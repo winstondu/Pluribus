@@ -47,16 +47,16 @@
 </style>
 <div class="viz-dotted-background"><section class="stage rail focus" aria-label="Chain association debug view"></section></div>
 <template id="association-template">
-  <div class="top"><div><div class="title">Committee</div><div class="sub">Sections conversation</div></div><label class="toggle"><input class="debug-toggle" type="checkbox" checked> Debug</label></div>
+  <div class="top"><div><div class="title">Pluribus</div><div class="sub">Sections conversation</div></div><label class="toggle"><input class="debug-toggle" type="checkbox" checked> Debug</label></div>
   <div class="layout debug-on">
     <div class="chat">
       <div class="msg user" data-match="AB"><div class="who">You</div><button class="msg-button selectable" data-select="AB" data-tooltip="Message U1 · handled by chains A and B">Compare the tradeoffs of a local-first app and a hosted app.</button><div class="debug-tag"><span>Handled by A</span> <span>Handled by B</span> · U1</div></div>
-      <div class="answer"><div class="who">Committee</div>
+      <div class="answer"><div class="who">Pluribus</div>
         <div class="part" data-match="A"><button class="part-button selectable" data-select="A" data-tooltip="Fragment F-A · handled by chain A"><strong>Local-first</strong>Fast offline access and user control, with sync complexity.</button><div class="debug-tag"><span>Handled by A</span> · F-A</div></div>
         <div class="part" data-match="B"><button class="part-button selectable" data-select="B" data-tooltip="Fragment F-B · handled by chain B"><strong>Hosted</strong>Simple shared access and operations, with a network dependency.</button><div class="debug-tag"><span>Handled by B</span> · F-B</div></div>
       </div>
       <div class="msg user" data-match="J"><div class="who">You</div><button class="msg-button selectable" data-select="J" data-tooltip="Message U2 · handled by chain J">Bring those perspectives together.</button><div class="debug-tag"><span>Handled by J</span> · U2</div></div>
-      <div class="part" data-match="J"><div class="who">Committee</div><button class="part-button selectable" data-select="J" data-tooltip="Fragment F-J · handled by J; reads A and B"><strong>Synthesis</strong>A hybrid can keep core work local while using a service for sharing.</button><div class="debug-tag"><span>Handled by J</span> <span>Reads A + B</span> · F-J</div></div>
+      <div class="part" data-match="J"><div class="who">Pluribus</div><button class="part-button selectable" data-select="J" data-tooltip="Fragment F-J · handled by J; reads A and B"><strong>Synthesis</strong>A hybrid can keep core work local while using a service for sharing.</button><div class="debug-tag"><span>Handled by J</span> <span>Reads A + B</span> · F-J</div></div>
     </div>
     <aside class="aside"><div class="map-label">Genealogy</div><div class="roots"><button class="map-node selectable" data-chain="A" data-select="A" data-tooltip="Chain A · local-first response">A</button><button class="map-node selectable" data-chain="B" data-select="B" data-tooltip="Chain B · hosted response">B</button></div><div class="connect">↘ &nbsp;&nbsp;&nbsp; ↙</div><div class="join-node"><button class="map-node selectable" data-chain="J" data-select="J" data-tooltip="Chain J · reads A and B">J</button></div><div class="inspect" aria-live="polite"></div></aside>
   </div>

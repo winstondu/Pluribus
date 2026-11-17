@@ -1,6 +1,6 @@
 # 09 · Debug views
 
-The views that let a user (and a developer) see what Committee actually did: which chain handled each message, what each run read, how a composite message was split, and what work is waiting on what. Terms in bold are defined in the [glossary](glossary.md).
+The views that let a user (and a developer) see what Pluribus actually did: which chain handled each message, what each run read, how a composite message was split, and what work is waiting on what. Terms in bold are defined in the [glossary](glossary.md).
 
 Each view below says what it shows, what was selected, and which prototype in [`prototypes/ui/`](../../prototypes/ui/README.md) illustrates it. Every view separates **Decided** (the user chose it, or it follows from a cited answer) from **Prototype detail** (present in the sample but never chosen; the build may change it). The prototypes are style samples built before several behaviors changed; [Where the prototypes are out of date](#where-the-prototypes-are-out-of-date) lists every known difference. Where a prototype and this document disagree, this document is current.
 
@@ -82,7 +82,7 @@ Which chain handled each user message and each answer section, drawn as a colore
 
 ### What it shows
 
-How Committee split a composite message: the exact original text beside each **fragment**'s rewritten instruction, with the shared requirements each fragment inherited and where they came from. Its purpose is to let a lost constraint be traced to decomposition instead of being blamed on the answering model (original discussion, “Run inspector proposal”).
+How Pluribus split a composite message: the exact original text beside each **fragment**'s rewritten instruction, with the shared requirements each fragment inherited and where they came from. Its purpose is to let a lost constraint be traced to decomposition instead of being blamed on the answering model (original discussion, “Run inspector proposal”).
 
 ### Decided
 
@@ -91,6 +91,7 @@ How Committee split a composite message: the exact original text beside each **f
 - Fragments carry their applicable requirements with provenance; requirements are local unless the user explicitly made them session-wide (Q4, Q17).
 - Rewritten fragment text comes from generative decomposition, never from the decision model, which only selects among supplied candidates (invariant 9; Q59).
 - For a message split into separate user messages (sequential decomposition), the “split from one message” link between the bubbles opens Compare with the exact original text. The link is always available (Q53, Q87). Undo split is offered only until any split message shows answer text or receives a reply (Q85).
+- Compare is shown in the debug side panel by default. A user setting places it instead as a card on the message in the transcript, as in the prototype: the message marks the selected **fragment**'s source span and the inherited requirements, and the card shows the rest. Both placements show the same content ([user settings](10-front-end.md#user-settings)).
 
 ### Prototype detail
 
@@ -145,6 +146,7 @@ Selecting a run reveals seven things (Q87):
 
 - The seven items above (Q87). Item 6 uses the current attempt states; the original proposal's “cancelled” is replaced by stopped and interrupted (Q50, Q52).
 - Item 3 is the attempt's recorded input, never a recomputation: a replacement or retry shows rewound context without earlier partial text (Q38, Q47); a completed run that consumed a since-superseded result still shows the original (Q39); a superseded attempt is shown as existing and superseded (scenario 5).
+- Item 5 includes what [dependency attachment](11-architecture.md#what-is-recorded) recorded with the decision: a decision budget limit that was reached and the best node found so far where it was used in place of a question to the user, the last section of an unbranched run where hop between branch points placed the work on it without a search inside the run, a routing request that listed fewer sections, whether the decision model was shown context summaries, and how the referent strategy was chosen when strategy selection is on.
 - Behind a debug toggle (Q87).
 
 ### Prototype detail

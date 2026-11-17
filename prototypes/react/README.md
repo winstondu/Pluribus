@@ -1,4 +1,4 @@
-# Committee React prototypes
+# Pluribus React prototypes
 
 Five Terra-authored React + TypeScript component demos, with a Vite gallery. These run in a regular browser without the Codex visualization host. The original HTML explorations remain in [`../ui`](../ui/README.md).
 
@@ -36,7 +36,7 @@ All five are named exports from [`src/components/index.ts`](src/components/index
 
 ## Scope
 
-These are interactive UI fixtures, not the complete Committee application. There are no model calls, API keys, Jev routing, persistence, or production scheduler. Chat routing is deliberately simplified and labeled as demo behavior. Operation state changes are deterministic controls, not actual work. The graph grows by appending demo work but is not virtualized for an unbounded production dataset.
+These are interactive UI fixtures, not the complete Pluribus application. There are no model calls, API keys, Jev routing, persistence, or production scheduler. Chat routing is deliberately simplified and labeled as demo behavior. Operation state changes are deterministic controls, not actual work. The graph grows by appending demo work but is not virtualized for an unbounded production dataset.
 
 The selected visual directions are preserved, with corrections to stale HTML behaviors: section targets instead of whole-response targets, always-available rails, exact inherited context, first-output fixture placement, local failures, original-chain join-back color, and retained operation history. The current [specification](../../docs/spec/README.md) remains authoritative; this conversion is not a claim that every acceptance condition in that spec is implemented.
 
