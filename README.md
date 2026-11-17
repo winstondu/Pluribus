@@ -1,6 +1,14 @@
 # Pluribus
 
-One visible chat that runs many model calls at once. Several requests can be answered in parallel, follow-ups wait for the answers they need, corrections supersede what they correct, and every run reads exactly the context it is shown to read. The backend runs in the browser, in a Web Worker, and talks to OpenRouter directly.
+One visible chat that runs many model calls at once. Several unrelated requests can be answered in parallel, follow-ups wait for the answers they need, corrections supersede what they correct, and every run reads exactly the context it needs, rather than unrelated context.
+
+For the demo, the backend runs in the browser, in a Web Worker, and talks to OpenRouter directly.
+
+Built with vite and hosted on cloudflare worker (static asset).
+
+For more information, checkout the motivation and technical breakdown article at [my blog](https://winstondu.com/pluribus#/pluribus)
+
+# Structure
 
 The specification is in [`docs/spec/`](docs/spec/README.md). What was built, what passes and what is still open is in [`docs/build/STATUS.md`](docs/build/STATUS.md); the build decisions are in [`docs/build/PLAN.md`](docs/build/PLAN.md).
 
@@ -36,10 +44,10 @@ pnpm --filter @pluribus/web lint
 
 ## Layout
 
-| Package | Contents |
-|---|---|
-| `packages/protocol` | Command, event, projection, settings and ID types shared by client and backend |
-| `packages/core` | Event log, projections, coordinator, routing, recovery. Deterministic; all I/O injected |
-| `packages/storage` | IndexedDB and in-memory event store, projection cache, secrets store |
-| `packages/providers` | OpenRouter answers, Decisions and decomposition; scripted fakes for tests |
-| `packages/web` | Vite + React 19 + Tailwind v4 client; the backend runs in a Web Worker. See its [README](packages/web/README.md) |
+| Package              | Contents                                                                                                         |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `packages/protocol`  | Command, event, projection, settings and ID types shared by client and backend                                   |
+| `packages/core`      | Event log, projections, coordinator, routing, recovery. Deterministic; all I/O injected                          |
+| `packages/storage`   | IndexedDB and in-memory event store, projection cache, secrets store                                             |
+| `packages/providers` | OpenRouter answers, Decisions and decomposition; scripted fakes for tests                                        |
+| `packages/web`       | Vite + React 19 + Tailwind v4 client; the backend runs in a Web Worker. See its [README](packages/web/README.md) |
