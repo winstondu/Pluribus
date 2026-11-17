@@ -2,6 +2,7 @@ import type { KeyCheck, KeyProviderName } from '@pluribus/protocol'
 import {
   ArrowUpRightIcon,
   CheckIcon,
+  ChevronDownIcon,
   CircleAlertIcon,
   EyeIcon,
   EyeOffIcon,
@@ -24,12 +25,16 @@ import { useUiState } from './ui-state'
 
 /**
  * The key prompt: the first-run experience, and the way a key is added or
- * replaced later. It asks for the OpenRouter key, which Pluribus needs.
+ * replaced later. It asks for the OpenRouter key, which Pluribus needs,
+ * and offers the optional Anthropic key in a section that is closed until
+ * asked for. Opened for the Anthropic key alone (from the settings), it
+ * shows that field only.
  *
  * A key lives in this component's input state while it is typed and
  * checked, goes to the deployment's key provision once, and is then
  * dropped. It is never put in a store, `localStorage`, a URL or a backend
- * command, and this is the only file that reads `__DEV_OPENROUTER_KEY__`.
+ * command, and this is the only file that reads `__DEV_OPENROUTER_KEY__`
+ * and `__DEV_ANTHROPIC_KEY__`.
  *
  * In a deployment that does not take keys from the client
  * (`canProvideKeys` false) the prompt is never shown.
@@ -46,17 +51,19 @@ type Saving = 'no' | 'typed' | 'environment' | 'saved'
 const CHECK_DELAY_MS = 350
 
 /** The keys from the dev server's environment. Empty in production builds and in tests. */
-function environmentKey(): string {
+function environmentKey(provider: KeyProviderName): string {
+  if (provider === 'anthropic') return typeof __DEV_ANTHROPIC_KEY__ === 'string' ? __DEV_ANTHROPIC_KEY__ : ''
   return typeof __DEV_OPENROUTER_KEY__ === 'string' ? __DEV_OPENROUTER_KEY__ : ''
 }
 
-const ENVIRONMENT_VARIABLE: { readonly [P in KeyProviderName]: string } = { openrouter: 'OPENROUTER_KEY' }
+const ENVIRONMENT_VARIABLE: { readonly [P in KeyProviderName]: string } = { openrouter: 'OPENROUTER_KEY', anthropic: 'ANTHROPIC_API_KEY' }
 
 /** `keys` defaults to the app environment's key provision (the Worker's on the embedded backend, scripted with fixtures). */
 export function KeyPrompt(props: { keys?: KeyProvision }) {
   const provided = useKeyProvision()
   const keys = props.keys ?? provided
   const open = useUiState((state) => state.keyPromptOpen)
+  const subject = useUiState((state) => state.keyPromptSubject)
   const closeKeyPrompt = useUiState((state) => state.closeKeyPrompt)
   // Keys that are not this client's to provide are never asked for.
   if (!keys.canProvideKeys) return null
@@ -76,7 +83,7 @@ export function KeyPrompt(props: { keys?: KeyProvision }) {
           The body stays through the dialog's exit, so the exit has something to show. The dialog unmounts its
           content once closed, which is what forgets the typed value.
         */}
-        <KeyPromptBody keys={keys} onDone={closeKeyPrompt} />
+        <KeyPromptBody keys={keys} subject={subject} onDone={closeKeyPrompt} />
       </DialogContent>
     </Dialog>
   )
@@ -155,14 +162,19 @@ function useKeyDraft(provider: KeyProviderName, keys: KeyProvision): KeyDraft {
   }
 }
 
-function KeyPromptBody({ keys, onDone }: { keys: KeyProvision; onDone: () => void }) {
+function KeyPromptBody({ keys, subject, onDone }: { keys: KeyProvision; subject: KeyProviderName; onDone: () => void }) {
   const app = useApp()
   // Decided once per opening: saving the first key must not turn the prompt into "Replace your key" under the confirmation.
   const [replacing] = useState(() => app?.key.configured === true)
+  const [anthropicConfigured] = useState(() => app?.anthropicKey.configured === true)
+  const anthropicOnly = subject === 'anthropic'
   const openRouter = useKeyDraft('openrouter', keys)
+  const anthropic = useKeyDraft('anthropic', keys)
+  const [expanded, setExpanded] = useState(false)
   const [saving, setSaving] = useState<Saving>('no')
   const [error, setError] = useState<string | null>(null)
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const sectionId = useId()
 
   useEffect(
     () => () => {
@@ -171,9 +183,9 @@ function KeyPromptBody({ keys, onDone }: { keys: KeyProvision; onDone: () => voi
     [],
   )
 
-  const drafts = [openRouter]
+  const drafts = anthropicOnly ? [anthropic] : [openRouter, anthropic]
   const typed = drafts.filter((draft) => draft.value.trim() !== '')
-  // Something to save, and nothing typed that may not be saved.
+  // Something to save, and nothing typed that may not be saved. The OpenRouter key alone is enough.
   const canSave = saving === 'no' && typed.length > 0 && typed.every((draft) => draft.savable)
   const busy = saving !== 'no'
 
@@ -190,6 +202,7 @@ function KeyPromptBody({ keys, onDone }: { keys: KeyProvision; onDone: () => voi
     }
     // The values are dropped whatever the outcome; a failed save is typed again.
     openRouter.clear()
+    anthropic.clear()
     if (failure !== null) {
       setSaving('no')
       setError(failure)
@@ -204,12 +217,18 @@ function KeyPromptBody({ keys, onDone }: { keys: KeyProvision; onDone: () => voi
     if (canSave) void save(typed.map((draft) => ({ provider: draft.provider, key: draft.value.trim() })), 'typed')
   }
 
-  const heading = replacing ? 'Replace your OpenRouter key' : 'Bring your own OpenRouter key'
-  const eyebrow = replacing ? 'OpenRouter key' : 'Before the first message'
-  const primary = openRouter
+  const heading = anthropicOnly
+    ? anthropicConfigured
+      ? 'Replace your Anthropic key'
+      : 'Add an Anthropic key'
+    : replacing
+      ? 'Replace your OpenRouter key'
+      : 'Bring your own OpenRouter key'
+  const eyebrow = anthropicOnly ? 'Anthropic key' : replacing ? 'OpenRouter key' : 'Before the first message'
+  const primary = anthropicOnly ? anthropic : openRouter
   const format = KEY_FORMATS[primary.provider]
   const devKeys = drafts.flatMap((draft) => {
-    const key = environmentKey()
+    const key = environmentKey(draft.provider)
     return key === '' ? [] : [{ provider: draft.provider, key }]
   })
 
@@ -225,10 +244,57 @@ function KeyPromptBody({ keys, onDone }: { keys: KeyProvision; onDone: () => voi
           {heading}
         </DialogTitle>
         <DialogDescription className="mt-2.5 text-sm leading-relaxed text-muted-foreground">
-          Pluribus runs every answer on models you reach through OpenRouter, billed to your account. The key is kept in this browser and sent only to OpenRouter.
+          {anthropicOnly
+            ? 'With an Anthropic key, answers, synthesis and decomposition can run on the Claude API, billed to your Anthropic account. The key is kept in this browser, used from this browser, and sent only to Anthropic.'
+            : 'Pluribus runs every answer on models you reach through OpenRouter, billed to your account. The key is kept in this browser and sent only to OpenRouter.'}
         </DialogDescription>
 
         <KeyField draft={primary} label="API key" disabled={busy} saving={saving} error={error} className="mt-5" />
+
+        {anthropicOnly ? null : (
+          <div className="mt-1 border-t border-border pt-3" data-slot="anthropic-section" data-state={expanded ? 'open' : 'closed'}>
+            <button
+              type="button"
+              aria-expanded={expanded}
+              aria-controls={sectionId}
+              onClick={() => setExpanded((open) => !open)}
+              className="group flex w-full items-center gap-2 rounded-md py-1 text-left text-[0.8125rem] font-medium text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
+            >
+              <ChevronDownIcon
+                aria-hidden
+                className={cn(
+                  'size-4 shrink-0 text-muted-foreground transition-transform duration-(--duration-fast) ease-(--ease-out) motion-reduce:transition-none',
+                  expanded ? 'rotate-0' : '-rotate-90',
+                )}
+              />
+              <span className="min-w-0 flex-1">{anthropicConfigured ? 'Replace your Anthropic key' : 'Also use an Anthropic key'}</span>
+              <span className="text-2xs font-normal text-muted-foreground">{anthropicConfigured ? 'Configured' : 'Optional'}</span>
+            </button>
+            {/*
+              The dialog's height changes at once; only the section's content moves, by opacity and a short rise.
+              Closing is immediate: it is the user putting something away.
+            */}
+            {expanded ? (
+              <Reveal id={sectionId}>
+                <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                  Lets you run answers, synthesis and decomposition on the Claude API instead of through OpenRouter, role by role, in
+                  Settings. Decisions stay on OpenRouter. The key is kept in this browser, used from this browser, and sent only to
+                  Anthropic.
+                </p>
+                <KeyField draft={anthropic} label="Anthropic API key" disabled={busy} saving="no" error={null} className="mt-3" />
+                <a
+                  href={KEY_FORMATS.anthropic.keysUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 rounded-sm text-xs font-medium text-primary underline-offset-4 hover:underline"
+                >
+                  Create a key at {KEY_FORMATS.anthropic.site}
+                  <ArrowUpRightIcon aria-hidden className="size-3.5" />
+                </a>
+              </Reveal>
+            ) : null}
+          </div>
+        )}
       </div>
 
       <div className="flex shrink-0 flex-col gap-3 border-t border-border bg-muted/50 px-6 py-4">
@@ -244,7 +310,7 @@ function KeyPromptBody({ keys, onDone }: { keys: KeyProvision; onDone: () => voi
           </a>
           <div className="ml-auto flex items-center gap-2">
             <Button type="button" variant="ghost" onClick={onDone} disabled={saving === 'typed' || saving === 'environment'}>
-              {replacing ? 'Cancel' : 'Not now'}
+              {replacing || anthropicOnly ? 'Cancel' : 'Not now'}
             </Button>
             <Button type="submit" disabled={!canSave} className="min-w-[5.5rem]">
               <SwapLabel id={saving === 'saved' ? 'saved' : saving === 'typed' ? 'saving' : typed.length > 1 ? 'save-both' : 'save'}>
@@ -351,7 +417,8 @@ function KeyField(props: { draft: KeyDraft; label: string; disabled: boolean; sa
  * The line under a field. One message at a time; the swap is a short fade
  * so the state change is legible. Both providers are described in the same
  * terms: recognized or not, and what is known about the credit behind the
- * key.
+ * key. Only OpenRouter can report an amount; for Anthropic the line says
+ * whether a minimal request was paid for, or that it could not be told.
  */
 function StatusLine({ provider, check, saving, error }: { provider: KeyProviderName; check: Check; saving: Saving; error: string | null }) {
   const name = KEY_FORMATS[provider].name
@@ -454,6 +521,25 @@ function Spinner() {
       <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.75" opacity="0.25" />
       <path d="M14 8a6 6 0 0 0-6-6" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
     </svg>
+  )
+}
+
+/**
+ * Content that was just disclosed: it fades in and rises a few pixels.
+ * Opacity and transform only, 180 ms, the app's ease-out. Reduced motion
+ * keeps the fade and drops the rise.
+ */
+function Reveal({ id, children }: { id: string; children: ReactNode }) {
+  const reduce = useReducedMotion()
+  return (
+    <motion.div
+      id={id}
+      initial={reduce ? { opacity: 0 } : { opacity: 0, transform: 'translateY(-4px)' }}
+      animate={reduce ? { opacity: 1 } : { opacity: 1, transform: 'translateY(0px)' }}
+      transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
+    >
+      {children}
+    </motion.div>
   )
 }
 

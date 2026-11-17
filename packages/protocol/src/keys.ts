@@ -7,14 +7,19 @@ import type { ModelProviderName } from './model'
  * for which key is meant and for the result of checking one.
  */
 
-/** A provider that takes a key. */
+/** A provider that takes a key. The OpenRouter key is required; the Anthropic key is optional. */
 export type KeyProviderName = ModelProviderName
 
 export const KEY_PROVIDER_LABELS: { readonly [P in KeyProviderName]: string } = {
   openrouter: 'OpenRouter',
+  anthropic: 'Anthropic',
 }
 
-/** What is known about the credit behind a key. */
+/**
+ * What is known about the credit behind a key. Only OpenRouter lets a key
+ * read a number; for the Claude API an ordinary key has no balance endpoint,
+ * so the most that can be known is whether a minimal request is paid for.
+ */
 export type KeyCredit =
   /** The provider reported what is left on the key, in US dollars. */
   | { readonly kind: 'remaining'; readonly dollars: number }

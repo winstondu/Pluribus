@@ -28,6 +28,7 @@ import type {
   PauseReason,
   ReadinessRecord,
   PrerequisiteRef,
+  ModelProviderName,
   ProviderError,
   RedoOption,
   Requirement,
@@ -883,6 +884,8 @@ export interface RunInspection {
     readonly state: AttemptState
     readonly resultStatus: AttemptResultStatus
     readonly model: string
+    /** The provider the run went to. */
+    readonly provider: ModelProviderName
     readonly modelRole: Extract<ModelRole, 'answer' | 'synthesis'>
     readonly chainId: ChainId
     readonly nodeId: NodeId
@@ -920,7 +923,10 @@ export interface AppSnapshot {
   /** Newest first. */
   readonly conversations: readonly ConversationSummary[]
   readonly settings: Settings
+  /** The OpenRouter key. */
   readonly key: KeyStatus
+  /** The optional Anthropic key, for roles the user runs on the Claude API. */
+  readonly anthropicKey: KeyStatus
   /**
    * What can be chosen for each role's model, as the backend decides it:
    * the providers, the models, and whether this client may change them at

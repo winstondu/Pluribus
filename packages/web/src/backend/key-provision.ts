@@ -19,7 +19,7 @@ import type { KeyCheck, KeyProviderName } from '@pluribus/protocol'
  * - **Fixtures and tests** ({@link createScriptedKeyProvision}).
  *
  * Whether a key is configured is not asked here: the backend reports it in
- * the app snapshot (`key`), never the value. No component
+ * the app snapshot (`key`, `anthropicKey`), never the value. No component
  * imports the Worker or the storage package; components use this interface
  * through `useKeyProvision()`.
  */
@@ -69,12 +69,14 @@ const SCRIPTED_DELAY_MS = 700
  * marks it configured on the fixture backend.
  */
 export function createScriptedKeyProvision(target: ScriptedKeyTarget | null, delayMs: number = SCRIPTED_DELAY_MS): KeyProvision {
-  const verdict = (_provider: KeyProviderName, key: string): KeyCheck => {
+  const verdict = (provider: KeyProviderName, key: string): KeyCheck => {
     if (key.includes('invalid')) return { status: 'invalid' }
     if (key.includes('offline')) return { status: 'offline' }
     if (key.includes('blocked')) return { status: 'blocked', reason: 'This organization does not allow requests from a browser.' }
     if (key.includes('nocredit')) return { status: 'valid', label: null, credit: { kind: 'exhausted' } }
-    return { status: 'valid', label: 'sk-or-v1-fix…ure', credit: { kind: 'remaining', dollars: 12.4 } }
+    return provider === 'openrouter'
+      ? { status: 'valid', label: 'sk-or-v1-fix…ure', credit: { kind: 'remaining', dollars: 12.4 } }
+      : { status: 'valid', label: null, credit: { kind: 'available' } }
   }
   const change = (provider: KeyProviderName, configured: boolean): Promise<KeyProvisionResult> => {
     if (!target) return Promise.resolve({ ok: false, message: 'No backend is connected.' })

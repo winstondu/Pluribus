@@ -93,7 +93,7 @@ export interface RoutingInput {
    * to a run are not counted.
    */
   readonly sessionLogTokens: number
-  readonly settings: Pick<Settings, 'models' | 'thresholds' | 'routing'>
+  readonly settings: Pick<Settings, 'models' | 'thresholds' | 'routing'> & Partial<Pick<Settings, 'modelProviders'>>
   /**
    * What the decision model may be shown for a node in place of its usual
    * line (docs/build/context-summaries.md). Present while

@@ -14,7 +14,7 @@ export const SECRETS_DATABASE: DatabaseSchema = {
   stores: [SECRETS],
 }
 
-const SECRET_NAMES: readonly SecretName[] = ['openrouter-key']
+const SECRET_NAMES: readonly SecretName[] = ['openrouter-key', 'anthropic-key']
 
 /**
  * The local secrets store. The port's `get` is the read reserved for the

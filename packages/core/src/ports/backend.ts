@@ -79,7 +79,7 @@ export interface CoreOptions {
   /** The projection cache is saved after this many events, and whenever a conversation goes idle. */
   readonly cacheEveryEvents: number
   /**
-   * Whether a client may change the per-role models. False in
+   * Whether a client may change the per-role providers and models. False in
    * a deployment whose models are set by its environment (Q65): the backend
    * then rejects such a change and reports every role as not editable.
    */
@@ -122,8 +122,9 @@ export interface Backend extends BackendClient {
    * Tells the backend that the deployment stored or removed a provider key.
    * Keys never travel in a command: the deployment's key service writes the
    * secrets store and then calls this. The backend reads which keys are
-   * present (never their values), and records a `key-status-changed` for each
-   * change.
+   * present (never their values), records a `key-status-changed` for each
+   * change, and, when the Anthropic key is gone, returns every role on the
+   * Claude API to OpenRouter and its default model there.
    */
   refreshKeyStatus(): Promise<void>
 

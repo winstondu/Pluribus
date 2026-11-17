@@ -14,7 +14,12 @@ import {
   toStreamedEvent,
   upcastEvent,
   validateSettingsPatch,
+  claudeApiDefaultPatch,
+  completeSettingsPatch,
+  markProviderChoices,
   describeModelRoles,
+  anthropicFallbackPatch,
+  rolesOnAnthropic,
   type AppEvent,
   type AppEventBody,
   type AppSnapshot,
@@ -235,6 +240,7 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
   let settings: Settings = DEFAULT_SETTINGS
   let conversations: ConversationSummary[] = []
   let keyConfigured = false
+  let anthropicKeyConfigured = false
   let appSeq = 0
   let started = false
   let disposed = false
@@ -276,7 +282,8 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
       conversations,
       settings,
       key: { configured: keyConfigured },
-      modelRoles: describeModelRoles(settings, { editable: options.modelsEditable }),
+      anthropicKey: { configured: anthropicKeyConfigured },
+      modelRoles: describeModelRoles(settings, { anthropicKeyConfigured, editable: options.modelsEditable }),
     }
   }
 
@@ -312,7 +319,8 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
         settings = normalizeSettings(event.settings)
         break
       case 'key-status-changed':
-        keyConfigured = event.configured
+        if (event.provider === 'anthropic') anthropicKeyConfigured = event.configured
+        else keyConfigured = event.configured
         break
     }
   }
@@ -519,7 +527,7 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
     const source = createCancelSource()
     void track(
       label
-        .call(deps.decomposer, { model: settings.models.decomposition, text: d.instruction }, source.signal)
+        .call(deps.decomposer, { model: settings.models.decomposition, provider: settings.modelProviders.decomposition, text: d.instruction }, source.signal)
         .then((result) => {
           if (!result.ok) return
           const text = result.label.trim()
@@ -556,7 +564,7 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
         const latest = attemptIds[attemptIds.length - 1]
         return latest ? (state.attemptText[latest] ?? '') : ''
       },
-      settings: { models: settings.models, thresholds: settings.thresholds, routing: settings.routing },
+      settings: { models: settings.models, modelProviders: settings.modelProviders, thresholds: settings.thresholds, routing: settings.routing },
       // Decisions may be shown a summary of a node's context; the chain comes from the same assembly a run uses.
       ...(settings.routing.useSummaryIfAvailable
         ? { decisionContext: (nodeId: NodeId) => summaryProvider.contextFor({ nodeId, chain: () => contextChainOf(state, nodeId) }) }
@@ -784,6 +792,7 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
     const modelRole = state.chains[d.chainId]?.kind === 'join' && d.kind === 'answer' ? 'synthesis' : 'answer'
     const request: ModelRequest = {
       model: settings.models[modelRole],
+      provider: settings.modelProviders[modelRole],
       messages: context.messages.map((message) => ({ role: message.role, content: message.content })),
       // An answer may stop to ask the user (Q106); a clarification question is itself the asking.
       ...(d.kind === 'answer' ? { clarificationSignal: true } : {}),
@@ -823,7 +832,7 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
     })
     void track(
       deps.preparer
-        .prepare({ model: settings.models.decomposition, messages: prepared.request.messages }, source.signal)
+        .prepare({ model: settings.models.decomposition, provider: settings.modelProviders.decomposition, messages: prepared.request.messages }, source.signal)
         .catch(failed)
         .then((result) =>
           enqueue(async () => {
@@ -963,7 +972,7 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
     }
     const runtime = runtimes.get(prepared.conversationId)
     const again = runtime ? prepare(runtime, prepared.directiveId) : null
-    if (!again || JSON.stringify(again.context) !== JSON.stringify(prepared.context) || again.request.model !== prepared.request.model) {
+    if (!again || JSON.stringify(again.context) !== JSON.stringify(prepared.context) || again.request.model !== prepared.request.model || again.request.provider !== prepared.request.provider) {
       starting.delete(key)
       return
     }
@@ -988,6 +997,7 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
       origin: d.nextOrigin,
       modelRole: prepared.modelRole,
       model: prepared.request.model,
+      provider: prepared.request.provider ?? 'openrouter',
       parents: prepared.parents,
       context: { ...prepared.context, inputTokens, tokenLimit },
     })
@@ -1223,12 +1233,19 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
       case 'change-settings': {
         const bodies: AppEventBody[] = []
         if (command.changes) {
-          if (!options.modelsEditable && command.changes.models) {
+          if (!options.modelsEditable && (command.changes.models || command.changes.modelProviders)) {
             return { ok: false, error: { code: 'not-allowed', message: 'Models are set by the server' } }
           }
-          const invalid = validateSettingsPatch(command.changes)
+          // A provider chosen without a model gets that provider's default for the role.
+          const changes = completeSettingsPatch(settings, command.changes)
+          const invalid = validateSettingsPatch(changes, settings)
           if (invalid) return { ok: false, error: { code: 'invalid', message: invalid } }
-          const next = applySettingsPatch(settings, command.changes)
+          // A role whose provider the user names is theirs from now on: the Claude API default leaves it alone.
+          const next = markProviderChoices(applySettingsPatch(settings, changes), command.changes)
+          // A role can use the Claude API only while an Anthropic key is configured.
+          if (!anthropicKeyConfigured && rolesOnAnthropic(next).length > 0) {
+            return { ok: false, error: { code: 'invalid', message: 'Add an Anthropic key before choosing the Claude API for a role' } }
+          }
           if (next !== settings) bodies.push({ type: 'settings-changed', settings: next })
         }
         await appendApp(bodies)
@@ -1256,7 +1273,7 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
       const events = stored.map(upcastEvent).filter(isConversationEvent).filter((event) => event.seq <= state.throughSeq)
       const appEvents = (await deps.eventStore.read(APP_LOG)).map(upcastEvent).filter(isAppEvent)
       // Every stored key: the export is refused if any of them appears in it.
-      const keys = [await deps.secretsStore.get('openrouter-key')].filter((value): value is string => value !== null)
+      const keys = [await deps.secretsStore.get('openrouter-key'), await deps.secretsStore.get('anthropic-key')].filter((value): value is string => value !== null)
       return { state, snapshot: runtime.snapshot, conversation, events, appEvents, keys, settings, keyConfigured, createdAt: deps.clock.now() }
     })
     if (!gathered) return { ok: false, error: { code: 'unknown-conversation', message: `Unknown conversation ${conversationId}` } }
@@ -1285,13 +1302,23 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
     }
   }
 
-  /** Reads which keys the secrets store holds and records what changed. */
+  /**
+   * Reads which keys the secrets store holds and records what changed. When the Anthropic key is
+   * gone, every role on the Claude API returns to OpenRouter and its default model there, in the same step.
+   * While it is there, every role whose provider the user has not chosen and whose model the Claude API
+   * also offers moves to the Claude API (`claudeApiDefaultPatch`), unless the server sets the models.
+   */
   async function syncKeyStatus(): Promise<void> {
     const openRouter = (await deps.secretsStore.get('openrouter-key')) !== null
+    const anthropic = (await deps.secretsStore.get('anthropic-key')) !== null
     const bodies: AppEventBody[] = []
     if (openRouter !== keyConfigured) bodies.push({ type: 'key-status-changed', configured: openRouter })
+    if (anthropic !== anthropicKeyConfigured) bodies.push({ type: 'key-status-changed', configured: anthropic, provider: 'anthropic' })
+    const move = anthropic ? (options.modelsEditable ? claudeApiDefaultPatch(settings) : null) : anthropicFallbackPatch(settings)
+    if (move) bodies.push({ type: 'settings-changed', settings: applySettingsPatch(settings, move) })
     // Set before the events are folded so a snapshot taken meanwhile is right; folding sets the same values.
     keyConfigured = openRouter
+    anthropicKeyConfigured = anthropic
     await appendApp(bodies)
   }
 
@@ -1311,7 +1338,8 @@ export function createEngine(deps: CoreDependencies, partialOptions?: Partial<Co
         appSeq = event.seq
         foldApp(event)
       }
-      // The secrets store is separate from the log: what it holds now is the truth.
+      // The secrets store is separate from the log: what it holds now is the truth, and if the
+      // Anthropic key is gone no role may be left on the Claude API.
       await syncKeyStatus()
       for (const summary of conversations) runtimes.set(summary.id, await loadConversation(summary.id))
       started = true

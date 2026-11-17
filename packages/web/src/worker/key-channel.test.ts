@@ -1,4 +1,3 @@
-/// <reference types="node" />
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import type { KeyCheck } from '@pluribus/protocol'
@@ -45,7 +44,8 @@ describe('the embedded key provision', () => {
       vault,
       refreshKeyStatus: async () => void (refreshed += 1),
       checks: {
-        openrouter: async (key) => (key === KEY ? { status: 'valid', label: null, credit: { kind: 'available' } } : { status: 'invalid' }),
+        openrouter: async () => ({ status: 'valid', label: null, credit: { kind: 'unlimited' } }),
+        anthropic: async (key) => (key === KEY ? { status: 'valid', label: null, credit: { kind: 'available' } } : { status: 'invalid' }),
       },
     })
     serveKeys(worker, Promise.resolve(service))
@@ -53,15 +53,15 @@ describe('the embedded key provision', () => {
     expect(keys.canProvideKeys).toBe(true)
 
     const signal = new AbortController().signal
-    expect(await keys.check('openrouter', KEY, signal)).toEqual({ status: 'valid', label: null, credit: { kind: 'available' } })
-    expect(await keys.check('openrouter', 'sk-ant-other', signal)).toEqual({ status: 'invalid' })
+    expect(await keys.check('anthropic', KEY, signal)).toEqual({ status: 'valid', label: null, credit: { kind: 'available' } })
+    expect(await keys.check('anthropic', 'sk-ant-other', signal)).toEqual({ status: 'invalid' })
     expect(vault.stored.size).toBe(0)
 
-    expect(await keys.set('openrouter', KEY)).toEqual({ ok: true })
-    expect(vault.stored.get('openrouter-key')).toBe(KEY)
+    expect(await keys.set('anthropic', KEY)).toEqual({ ok: true })
+    expect(vault.stored.get('anthropic-key')).toBe(KEY)
     expect(refreshed).toBe(1)
-    expect(await keys.remove('openrouter')).toEqual({ ok: true })
-    expect(vault.stored.has('openrouter-key')).toBe(false)
+    expect(await keys.remove('anthropic')).toEqual({ ok: true })
+    expect(vault.stored.has('anthropic-key')).toBe(false)
     expect(refreshed).toBe(2)
 
     // The key appears only in requests to the Worker; no reply carries it.
@@ -85,14 +85,17 @@ describe('the embedded key provision', () => {
         openrouter: async (key) => {
           throw new Error(`boom ${key}`)
         },
+        anthropic: async (key) => {
+          throw new Error(`boom ${key}`)
+        },
       },
     })
     serveKeys(worker, Promise.resolve(service))
     const keys = createWorkerKeyProvision(page)
-    expect(await keys.set('openrouter', KEY)).toEqual({ ok: false, message: 'The key could not be stored in this browser.' })
+    expect(await keys.set('anthropic', KEY)).toEqual({ ok: false, message: 'The key could not be stored in this browser.' })
     expect(await keys.set('openrouter', '   ')).toEqual({ ok: false, message: 'The key cannot be empty.' })
-    expect(await keys.remove('openrouter')).toEqual({ ok: false, message: 'The key could not be removed from this browser.' })
-    expect(await keys.check('openrouter', KEY, new AbortController().signal)).toEqual({ status: 'offline' })
+    expect(await keys.remove('anthropic')).toEqual({ ok: false, message: 'The key could not be removed from this browser.' })
+    expect(await keys.check('anthropic', KEY, new AbortController().signal)).toEqual({ status: 'offline' })
     expect(JSON.stringify(toPage)).not.toContain(KEY)
   })
 
@@ -147,7 +150,7 @@ describe('layering', () => {
 
   test('the dev-server keys are read in the key prompt only', () => {
     const readers = sources(root)
-      .filter((path) => /__DEV_OPENROUTER_KEY__/.test(readFileSync(path, 'utf8')))
+      .filter((path) => /__DEV_(OPENROUTER|ANTHROPIC)_KEY__/.test(readFileSync(path, 'utf8')))
       .map((path) => path.slice(root.length + 1))
       .filter((path) => !path.endsWith('.test.ts') && !path.endsWith('.test.tsx'))
       .sort()

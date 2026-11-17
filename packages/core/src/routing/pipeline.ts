@@ -273,7 +273,7 @@ async function routeMessage(deps: Deps, input: RoutingInput, signal: CancelSigna
       ...supplied.inFlight.map((w) => ({ id: w.directiveId as string, label: w.label, description: w.instruction })),
       ...supplied.openGroups.map((gr) => ({ id: gr.groupId as string, label: gr.label, description: `The parallel requests ${gr.label}, together` })),
     ]
-    const result = await deps.decomposer.decompose({ model: input.settings.models.decomposition, text: input.text, candidates }, signal)
+    const result = await deps.decomposer.decompose({ model: input.settings.models.decomposition, provider: input.settings.modelProviders?.decomposition ?? 'openrouter', text: input.text, candidates }, signal)
     if (!result.ok) return failed(result.error)
     const problem = checkDecomposition(input.text, result.decomposition, candidates)
     if (problem) return malformed(problem)

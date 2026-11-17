@@ -8,7 +8,8 @@ import type { KeyService } from './key-channel'
  * - `check` asks the provider about a key that is not stored yet.
  * - `set` and `remove` write the secrets store, then tell the backend that
  *   the key status changed. The backend reads only whether each key is
- *   present, and records that.
+ *   present, records that, and returns roles to OpenRouter when the
+ *   Anthropic key is gone.
  *
  * Nothing here returns, logs or throws a key: a failure is reported by a
  * fixed message.
@@ -16,8 +17,8 @@ import type { KeyService } from './key-channel'
 
 /** The secrets store's write side, by secret name. */
 export interface KeyVault {
-  set(name: 'openrouter-key', value: string): Promise<void>
-  delete(name: 'openrouter-key'): Promise<void>
+  set(name: 'openrouter-key' | 'anthropic-key', value: string): Promise<void>
+  delete(name: 'openrouter-key' | 'anthropic-key'): Promise<void>
 }
 
 export interface KeyServiceDependencies {
@@ -27,7 +28,7 @@ export interface KeyServiceDependencies {
   readonly checks: { readonly [P in KeyProviderName]: (key: string, signal: AbortSignal) => Promise<KeyCheck> }
 }
 
-const SECRET_NAMES = { openrouter: 'openrouter-key' } as const
+const SECRET_NAMES = { openrouter: 'openrouter-key', anthropic: 'anthropic-key' } as const
 
 export function createKeyService(deps: KeyServiceDependencies): KeyService {
   return {

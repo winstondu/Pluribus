@@ -213,7 +213,7 @@ function Inspection({ inspection }: { inspection: RunInspection }) {
             <Row label="Result">{RESULT_SENTENCE[attempt.resultStatus]}</Row>
             <Row label="Why it ran">{originWord(attempt.origin)}</Row>
             <Row label="Model">
-              <span className="font-mono text-2xs">{attempt.model}</span> · {attempt.modelRole}
+              <span className="font-mono text-2xs">{attempt.model}</span> · {attempt.modelRole} · <span data-slot="attempt-provider">{attempt.provider === 'anthropic' ? 'Claude API' : 'OpenRouter'}</span>
             </Row>
             <Row label="Ran on">
               <ChainName chainId={attempt.chainId} />

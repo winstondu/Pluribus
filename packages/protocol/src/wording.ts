@@ -51,6 +51,8 @@ export const WORDING = {
   replyingToRevised: 'Replying to the revised version',
   /** Failure message for exhausted credits (HTTP 402). */
   outOfCredits: 'Out of OpenRouter credits',
+  /** The same failure from the Claude API (HTTP 402, or the monthly spend cap). */
+  outOfAnthropicCredits: 'Out of Anthropic credits',
   /** Build choice: marks on text that did not complete. Distinct states, labeled distinctly (08). */
   failed: 'Failed',
   stopped: 'Stopped',

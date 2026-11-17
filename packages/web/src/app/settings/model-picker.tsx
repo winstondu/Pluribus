@@ -54,8 +54,10 @@ export function ModelPicker(props: { label: string; value: string; choice: Provi
   }, [models, props.choice, props.value])
 
   const listed = props.choice.restricted
+  const onOpenRouter = props.choice.provider === 'openrouter'
   const typed = query.trim()
-  const typedIsId = typed !== '' && !/\s/.test(typed) && typed.includes('/')
+  // An OpenRouter ID is provider/model; a Claude API ID has no slash.
+  const typedIsId = typed !== '' && !/\s/.test(typed) && typed.includes('/') === onOpenRouter
   const typedIsNew = !listed && typedIsId && !optionsFor(props.choice, models).some((model) => model.id === typed)
 
   function choose(model: string): void {
@@ -87,7 +89,7 @@ export function ModelPicker(props: { label: string; value: string; choice: Provi
         overlayClassName="bg-black/10 supports-backdrop-filter:backdrop-blur-none dark:bg-black/20"
       >
         <ModelSelectorInput
-          placeholder={listed ? 'Search the tested models…' : 'Search models, or type an OpenRouter model ID…'}
+          placeholder={listed ? 'Search the tested models…' : onOpenRouter ? 'Search models, or type an OpenRouter model ID…' : 'Search models, or type a Claude API model ID…'}
           value={query}
           onValueChange={setQuery}
         />
@@ -95,7 +97,9 @@ export function ModelPicker(props: { label: string; value: string; choice: Provi
           <ModelSelectorEmpty>
             {listed
               ? 'No tested model matches. Only tested models can be used for this role.'
-              : 'No model matches. Type a full ID such as provider/model to use it.'}
+              : onOpenRouter
+                ? 'No model matches. Type a full ID such as provider/model to use it.'
+                : 'No model matches. Type a Claude API model ID to use it.'}
           </ModelSelectorEmpty>
           {typedIsNew ? (
             <ModelSelectorGroup heading="Use this ID">
@@ -134,6 +138,9 @@ export function ModelPicker(props: { label: string; value: string; choice: Provi
           <p data-slot="model-list-note" className="border-t px-3 py-2 text-2xs leading-relaxed text-muted-foreground">
             Only models tested with Pluribus are offered here: they can prepare an answer in a structured step and signal, while
             streaming, that they need to ask you something.
+            {groups.some(([, options]) => options.some((model) => model.tested === false))
+              ? ' The live test of these models through the Claude API has not been run yet.'
+              : ''}
           </p>
         ) : null}
       </ModelSelectorContent>
