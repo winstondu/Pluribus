@@ -323,8 +323,11 @@ const deep = (() => {
   }
   return s.build()
 })()
-/** The line down to the leaf is plausible at every level: that is what a walk descends on. */
-const deepRules: Rules = { own: { N0: 0.3, N1a: 0.3, N2a: 0.3, N3a: 0.9 } }
+/**
+ * The line down to the leaf is plausible at every level: that is what a walk descends on. Whether the message refers to
+ * more than one section is unsure, so the walk goes on after the leaf it confirmed in the first pass.
+ */
+const deepRules: Rules = { own: { N0: 0.3, N1a: 0.3, N2a: 0.3, N3a: 0.9 }, several: 0.5 }
 
 /** One chain of `n` exchanges, and `n` unrelated one-answer lines: declared here for the first pass, used again for long runs. */
 const chainOf = (n: number): Scene => {
@@ -337,6 +340,44 @@ const rootsOf = (n: number): Scene => {
   for (let i = 0; i < n; i++) s.chain(`c${i}`, 'root', `topic ${i}`).add(`T${i}`, { chain: `c${i}`, on: null, label: `topic ${i}`, request: `Question ${i}`, answer: `Answer ${i}` })
   return s.build()
 }
+
+describe('tree walk · Several after the first find', () => {
+  test('tree-walk · a unit that refers to one section only, confirmed in the routing request, looks on no other line: the old single answers are not searched', async () => {
+    const sc = rootsOf(60)
+    const text = 'Make the answer to question 50 shorter'
+    // T50 is listed and confirmed, and Several is clearly no: nothing further is sent.
+    const one = await route(sc, text, { own: { T50: 0.9 }, several: 0.05 })
+    expect(one.requests).toHaveLength(1)
+    expect(unit(one).targets).toEqual(sections(['T50']))
+    expect(planOf(one).decision.budgetStop).toBeUndefined()
+    // Unsure whether it refers to more than one, the 36 older answers are searched as before.
+    const unsure = await route(sc, text, { own: { T50: 0.9 }, several: 0.5 })
+    expect(unsure.requests.length).toBeGreaterThan(1)
+    expect(unit(unsure).targets).toEqual(sections(['T50']))
+    // Two referents, one of them old: Several says so, and the old one is found.
+    const both = await route(sc, 'Compare the answers to questions 50 and 3', { own: { T50: 0.9, T3: 0.9 }, several: 0.9 })
+    expect(new Set(unit(both).targets)).toEqual(new Set(sections(['T50', 'T3'])))
+    // Nothing confirmed yet: the search is the same as before, whatever Several says.
+    const old = await route(sc, 'Make the answer to question 3 shorter', { own: { T3: 0.9 }, several: 0.05 })
+    expect(unit(old).targets).toEqual(sections(['T3']))
+    // A correction seeks the relevant sections themselves: the old answers are searched although one is confirmed.
+    const correction = await route(sc, 'Actually, question 50 was about something else', { own: { T50: 0.9 }, several: 0.05, corrective: 0.9 })
+    expect(correction.requests.length).toBeGreaterThan(1)
+  })
+
+  test('tree-walk · a unit that refers to one section only stops once it is confirmed: a leaf of the first pass ends the walk, a section with answers below it still has them examined', async () => {
+    // The leaf N3a is a first-pass section and confirmed: no line of the tree is walked into.
+    const leaf = await route(deep, 'Expand detail 3a', { ...deepRules, several: 0.05 })
+    expect(leaf.requests).toHaveLength(1)
+    expect(unit(leaf).targets).toEqual(sections(['N3a']))
+    // The same answers with Several unsure: the walk goes down every plausible level, as it did before.
+    expect((await route(deep, 'Expand detail 3a', deepRules)).requests).toHaveLength(3)
+    // A confirmed section with a run below it: that run is still examined, so a deeper relevant answer is found.
+    const chain = chainOf(60)
+    const deeper = await route(chain, 'Make the answer to question 40 shorter', { own: { T40: 0.9, T45: 0.9 }, several: 0.05 }, { candidates: ['T40'] })
+    expect(unit(deeper).targets).toEqual(sections(['T45']))
+  })
+})
 
 describe('first pass', () => {
   test('first-pass · the five most recent answer sections that no later one of them builds on: an ancestor of one already taken is skipped', () => {
@@ -601,7 +642,8 @@ describe('price guard', () => {
   })
 
   test('guard · the strategy\'s token budget is what twice the answer\'s price leaves after the pipeline\'s own request', async () => {
-    const rules: Rules = { own: { brief: 0.4, A: 0.8, B: 0.3 }, together: { G: 0.9 } }
+    // Unsure whether it refers to more than one section: the walk goes on after A, confirmed in the first pass.
+    const rules: Rules = { own: { brief: 0.4, A: 0.8, B: 0.3 }, together: { G: 0.9 }, several: 0.5 }
     const text = 'Use those recommendations to make a five-day itinerary.'
     // Fewer than five completed answers, so the setting's figure is the expected output. An answer expected to be a few tokens long buys less than the pipeline's request costs: nothing further is sent.
     // B is not in the first pass (B2 was built on it), so the walk needs a further request to ask about it.
@@ -1151,17 +1193,39 @@ describe('start candidates', () => {
     expect(unit(both).placement.kind).toBe('join-chain')
   })
 
-  test('candidates · a candidate older than the routing request lists is asked about in the first further request, with what it was built on as context', async () => {
+  test('candidates · a candidate older than the routing request lists is asked about by itself in the first further request, with what it was built on as context', async () => {
     const sc = flat(200)
     const routed = await route(sc, 'Make the answer to question 40 shorter', { own: { T40: 0.9 } }, { candidates: ['T40'] })
-    // The run from its top down to T40 is 41 answers: searched for its last relevant one, then that part asked about one by one.
+    const n = (h: string) => routed.numberOf.get(h) ?? '?'
+    // The run from its top down to T40 is 41 answers, more than one round lists: T40, the last of them, is asked about by itself first.
     expect(routed.requests).toHaveLength(3)
-    const named = Object.values(routed.requests[1]?.questions ?? {}).flatMap((q) => [...q.instructions.matchAll(/\("Question (\d+)"\)/g)].map((m) => Number(m[1])))
-    expect(Math.max(...named)).toBe(40)
+    expect(routed.asked[1]).toEqual([`m_s${n('T40')}`])
+    expect(routed.requests[1]?.state).toContain(`S${n('T40')} builds on S${n('T39')} ("Question 39"), which builds on S${n('T38')} ("Question 38").`)
     expect(unit(routed).targets).toEqual(sections(['T40']))
-    // Without the candidate the whole run of 176 older answers is searched: more is named in the first further request.
+    // Confirmed, it is the last relevant answer of that part and stands for the 40 above it: none of them is asked about or searched.
+    const named = routed.requests.slice(1).flatMap((r) => Object.values(r.questions).flatMap((q) => [...q.instructions.matchAll(/\("Question (\d+)"\)/g)].map((m) => Number(m[1]))))
+    expect(named.length).toBeGreaterThan(0)
+    expect(Math.min(...named)).toBeGreaterThan(40)
+    for (const h of ['T0', 'T20', 'T39']) expect(routed.asked.flat()).not.toContain(`m_s${n(h)}`)
+    // The rest of the run below it is searched as before, in the second further request.
+    expect(Math.max(...named)).toBe(198)
+    // Without the candidate the whole run of 176 older answers is searched: more is named in the further requests.
     const plain = await route(sc, 'Make the answer to question 40 shorter', { own: { T40: 0.9 } })
     expect(furtherTokens(routed)).toBeLessThan(furtherTokens(plain))
+  })
+
+  test('candidates · a candidate that is not confirmed by itself sends the walk into the part above it, as a search for its last relevant answer', async () => {
+    for (const own of [{ T38: 0.9, T40: 0.4 }, { T38: 0.9 }]) {
+      const routed = await route(flat(200), 'Make the answer to question 40 shorter', { own }, { candidates: ['T40'] })
+      const n = (h: string) => routed.numberOf.get(h) ?? '?'
+      expect(routed.asked[1]).toEqual([`m_s${n('T40')}`])
+      // Then the 40 answers above it are searched, and the part that holds T38 is opened: the same questions as before, one request later.
+      const parts = (routed.asked[2] ?? []).filter((id) => id.startsWith('m_c'))
+      expect(parts).toContain(`m_c${n('T0')}_${n('T18')}`)
+      expect(routed.asked.flat()).toContain(`m_s${n('T38')}`)
+      expect(unit(routed).targets).toEqual(sections(['T38']))
+      expect(routed.requests).toHaveLength(4)
+    }
   })
 
   test('candidates · only answer sections of this conversation are accepted, at most twelve, and a source that fails is a source with nothing to say', async () => {
@@ -1271,24 +1335,24 @@ describe('operations over the decision provider', () => {
   })
 
   test('operations · a section asked about by itself is shown with the nearest answers it was built on; a part of a run with the first answers of the run', async () => {
-    // T40 is a start candidate: its run is searched from the top down to it, then the rest of the run.
-    const routed = await route(flat(200), 'Make the answer to question 40 shorter', { own: { T40: 0.9 } }, { candidates: ['T40'] })
+    // T40 is a start candidate and not confirmed by itself: its run is searched from the top down to it, then the rest of the run.
+    const routed = await route(flat(200), 'Make the answer to question 40 shorter', { own: { T38: 0.9 } }, { candidates: ['T40'] })
     const n = (h: string) => routed.numberOf.get(h) ?? '?'
-    const points = routed.requests[2]?.state ?? ''
-    const first = Math.min(...ownIds(routed, 2).map((id) => Number(id.slice(3))))
+    const points = routed.requests[3]?.state ?? ''
+    const first = Math.min(...ownIds(routed, 3).map((id) => Number(id.slice(3))))
     const firstHandle = [...routed.numberOf].find(([, number]) => number === first)?.[0] ?? ''
     const before = (steps: number) => `T${Number(firstHandle.slice(1)) - steps}`
     // The sections of the opened part follow one another; the first is shown with the two answers before it, by their requests.
     expect(points).toContain('Where they come from, for context only')
     expect(points).toContain(`S${first} builds on S${n(before(1))} ("Question ${before(1).slice(1)}"), which builds on S${n(before(2))} ("Question ${before(2).slice(1)}").`)
-    expect(points).toContain(`S${first} to S${n('T40')} are consecutive answers of one line of work.`)
+    expect(points).toContain(`S${first} to S${n('T39')} are consecutive answers of one line of work.`)
     // The answers named as context are not asked about and their lines are not sent.
     expect(points).not.toContain(`S${n(before(1))}. "`)
-    expect(Object.keys(routed.requests[2]?.questions ?? {})).not.toContain(`m_s${n(before(1))}`)
+    expect(Object.keys(routed.requests[3]?.questions ?? {})).not.toContain(`m_s${n(before(1))}`)
     // The parts of the rest of the run, in the same request: the question is about the part, the top of the run is context.
     expect(points).toContain(`are consecutive answers of one line of work that starts with S${n('T0')} ("Question 0"), S${n('T1')} ("Question 1").`)
     // A part that starts at the top of a run that was built on nothing needs no such line.
-    expect(routed.requests[1]?.state).not.toContain('Where they come from')
+    expect(routed.requests[2]?.state).not.toContain('Where they come from')
   })
 
   test('operations · a section whose line shows a stored summary is not shown its ancestry again', async () => {
@@ -1500,3 +1564,4 @@ describe('token budget', () => {
     expect(requests[1]?.state).not.toContain('S24. ')
   })
 })
+

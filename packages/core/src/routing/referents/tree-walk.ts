@@ -315,6 +315,8 @@ function loneAnswers(walk: Walk, unit: ReferentUnit, parts: readonly StartPart[]
   const { input, ops } = walk
   const pooled = new Set<TreeNode>()
   const sections: SectionNode[] = []
+  // Each old answer is a line of its own: none lies below a section already confirmed for a unit that refers to one section only.
+  const found = settledOn(walk, unit).length > 0
   for (const { start, stretch, trunk, upTo } of parts) {
     const end = stretch[stretch.length - 1]
     if (!end || !trunk || upTo !== stretch.length - 1 || end.children.length > 0) continue
@@ -325,7 +327,7 @@ function loneAnswers(walk: Walk, unit: ReferentUnit, parts: readonly StartPart[]
     if (endsOnly(walk, answers, trunk)) continue
     pooled.add(start)
     const confirmed = answers.some((node) => (ops.known(probe.point(unit, node)) ?? 0) >= input.relevance.clear)
-    if (input.corrective(unit) || !confirmed) sections.push(...older)
+    if (input.corrective(unit) || (!confirmed && !found)) sections.push(...older)
   }
   return { pooled, sections: sections.sort((a, b) => a.n - b.n) }
 }
@@ -363,7 +365,7 @@ function below(walk: Walk, unit: ReferentUnit, state: UnitWalk, stretch: readonl
  */
 function* examine(walk: Walk, unit: ReferentUnit, state: UnitWalk, stretch: readonly TreeNode[], upTo: number, start: boolean, hint: SectionNode | null, plausible: () => void): Step<void> {
   const top = stretch[0]
-  if (!top) return
+  if (!top || elsewhere(walk, unit, stretch)) return
   const seen = state.examined.get(top) ?? { upTo: -1, relevant: false }
   state.examined.set(top, seen)
   if (upTo <= seen.upTo) {
@@ -380,6 +382,30 @@ function* examine(walk: Walk, unit: ReferentUnit, state: UnitWalk, stretch: read
     told = true
   })
   if (seen.relevant && !told) plausible()
+}
+
+/**
+ * The nodes a unit has confirmed (a Point or a Group at the target-choice
+ * threshold) when it refers to one section only: Several is clearly no.
+ * Several tells a search whether to look on other lines after its first
+ * find (11 · "Operations"); with a clear no, a further referent on another
+ * line could only be a second one. Empty for a correction, which seeks the
+ * relevant nodes themselves, and while Several is not known.
+ */
+function settledOn(walk: Walk, unit: ReferentUnit): TreeNode[] {
+  const { input, ops } = walk
+  const several = ops.known(probe.several(unit))
+  if (several === null || several >= input.relevance.floor || input.corrective(unit)) return []
+  return input.tree.nodes.filter((node) => (ops.known(probe.of(unit, node)) ?? 0) >= input.relevance.clear)
+}
+
+/** Whether a run lies on another line than every node the unit has settled on: it holds none of them and is below none. Such a run is not taken up. */
+function elsewhere(walk: Walk, unit: ReferentUnit, stretch: readonly TreeNode[]): boolean {
+  const settled = settledOn(walk, unit)
+  const top = stretch[0]
+  if (settled.length === 0 || !top) return false
+  const above = ancestorsOf(top)
+  return settled.every((node) => !above.has(node) && !stretch.includes(node))
 }
 
 function sectionsOf(part: readonly TreeNode[]): SectionNode[] {
@@ -504,6 +530,16 @@ function* examinePart(walk: Walk, unit: ReferentUnit, state: UnitWalk, part: rea
     const before = first.filter((p) => p.kind !== 'point' || !stoodFor(p.node))
     // What comes next depends on the sections already asked about by themselves: wait for those the routing request did not carry.
     if (before.some((p) => p.kind === 'point' && ops.known(p) === null)) yield* need(ops, before)
+    // A candidate section the walk starts at, with more above it in the run than one round lists: it is asked about by
+    // itself first. It is the last section of the part, so once confirmed it is the part's last relevant section and
+    // stands for everything above it, which is then neither listed nor searched.
+    if (hint && !hop && !corrective && sections[sections.length - 1] === hint && ops.known(probe.point(unit, hint)) === null) {
+      const above = sections.slice(0, -1).filter((node) => ops.known(probe.point(unit, node)) === null)
+      if (weight(walk, unit, above) > input.settings.searchRunsOverTokens) {
+        yield* need(ops, [...before.filter((p) => ops.known(p) === null), probe.point(unit, hint)])
+        asked.note()
+      }
+    }
     const groups = before.filter((p) => ops.known(p) === null)
     // A confirmed section stands for everything above it in the run, except for a correction.
     const confirmed = corrective ? -1 : sections.findLastIndex((node) => (ops.known(probe.point(unit, node)) ?? 0) >= clear)
