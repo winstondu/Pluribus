@@ -97,7 +97,7 @@ export function askUnit(batch: Batch, supplied: Supplied, input: RoutingInput, s
     )
     batch.noul(
       `${k}_shared`,
-      `If ${it} corrects something, does it change a requirement or brief that several earlier requests relied on (for example the trip's length or budget), rather than one answer alone?`,
+      `If ${it} corrects something, does it change a requirement or brief that several earlier requests relied on, rather than one answer alone?`,
     )
   }
   if (scope.relation) batch.choice(`${k}_relation`, `How does ${it} relate to the existing work?`, RELATION_OPTIONS)

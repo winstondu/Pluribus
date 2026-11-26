@@ -100,9 +100,18 @@ export function resolveUnitTargets(
      * would ask, the clear targets stand alone, or, with none, the best node found so far is the target.
      */
     readonly budgetStop?: { readonly best: readonly SectionId[] } | null
+    /**
+     * Whether a section is work whose result is not available yet and that the decision model says the unit
+     * does not need (see `unneededInFlight`). Below `targetChoice` such a section is no candidate referent.
+     * Left out, every section is one.
+     */
+    readonly unneeded?: (sectionId: SectionId) => boolean
   },
 ): TargetResolution {
-  const ranked = [...signals.targets].sort((a, b) => b.confidence - a.confidence)
+  const unneeded = options.unneeded
+  const ranked = [...signals.targets]
+    .filter((t) => !unneeded || t.confidence >= thresholds.targetChoice || !unneeded(t.id))
+    .sort((a, b) => b.confidence - a.confidence)
   if (given) {
     if (!options.fragment) return { kind: 'resolved', sectionIds: given.sectionIds, mode: given.mode }
     // A fragment takes the given sections it refers to, and keeps any other section it clearly
@@ -115,7 +124,7 @@ export function resolveUnitTargets(
   }
   const inferred = ranked.filter((t) => t.confidence >= thresholds.targetChoice).map((t) => t.id)
   if (inferred.length > 0) {
-    // A message that plainly refers to several sections names a clear one and further ones the model
+    // A message that draws on several sections names a clear one and further ones the model
     // scores lower (Q20). A further one below `targetChoice` is taken without asking only when it
     // changes nothing about where the work runs (a second sibling read through the same join-back);
     // one that would add a parent or make a join chain is a guess, and Pluribus never guesses
@@ -214,13 +223,16 @@ export function referentCovered(supplied: Supplied, accepted: readonly SectionId
  * available yet (relation `dependent` at the threshold) but selected none,
  * the in-flight work it targets, or else the one in-flight result it scored
  * plausible. Two answers never resolve silently in the direction that runs
- * (05 · "Result-dependent work", C2).
+ * (05 · "Result-dependent work", C2). The relation is read as the
+ * probability of `dependent`, the scale every other dependency question is
+ * answered on: a choice's confidence can sit well below it ("Expand the
+ * recommendation you are preparing": confidence 0.56, probability 0.71).
  */
 export function neededWork(signals: UnitSignals, targets: readonly SectionId[], supplied: Supplied, thresholds: DecisionThresholds): DirectiveId[] {
   const chosen = selected(signals.needsWork, thresholds.dependency)
   if (chosen.length > 0 || selected(signals.needsGroups, thresholds.dependency).length > 0) return chosen
   const relation = signals.relation
-  if (!relation || relation.value !== 'result-dependent' || relation.confidence < thresholds.dependency) return chosen
+  if (!relation || relation.value !== 'result-dependent' || (relation.probabilities['result-dependent'] ?? relation.confidence) < thresholds.dependency) return chosen
   const inFlight = new Set(supplied.inFlight.map((w) => w.directiveId))
   const targeted = targets.flatMap((id) => {
     const directiveId = supplied.sectionById.get(id)?.directiveId
@@ -536,6 +548,25 @@ export function topological(units: readonly PlannedUnit[]): PlannedUnit[] | null
     done.add(next.directiveId)
   }
   return out
+}
+
+/**
+ * Whether a section is work in flight whose result the unit does not need.
+ * A result that is not available yet is built on only by waiting for it (04
+ * · "Result dependencies"; 05: additional related work "builds on existing
+ * context without needing an unfinished result" and continues the chain as
+ * a fork). So when the decision model says the unit does not need that
+ * result (its dependency question below the ambiguity floor) and the unit
+ * is not result-dependent, a weak score for the running section is not a
+ * second candidate beside the answer it was built on: the unit is a fork
+ * placed by its line, not a question to the user about which one is meant.
+ */
+export function unneededInFlight(signals: UnitSignals, supplied: Supplied, sectionId: SectionId): boolean {
+  if (signals.relation?.value === 'result-dependent') return false
+  const directiveId = supplied.sectionById.get(sectionId)?.directiveId
+  if (!directiveId || !supplied.inFlight.some((w) => w.directiveId === directiveId)) return false
+  const asked = signals.needsWork.find((w) => w.id === directiveId)
+  return asked !== undefined && asked.confidence < AMBIGUITY_FLOOR
 }
 
 /** Whether a unit is placed with confidence without any target (see `resolveUnitTargets`). */
