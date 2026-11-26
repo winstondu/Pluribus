@@ -32,6 +32,7 @@ export {
 export { MemoryEventStore, MemoryProjectionCache, MemorySecretsStore } from './memory-stores'
 export { createTestBackend, type TestBackend, type TestBackendOverrides } from './test-backend'
 export * from './routing/corpus'
+export * from './routing/conversations'
 export {
   COST_GRID_MESSAGE,
   COST_GRID_ROWS_PER_SIZE,

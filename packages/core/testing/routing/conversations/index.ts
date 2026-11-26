@@ -1,0 +1,40 @@
+export { CONVERSATION_CORPUS } from './cases'
+export { SCENES as CONVERSATION_SCENES, SCENE_DOMAIN, type SceneName } from './scenes'
+export {
+  BEHAVIORS,
+  DOMAINS,
+  PARTITIONS,
+  REFERENCES,
+  REGISTERS,
+  ROLES,
+  SHAPES,
+  type Behavior,
+  type ConversationCase,
+  type Domain,
+  type Partition,
+  type Reference,
+  type Register,
+  type Role,
+  type Shape,
+} from './types'
+export { SPLIT_AXES, behaviorProblems, countBy, formatSplitReport, partitionOf, scoreBySplit, scoreFamilies, shapeOf, splitsOf, type SplitAxis, type SplitScore } from './splits'
+export {
+  DIRECTIONS,
+  INVARIANCE_NAMES,
+  REFERENT_CONFIGURATIONS,
+  VARIANT_SETTINGS,
+  baseVariant,
+  fingerprint,
+  invariancesApply,
+  invariantVariant,
+  jitteredDecisions,
+  olderDistractors,
+  pinTarget,
+  reframeMessage,
+  refuseJoin,
+  renameHandles,
+  routeVariant,
+  settle,
+  type InvarianceName,
+  type Variant,
+} from './metamorphic'
