@@ -100,9 +100,18 @@ export function resolveUnitTargets(
      * would ask, the clear targets stand alone, or, with none, the best node found so far is the target.
      */
     readonly budgetStop?: { readonly best: readonly SectionId[] } | null
+    /**
+     * Whether a section is work whose result is not available yet and that the decision model says the unit
+     * does not need (see `unneededInFlight`). Below `targetChoice` such a section is no candidate referent.
+     * Left out, every section is one.
+     */
+    readonly unneeded?: (sectionId: SectionId) => boolean
   },
 ): TargetResolution {
-  const ranked = [...signals.targets].sort((a, b) => b.confidence - a.confidence)
+  const unneeded = options.unneeded
+  const ranked = [...signals.targets]
+    .filter((t) => !unneeded || t.confidence >= thresholds.targetChoice || !unneeded(t.id))
+    .sort((a, b) => b.confidence - a.confidence)
   if (given) {
     if (!options.fragment) return { kind: 'resolved', sectionIds: given.sectionIds, mode: given.mode }
     // A fragment takes the given sections it refers to, and keeps any other section it clearly
@@ -536,6 +545,25 @@ export function topological(units: readonly PlannedUnit[]): PlannedUnit[] | null
     done.add(next.directiveId)
   }
   return out
+}
+
+/**
+ * Whether a section is work in flight whose result the unit does not need.
+ * A result that is not available yet is built on only by waiting for it (04
+ * · "Result dependencies"; 05: additional related work "builds on existing
+ * context without needing an unfinished result" and continues the chain as
+ * a fork). So when the decision model says the unit does not need that
+ * result (its dependency question below the ambiguity floor) and the unit
+ * is not result-dependent, a weak score for the running section is not a
+ * second candidate beside the answer it was built on: the unit is a fork
+ * placed by its line, not a question to the user about which one is meant.
+ */
+export function unneededInFlight(signals: UnitSignals, supplied: Supplied, sectionId: SectionId): boolean {
+  if (signals.relation?.value === 'result-dependent') return false
+  const directiveId = supplied.sectionById.get(sectionId)?.directiveId
+  if (!directiveId || !supplied.inFlight.some((w) => w.directiveId === directiveId)) return false
+  const asked = signals.needsWork.find((w) => w.id === directiveId)
+  return asked !== undefined && asked.confidence < AMBIGUITY_FLOOR
 }
 
 /** Whether a unit is placed with confidence without any target (see `resolveUnitTargets`). */

@@ -57,7 +57,7 @@ import type {
 } from '../ports'
 import { Batch, ask, type Answers } from './batch'
 import { createLexicalCandidateSource } from './candidates'
-import { AMBIGUITY_FLOOR, derivePlacement, neededWork, placedWithoutTarget, referentCovered, resolveUnitTargets, selected, validatePlan, type TargetMode } from './derive'
+import { AMBIGUITY_FLOOR, derivePlacement, neededWork, placedWithoutTarget, referentCovered, resolveUnitTargets, selected, unneededInFlight, validatePlan, type TargetMode } from './derive'
 import { askUnit, readUnit, sectionNumbers, withReferents, type UnitScope, type UnitSignals } from './questions'
 import { createReferentAsk, estimateRequestTokens, firstPassQuestions, firstPassSectionIds, questionSubjects, referentStrategyFor, routingTokenBudget, type ReferentSpend, type RoutingTokenBudget } from './referents'
 import { applyChoice, choiceText, selectStrategy, strategySelectorFor } from './selection'
@@ -357,6 +357,7 @@ async function routeMessage(deps: Deps, input: RoutingInput, signal: CancelSigna
     covered: (accepted, weak) => referentCovered(supplied, accepted, weak),
     lineOf: (id) => lineOfSection(supplied, id),
     budgetStop: referents.stop ? { best: referents.stop.best.get('m')?.sectionIds ?? [] } : null,
+    unneeded: (id) => unneededInFlight(m, supplied, id),
   })
   if (resolution.kind === 'ambiguous') return { kind: 'target-ambiguity', candidates: resolution.candidates, decision: askRecord(input, record, compositeDecided) }
   if (resolution.joined) record.joinedLines.push({ unit: 'message', sectionIds: resolution.sectionIds, confidence: resolution.joined.confidence })
@@ -566,6 +567,7 @@ async function routeComposite(deps: Deps, input: RoutingInput, signal: CancelSig
       covered: (accepted, weak) => referentCovered(supplied, accepted, weak),
       lineOf: (id) => lineOfSection(supplied, id),
       budgetStop: referred.stop ? { best: referred.stop.best.get(s.key)?.sectionIds ?? [] } : null,
+      unneeded: (id) => unneededInFlight(s, supplied, id),
     })
     if (resolution.kind === 'ambiguous') {
       for (const cand of resolution.candidates) ambiguous.set(cand.sectionId, Math.max(ambiguous.get(cand.sectionId) ?? 0, cand.confidence))
