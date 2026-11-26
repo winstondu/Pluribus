@@ -17,9 +17,8 @@ import { DECISION_INPUT_PRICE_PER_TOKEN, FITTED_CALIBRATION, createDecisionsApiM
  * The budget is a ceiling with a small margin on the mean requests,
  * questions and input tokens per routing, and a wider one on the most any
  * one routing spends: a change to a strategy that spends more fails here
- * loudly, one that spends less passes. Means per routing, so that adding
- * or changing a few cases does not move them past the margin; the figures
- * are printed for the build record.
+ * loudly, one that spends less passes. The figures are printed for the
+ * build record.
  */
 
 const getKey = async (): Promise<string> => 'sk-or-v1-mock'
@@ -45,14 +44,19 @@ interface Budget {
 }
 
 /**
- * Measured 2026-11-26 on 85 cases, mean per routing and (worst routing): one pass, the rules and the defaults 1.15 (2)
- * requests, 13.5 (39) questions, 1,368 (3,499) calibrated input tokens; tree walk 1.18 (3), 13.5 (39), 1,381 (3,499).
+ * Measured 2026-11-26 on 162 cases, mean per routing and (worst routing): one pass, the rules and the defaults 1.14 (2)
+ * requests, 15.9 (46) questions, 1,722 (5,466) calibrated input tokens; tree walk 1.19 (3), 15.8 (46), 1,743 (5,316).
  * The means' ceilings are about 10% above, the worst routing's one request and about 15% above.
+ *
+ * The ceilings follow the corpus, and were measured again when it grew from 85 cases to 162: the 77 added cases sit
+ * in longer conversations and split more often (18.5 questions and 2,105 tokens per routing, against 13.5 and 1,368
+ * for the first 85). The first 85 alone cost what they cost before, to the request and the question, under the same
+ * strategies: the mean is of the cases, so a ceiling moves when the mix of cases does, and only then.
  */
-const ONE_PASS: Budget = { requests: 1.27, questions: 15, inputTokens: 1_500, worstRequests: 3, worstQuestions: 45, worstInputTokens: 4_000 }
+const ONE_PASS: Budget = { requests: 1.27, questions: 17.5, inputTokens: 1_900, worstRequests: 3, worstQuestions: 53, worstInputTokens: 6_300 }
 const BUDGETS: { readonly [C in Configuration]: Budget } = {
   'one pass': ONE_PASS,
-  'tree walk': { requests: 1.3, questions: 15, inputTokens: 1_520, worstRequests: 4, worstQuestions: 45, worstInputTokens: 4_000 },
+  'tree walk': { requests: 1.3, questions: 17.5, inputTokens: 1_920, worstRequests: 4, worstQuestions: 53, worstInputTokens: 6_300 },
   'the strategy the rules select': ONE_PASS,
   'the default settings': ONE_PASS,
 }
