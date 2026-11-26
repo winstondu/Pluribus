@@ -223,13 +223,16 @@ export function referentCovered(supplied: Supplied, accepted: readonly SectionId
  * available yet (relation `dependent` at the threshold) but selected none,
  * the in-flight work it targets, or else the one in-flight result it scored
  * plausible. Two answers never resolve silently in the direction that runs
- * (05 · "Result-dependent work", C2).
+ * (05 · "Result-dependent work", C2). The relation is read as the
+ * probability of `dependent`, the scale every other dependency question is
+ * answered on: a choice's confidence can sit well below it ("Expand the
+ * recommendation you are preparing": confidence 0.56, probability 0.71).
  */
 export function neededWork(signals: UnitSignals, targets: readonly SectionId[], supplied: Supplied, thresholds: DecisionThresholds): DirectiveId[] {
   const chosen = selected(signals.needsWork, thresholds.dependency)
   if (chosen.length > 0 || selected(signals.needsGroups, thresholds.dependency).length > 0) return chosen
   const relation = signals.relation
-  if (!relation || relation.value !== 'result-dependent' || relation.confidence < thresholds.dependency) return chosen
+  if (!relation || relation.value !== 'result-dependent' || (relation.probabilities['result-dependent'] ?? relation.confidence) < thresholds.dependency) return chosen
   const inFlight = new Set(supplied.inFlight.map((w) => w.directiveId))
   const targeted = targets.flatMap((id) => {
     const directiveId = supplied.sectionById.get(id)?.directiveId
