@@ -277,7 +277,9 @@ function* walkUnit(walk: Walk, unit: ReferentUnit): Step<void> {
       if (lone.pooled.has(part.start)) plausible.add(part.start)
       else state.tasks.push(fromStart(walk, unit, state, part, () => plausible.add(part.start)))
     }
-    state.tasks.push(search(walk, unit, lone.sections, 'all', { node: null }, null))
+    // A candidate among them is asked about by itself in the search's first round: confirmed, with Several clearly no, it ends the search.
+    const hinted = new Set(input.starts(unit))
+    state.tasks.push(search(walk, unit, lone.sections, 'all', { node: null }, null, lone.sections.filter((node) => hinted.has(node))))
     yield* drain(state)
     for (const start of frontier) started.add(start)
     // A start that is not plausible hands over to what it displaced; a unit that refers to several sections looks there as well.
@@ -627,11 +629,11 @@ interface Beside {
  * for every relevant one (a correction; old answers that nothing was built
  * on). True when a Point confirmed a section.
  */
-function* search(walk: Walk, unit: ReferentUnit, nodes: readonly SectionNode[], want: 'last' | 'all', beside: Beside, asked: Finding | null): Step<boolean> {
+function* search(walk: Walk, unit: ReferentUnit, nodes: readonly SectionNode[], want: 'last' | 'all', beside: Beside, asked: Finding | null, hints: readonly SectionNode[] = []): Step<boolean> {
   if (nodes.length === 0) return false
   const parts = split(walk, unit, nodes)
   if (parts.length <= 1) return yield* points(walk, unit, nodes, beside)
-  yield* need(walk.ops, parts.map((part) => probe.segment(unit, part)))
+  yield* need(walk.ops, [...parts.map((part) => probe.segment(unit, part)), ...hints.map((node) => probe.point(unit, node))])
   return yield* follow(walk, unit, parts, want, beside, asked)
 }
 
@@ -647,6 +649,8 @@ function* follow(walk: Walk, unit: ReferentUnit, parts: readonly (readonly Secti
   const plausible = parts.filter((part) => (ops.known(probe.segment(unit, part)) ?? 0) >= input.relevance.floor)
   const open = (part: readonly SectionNode[]): Step<boolean> =>
     part.length <= 1 || weight(walk, unit, part) <= input.settings.searchRunsOverTokens ? points(walk, unit, part, beside) : search(walk, unit, part, want, beside, asked)
+  // Every relevant one is sought, each on a line of its own: a unit that refers to one section only and has it is done.
+  if (want === 'all' && settledOn(walk, unit).length > 0) return true
   if (want === 'all') return (yield* together(plausible.map(open))).some((found) => found)
   for (const part of [...plausible].reverse()) if (yield* open(part)) return true
   return false

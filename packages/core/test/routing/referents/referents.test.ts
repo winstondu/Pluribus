@@ -365,6 +365,25 @@ describe('tree walk · Several after the first find', () => {
     expect(correction.requests.length).toBeGreaterThan(1)
   })
 
+  test('tree-walk · a candidate among the old single answers is asked about by itself in the search\'s first round: confirmed, with Several clearly no, no part is opened', async () => {
+    const sc = rootsOf(60)
+    const text = 'Make the answer to question 3 shorter'
+    const one = await route(sc, text, { own: { T3: 0.9 }, several: 0.05 }, { candidates: ['T3'] })
+    const n = (h: string) => one.numberOf.get(h) ?? '?'
+    expect(one.requests).toHaveLength(2)
+    expect(one.asked[1]).toContain(`m_s${n('T3')}`)
+    expect((one.asked[1] ?? []).some((id) => id.startsWith('m_c'))).toBe(true)
+    expect(unit(one).targets).toEqual(sections(['T3']))
+    // Unsure whether there is a second one, the plausible part is opened as before; the answer about T3 is not asked again.
+    const unsure = await route(sc, text, { own: { T3: 0.9 }, several: 0.5 }, { candidates: ['T3'] })
+    expect(unsure.requests).toHaveLength(3)
+    expect(unsure.asked[2]).not.toContain(`m_s${n('T3')}`)
+    expect(unit(unsure).targets).toEqual(sections(['T3']))
+    // A wrong candidate costs its one question: the search goes on and finds the section meant.
+    const wrong = await route(sc, text, { own: { T3: 0.9 }, several: 0.05 }, { candidates: ['T7'] })
+    expect(unit(wrong).targets).toEqual(sections(['T3']))
+  })
+
   test('tree-walk · a unit that refers to one section only stops once it is confirmed: a leaf of the first pass ends the walk, a section with answers below it still has them examined', async () => {
     // The leaf N3a is a first-pass section and confirmed: no line of the tree is walked into.
     const leaf = await route(deep, 'Expand detail 3a', { ...deepRules, several: 0.05 })
