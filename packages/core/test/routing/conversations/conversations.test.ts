@@ -86,20 +86,22 @@ describe('conversation corpus · splits', () => {
     expect(behaviorProblems(c)).toEqual([])
   })
 
-  test('conversations · behavior: every behavior has at least two cases, in conversations of at least two shapes or domains', () => {
+  test('conversations · behavior: every behavior has at least six cases, in at least three conversations of at least two domains', () => {
     const counts = countBy(cases, 'behavior')
     expect(Object.keys(counts)).toEqual([...BEHAVIORS])
     for (const behavior of BEHAVIORS) {
-      expect(counts[behavior], behavior).toBeGreaterThanOrEqual(2)
+      expect(counts[behavior], behavior).toBeGreaterThanOrEqual(6)
       const of = cases.filter((c) => c.behavior === behavior)
       const settings = new Set(of.flatMap((c) => [`shape:${shapeOf(c.scene)}`, `domain:${c.domain}`]))
       // More than one shape, or more than one domain: the behavior is not one scene's.
       expect(settings.size, behavior).toBeGreaterThanOrEqual(3)
+      expect(new Set(of.map((c) => c.scene)).size, behavior).toBeGreaterThanOrEqual(3)
+      expect(new Set(of.map((c) => c.domain)).size, behavior).toBeGreaterThanOrEqual(2)
     }
   })
 
   test('conversations · reference, register, role, shape: every value has cases, and the plain default is not all there is', () => {
-    const floors: { readonly [A in SplitAxis]?: number } = { reference: 4, register: 3, role: 8, shape: 3 }
+    const floors: { readonly [A in SplitAxis]?: number } = { reference: 8, register: 4, role: 20, shape: 6 }
     for (const [axis, values] of [['reference', REFERENCES], ['register', REGISTERS], ['role', ROLES], ['shape', SHAPES]] as const) {
       const counts = countBy(cases, axis)
       for (const value of values) expect(counts[value], `${axis} ${value}`).toBeGreaterThanOrEqual(floors[axis] ?? 1)
@@ -120,7 +122,7 @@ describe('conversation corpus · splits', () => {
   test('conversations · role: a contrast family holds near-identical prompts in one conversation whose labels differ', () => {
     const families = new Map<string, typeof cases[number][]>()
     for (const c of cases) if (c.role === 'contrast') families.set(c.family, [...(families.get(c.family) ?? []), c])
-    expect(families.size).toBeGreaterThanOrEqual(4)
+    expect(families.size).toBeGreaterThanOrEqual(14)
     for (const [family, members] of families) {
       // A trap may sit in a contrast family; a family of one contrast case is not a contrast.
       const all = cases.filter((c) => c.family === family)
@@ -222,7 +224,7 @@ describe('conversation corpus · reading a result by split', () => {
     expect(report.passed).toBeGreaterThan(0)
     // Every contrast family has a case that reads the conversation, so none is wholly right.
     const families = scoreFamilies(report, cases)
-    expect(families.total).toBeGreaterThanOrEqual(4)
+    expect(families.total).toBeGreaterThanOrEqual(14)
     expect(families.passed).toBeLessThan(families.total)
     expect(formatSplitReport(report, cases)).toContain('contrast families with every case right:')
   })
