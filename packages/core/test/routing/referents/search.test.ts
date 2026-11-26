@@ -434,11 +434,15 @@ describe('the walk', () => {
     // a20 is the candidate. The last relevant node above it is a5; below it, a40.
     const { found, ops } = await search(tree, { relevant: new Set([n('a5'), n('a40')]), candidates: [n('a20')] })
     expect(found).toEqual(sectionsOf([n('a40')]))
-    const first = ops.rounds[0] ?? []
-    // The first round asks only about a0 … a20, as parts of the run; the trunk above the split is the context, not the question.
-    for (const p of first) {
+    // The first round asks about a20 by itself: it is the last of the part from the top of its run down to it, and that
+    // part is too long for one round of Points. Confirmed, it would stand for everything above it.
+    expect(ops.rounds[0]?.map((p) => (p.kind === 'point' ? p.node : p.kind))).toEqual([n('a20')])
+    // It is not relevant, so the part above it is searched: only a0 … a19, as parts of the run; the trunk above the split is the context, not the question.
+    const second = ops.rounds[1] ?? []
+    expect(second.length).toBeGreaterThan(0)
+    for (const p of second) {
       expect(p.kind).toBe('segment')
-      if (p.kind === 'segment') for (const node of p.nodes) expect(Number(node.entry.section.title.slice(1))).toBeLessThanOrEqual(20)
+      if (p.kind === 'segment') for (const node of p.nodes) expect(Number(node.entry.section.title.slice(1))).toBeLessThanOrEqual(19)
     }
     expect(ops.rounds.flat().some((p) => p.kind === 'point' && p.node === n('T2'))).toBe(false)
     expect(ops.rounds.flat().some((p) => p.kind !== 'several' && p.kind !== 'segment' && p.node === n('b0'))).toBe(false)
