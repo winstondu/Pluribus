@@ -124,7 +124,7 @@ export function resolveUnitTargets(
   }
   const inferred = ranked.filter((t) => t.confidence >= thresholds.targetChoice).map((t) => t.id)
   if (inferred.length > 0) {
-    // A message that plainly refers to several sections names a clear one and further ones the model
+    // A message that draws on several sections names a clear one and further ones the model
     // scores lower (Q20). A further one below `targetChoice` is taken without asking only when it
     // changes nothing about where the work runs (a second sibling read through the same join-back);
     // one that would add a parent or make a join chain is a guess, and Pluribus never guesses

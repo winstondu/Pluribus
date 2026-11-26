@@ -23,8 +23,18 @@ export const questionId = {
 
 const noul = (instructions: string): NoulQuestion => ({ type: 'noul', instructions })
 
+/**
+ * Several: whether the unit draws on more than one answer section, so that
+ * a further section the model scores lower may join a clear target (05,
+ * Q20: "the inference may select one section or several"). Asked as what
+ * the answer needs, not as whether the message "plainly" names two: a
+ * message that names one answer by its subject and another by something
+ * inside it ("the date regex … in the Flask handler") scored 0.30 to 0.37
+ * on the earlier wording and 0.74 to 0.78 on this one, while messages that
+ * mean one answer stayed at or below 0.49 (live, 2026-11-26, three runs).
+ */
 export function severalQuestion(unit: ReferentUnit): NoulQuestion {
-  return noul(`Does ${unit.name} plainly refer to more than one of the answer sections at once (for example "both", "compare", or two answers named)?`)
+  return noul(`Does ${unit.name} draw on more than one of the answer sections at once, so that its answer needs each of them (for example "both", "compare", "combine", or things from two different answers named)?`)
 }
 
 export function ownQuestion(unit: ReferentUnit, node: SectionNode): NoulQuestion {
