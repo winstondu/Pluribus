@@ -1,7 +1,7 @@
 import { IN_FLIGHT_STATES } from '@pluribus/protocol'
-import type { CorpusReport } from '../corpus/evaluate'
+import type { CorpusReport, CorpusResult, DecisionSpend } from '../corpus/evaluate'
 import { ids, type Scene } from '../corpus/scene'
-import type { PartExpectation, UnitExpectation } from '../corpus/types'
+import type { CorpusTopic, PartExpectation, UnitExpectation } from '../corpus/types'
 import { BEHAVIORS, DOMAINS, PARTITIONS, REFERENCES, REGISTERS, ROLES, SHAPES, type Behavior, type ConversationCase, type Partition, type Shape } from './types'
 
 /** What the conversation looks like when the message arrives, read from the scene. The first that applies. */
@@ -236,6 +236,90 @@ export function scoreFamilies(report: CorpusReport, cases: readonly Conversation
   return { passed: families.size - failed.length, total: families.size, failed }
 }
 
+// ───────────────────────────── what a result cost ─────────────────────────────
+
+/** What routings cost in decision calls: the mean per routing, and the most any one of them cost, each measure on its own. */
+export interface SpendSummary {
+  readonly routings: number
+  readonly mean: DecisionSpend
+  readonly worst: DecisionSpend
+}
+
+const NOTHING: DecisionSpend = { requests: 0, questions: 0, inputTokens: 0 }
+const plus = (a: DecisionSpend, b: DecisionSpend): DecisionSpend => ({ requests: a.requests + b.requests, questions: a.questions + b.questions, inputTokens: a.inputTokens + b.inputTokens })
+
+/** The spend of some routings: requests, questions and the input tokens the provider reported (0 where it reported none). */
+export function spendOf(results: readonly Pick<CorpusResult, 'decisions'>[]): SpendSummary {
+  const n = results.length
+  const sum = results.reduce<DecisionSpend>((a, r) => plus(a, r.decisions), NOTHING)
+  const worst = results.reduce<DecisionSpend>(
+    (a, r) => ({ requests: Math.max(a.requests, r.decisions.requests), questions: Math.max(a.questions, r.decisions.questions), inputTokens: Math.max(a.inputTokens, r.decisions.inputTokens) }),
+    NOTHING,
+  )
+  const mean = n === 0 ? NOTHING : { requests: sum.requests / n, questions: sum.questions / n, inputTokens: sum.inputTokens / n }
+  return { routings: n, mean, worst }
+}
+
+/** A corpus report's spend read by split: every value of every axis that has a routing in the report, in the axis's own order. */
+export function spendBySplit(report: CorpusReport, cases: readonly ConversationCase[]): { readonly [A in SplitAxis]: { readonly [value: string]: SpendSummary } } {
+  const splits = splitsOf(cases)
+  const axis = (name: SplitAxis): { [value: string]: SpendSummary } => {
+    const by = new Map<string, CorpusResult[]>()
+    for (const r of report.results) {
+      const value = splits.get(r.id)?.[name]
+      if (value !== undefined) by.set(value, [...(by.get(value) ?? []), r])
+    }
+    return Object.fromEntries(
+      SPLIT_AXES[name].flatMap((value) => {
+        const results = by.get(value)
+        return results ? [[value, spendOf(results)] as const] : []
+      }),
+    )
+  }
+  return { behavior: axis('behavior'), reference: axis('reference'), register: axis('register'), role: axis('role'), domain: axis('domain'), shape: axis('shape'), partition: axis('partition') }
+}
+
+/**
+ * The figure of merit for spend: the input tokens spent per routing right
+ * (what one right routing costs, the spend on the wrong ones included),
+ * and its reciprocal, routings right per 1,000 input tokens. Null where the
+ * provider reported no tokens: the oracle reports none, so route through
+ * the token-counting Decisions mock (`packages/providers/testing/openrouter/`)
+ * to count them.
+ */
+export function efficiencyOf(report: Pick<CorpusReport, 'passed' | 'decisions'>): { readonly rightPerThousandTokens: number; readonly tokensPerRight: number | null } | null {
+  if (report.decisions.inputTokens === 0) return null
+  return { rightPerThousandTokens: (1000 * report.passed) / report.decisions.inputTokens, tokensPerRight: report.passed === 0 ? null : report.decisions.inputTokens / report.passed }
+}
+
+/** Several reports as one, in order: for a corpus routed one case at a time (one Decisions mock per case). */
+export function combineReports(reports: readonly CorpusReport[]): CorpusReport {
+  const results = reports.flatMap((r) => r.results)
+  const byTopic: { [T in CorpusTopic]?: { passed: number; total: number } } = {}
+  for (const r of reports) {
+    for (const [topic, score] of Object.entries(r.byTopic) as [CorpusTopic, { readonly passed: number; readonly total: number }][]) {
+      const at = byTopic[topic] ?? { passed: 0, total: 0 }
+      byTopic[topic] = { passed: at.passed + score.passed, total: at.total + score.total }
+    }
+  }
+  return {
+    results,
+    passed: results.filter((r) => r.passed).length,
+    total: results.length,
+    expectations: reports.reduce((a, r) => ({ default: a.default + r.expectations.default, hop: a.hop + r.expectations.hop, hopDiffering: a.hopDiffering + r.expectations.hopDiffering }), { default: 0, hop: 0, hopDiffering: 0 }),
+    decisions: reports.reduce<DecisionSpend>((a, r) => plus(a, r.decisions), NOTHING),
+    byTopic,
+  }
+}
+
+const fixed = (x: number, digits: number): string => x.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })
+
+/** Mean and, in brackets, worst requests, questions and input tokens of one routing. */
+function spendText(s: SpendSummary, tokens: boolean): string {
+  const t = tokens ? ` · ${fixed(s.mean.inputTokens, 0)} (${fixed(s.worst.inputTokens, 0)}) tokens` : ''
+  return `${fixed(s.mean.requests, 2)} (${s.worst.requests}) requests · ${fixed(s.mean.questions, 1)} (${s.worst.questions}) questions${t}`
+}
+
 export function formatSplitReport(report: CorpusReport, cases: readonly ConversationCase[]): string {
   const scores = scoreBySplit(report, cases)
   const lines = [`Conversation corpus: ${report.passed}/${report.total} cases as labelled`]
@@ -248,6 +332,20 @@ export function formatSplitReport(report: CorpusReport, cases: readonly Conversa
   }
   const families = scoreFamilies(report, cases)
   lines.push(`  contrast families with every case right: ${families.passed}/${families.total}${families.failed.length > 0 ? ` (not: ${families.failed.join(', ')})` : ''}`)
+  const tokens = report.decisions.inputTokens > 0
+  const spend = spendBySplit(report, cases)
+  lines.push(`Decision spend per routing, mean (worst)${tokens ? '' : ', no input tokens reported'}: ${spendText(spendOf(report.results), tokens)}`)
+  for (const name of Object.keys(SPLIT_AXES) as SplitAxis[]) {
+    lines.push(`  by ${name}:`)
+    for (const [value, s] of Object.entries(spend[name])) lines.push(`    ${value} (${s.routings}): ${spendText(s, tokens)}`)
+  }
+  const efficiency = efficiencyOf(report)
+  const right = `${report.passed}/${report.total} right`
+  lines.push(
+    efficiency
+      ? `Efficiency: ${right} for ${fixed(report.decisions.inputTokens, 0)} input tokens: ${efficiency.tokensPerRight === null ? 'none right' : `${fixed(efficiency.tokensPerRight, 0)} tokens per routing right`}, ${fixed(efficiency.rightPerThousandTokens, 3)} right per 1,000 tokens`
+      : `Efficiency: ${right} for ${report.decisions.requests} requests and ${report.decisions.questions} questions; no input tokens reported`,
+  )
   for (const r of report.results) {
     if (r.passed) continue
     lines.push(`✗ ${r.id} (${r.outcome})`)
