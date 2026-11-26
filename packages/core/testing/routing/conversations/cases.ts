@@ -1,4 +1,5 @@
 import type { CorpusTopic } from '../corpus/types'
+import { CONVERSATION_CORPUS_2 } from './cases-2'
 import { SCENES, SCENE_DOMAIN, type SceneName } from './scenes'
 import type { Behavior, ConversationCase, Register, Role } from './types'
 
@@ -1062,4 +1063,4 @@ export const CONVERSATION_CORPUS: readonly ConversationCase[] = define([
     text: 'Keep this one short: what does HTTP status 418 mean?',
     expect: { composition: 'atomic', sessionWide: false, parts: [{ kind: 'unit', relation: 'new', placement: 'new-chain' }] },
   },
-])
+]).concat(CONVERSATION_CORPUS_2)

@@ -1,5 +1,6 @@
 import { provisionalLabel, type DirectiveState } from '@pluribus/protocol'
 import { scene, type Scene, type SceneBuilder } from '../corpus/scene'
+import { SCENES_2, SCENE_DOMAIN_2 } from './scenes-2'
 import type { Domain } from './types'
 
 /**
@@ -242,7 +243,7 @@ const cena = (() => {
 
 const empty = scene().build()
 
-export const SCENES = { empty, flask, letter, orders, ordersClosed, ordersDone, dinner, dinnerOpen, dinnerList, exam, examDone, gadgets, budgetSolo, budgetDeep, invoice, party, rules, handout, cena } as const
+export const SCENES = { empty, flask, letter, orders, ordersClosed, ordersDone, dinner, dinnerOpen, dinnerList, exam, examDone, gadgets, budgetSolo, budgetDeep, invoice, party, rules, handout, cena, ...SCENES_2 } as const
 export type SceneName = keyof typeof SCENES
 
 export const SCENE_DOMAIN: { readonly [S in SceneName]: Domain } = {
@@ -265,4 +266,5 @@ export const SCENE_DOMAIN: { readonly [S in SceneName]: Domain } = {
   rules: 'cooking',
   handout: 'teaching',
   cena: 'cooking',
+  ...SCENE_DOMAIN_2,
 }

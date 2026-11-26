@@ -102,7 +102,7 @@ export const ROLES = [
 export type Role = (typeof ROLES)[number]
 
 /** Split 5: the subject matter of the conversation, so that no result rests on one running example. */
-export const DOMAINS = ['none', 'code', 'writing', 'data', 'cooking', 'study', 'shopping', 'money', 'work', 'events', 'teaching'] as const
+export const DOMAINS = ['none', 'code', 'writing', 'data', 'cooking', 'study', 'shopping', 'money', 'work', 'events', 'teaching', 'home'] as const
 export type Domain = (typeof DOMAINS)[number]
 
 /**
