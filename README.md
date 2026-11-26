@@ -1,5 +1,9 @@
 # Pluribus
 
+<video src="https://assets.winstondu.com/recordings/pluribus-widget.mp4" controls muted playsinline width="100%"></video>
+
+[▶ Watch the demo recording](https://assets.winstondu.com/recordings/pluribus-widget.mp4)
+
 One visible chat that runs many model calls at once. Several unrelated requests can be answered in parallel, follow-ups wait for the answers they need, corrections supersede what they correct, and every run reads exactly the context it needs, rather than unrelated context.
 
 For the demo, the backend runs in the browser, in a Web Worker, and talks to OpenRouter directly.
